@@ -367,8 +367,28 @@
 .cpdf__status {
   display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
   align-items: center;
   justify-content: center;
   color: var(--color-text-muted, #888);
   font: 500 14px/1 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid var(--color-divider, rgba(0, 0, 0, 0.1));
+  border-top-color: var(--color-accent, #4658ff);
+  animation: cpdf-spin 0.8s linear infinite;
+}
+@keyframes cpdf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cpdf__spinner {
+    animation-duration: 2s;
+  }
 }

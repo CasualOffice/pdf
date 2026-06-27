@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, type Mode } from '@casualoffice/pdf';
-import { isDesktop } from './desk-bridge-bootstrap';
 import { MenuBar, type MenuDef } from './Menu';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
@@ -118,12 +117,18 @@ export function App() {
         <div className="appbar__brand">
           <img className="appbar__logo" src="/logo.svg" alt="" width={28} height={28} />
           <div className="appbar__titles">
-            <span className="appbar__title">{title}</span>
+            <input
+              className="appbar__title"
+              value={title}
+              spellCheck={false}
+              aria-label="Document name"
+              onChange={(e) => setTitle(e.target.value)}
+              onFocus={(e) => e.target.select()}
+            />
             <MenuBar menus={menus} />
           </div>
         </div>
         <div className="appbar__actions">
-          <span className="appbar__surface">{isDesktop() ? 'desktop' : 'web'}</span>
           <button type="button" className="appbar__share" aria-label="Share document">
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

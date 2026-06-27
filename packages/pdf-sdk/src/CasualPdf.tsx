@@ -71,7 +71,10 @@ export function CasualPdf({ src, mode = 'view', onModeChange, className, style }
   if (isLoading || !engine) {
     return (
       <div className={className} style={style} data-casual-pdf-mode={mode}>
-        <div className="cpdf__status">Loading PDF engine…</div>
+        <div className="cpdf__status">
+          <span className="cpdf__spinner" aria-hidden="true" />
+          Loading PDF engine…
+        </div>
       </div>
     );
   }
@@ -86,7 +89,10 @@ export function CasualPdf({ src, mode = 'view', onModeChange, className, style }
                 isLoaded ? (
                   <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} />
                 ) : (
-                  <div className="cpdf__status">Loading document…</div>
+                  <div className="cpdf__status">
+                    <span className="cpdf__spinner" aria-hidden="true" />
+                    Loading document…
+                  </div>
                 )
               }
             </DocumentContent>
