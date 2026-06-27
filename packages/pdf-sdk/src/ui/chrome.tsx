@@ -76,6 +76,39 @@ const patchFor = (toolId: string | undefined, color: string) =>
 const norm = (c?: string) => (c ?? '').toLowerCase();
 
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
+/** A labelled rail button — icon + caption so the rail reads as a tool palette. */
+function RailBtn({
+  icon,
+  label,
+  title,
+  active,
+  disabled,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  title?: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cpdf__railbtn"
+      data-active={active ? 'true' : undefined}
+      aria-label={title ?? label}
+      aria-pressed={active === undefined ? undefined : !!active}
+      title={title ?? label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon name={icon} filled={!!active} size={22} />
+      <span className="cpdf__railbtn-label">{label}</span>
+    </button>
+  );
+}
+
 function LeftRail({
   documentId,
   mode,
@@ -94,24 +127,25 @@ function LeftRail({
 
   return (
     <div className="cpdf__rail" role="toolbar" aria-orientation="vertical" aria-label="Tools">
-      <IconButton icon="thumbnails" label="Page thumbnails" active={leftPanel === 'thumbs'} onClick={() => onToggleLeft('thumbs')} />
-      <IconButton icon="outline" label="Document outline" active={leftPanel === 'outline'} onClick={() => onToggleLeft('outline')} />
+      <RailBtn icon="thumbnails" label="Pages" title="Page thumbnails" active={leftPanel === 'thumbs'} onClick={() => onToggleLeft('thumbs')} />
+      <RailBtn icon="outline" label="Outline" title="Document outline" active={leftPanel === 'outline'} onClick={() => onToggleLeft('outline')} />
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
-          <IconButton icon="cursor" label="Select (V)" active={activeToolId === null} onClick={() => annoApi?.setActiveTool(null)} />
+          <RailBtn icon="cursor" label="Select" title="Select (V)" active={activeToolId === null} onClick={() => annoApi?.setActiveTool(null)} />
           {TOOLS.map((t) => (
-            <IconButton
+            <RailBtn
               key={t.id}
               icon={t.icon}
-              label={`${t.label} (${t.key.toUpperCase()})`}
+              label={t.label.replace(' box', '')}
+              title={`${t.label} (${t.key.toUpperCase()})`}
               active={activeToolId === t.id}
               onClick={() => annoApi?.setActiveTool(activeToolId === t.id ? null : t.id)}
             />
           ))}
           <span className="cpdf__rail-sep" aria-hidden="true" />
-          <IconButton icon="undo" label="Undo (⌘Z)" onClick={() => history?.undo()} />
-          <IconButton icon="redo" label="Redo (⌘⇧Z)" onClick={() => history?.redo()} />
+          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" onClick={() => history?.undo()} />
+          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" onClick={() => history?.redo()} />
         </>
       )}
     </div>
@@ -128,6 +162,8 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   const activeToolId = anno?.activeToolId ?? null;
   const selected = scope?.getSelectedAnnotations() ?? [];
   const hasContext = activeToolId !== null || selected.length > 0;
+  // Contextual: no empty box — the panel only exists when there's something to style.
+  if (!hasContext) return null;
 
   const firstObj = selected[0]?.object as
     | { color?: string; strokeColor?: string; fontColor?: string; opacity?: number; fontSize?: number }
@@ -165,11 +201,8 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
 
   return (
     <aside className="cpdf__props" aria-label="Properties">
-      <div className="cpdf__props-head">Properties</div>
-      {!hasContext ? (
-        <div className="cpdf__props-empty">Pick a tool or select an annotation to edit its style.</div>
-      ) : (
-        <div className="cpdf__props-body">
+      <div className="cpdf__props-head">{selected.length > 0 ? 'Selection' : 'Tool style'}</div>
+      <div className="cpdf__props-body">
           <div className="cpdf__field">
             <span className="cpdf__field-label">Color</span>
             <div className="cpdf__swatches">
@@ -242,7 +275,6 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
             </button>
           )}
         </div>
-      )}
     </aside>
   );
 }

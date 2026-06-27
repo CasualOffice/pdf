@@ -131,6 +131,8 @@ export function App() {
                 type="button"
                 role="tab"
                 aria-selected={mode === id}
+                aria-label={`${label} mode`}
+                title={`${label} mode`}
                 className="modeseg__btn"
                 data-active={mode === id ? 'true' : undefined}
                 onClick={() => setMode(id)}
