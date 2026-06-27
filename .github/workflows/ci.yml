@@ -109,7 +109,11 @@ jobs:
         working-directory: tools/render-parity
         run: |
           npm install
-          npx --yes playwright@1.49 install chromium
+          # Install the Chromium build that THIS playwright-core expects — the
+          # installer version must match the runtime version exactly.
+          PW_VER=$(node -p "require('playwright-core/package.json').version")
+          echo "playwright-core $PW_VER"
+          npx --yes "playwright@$PW_VER" install chromium
       - name: Run render-parity (UX-F1)
         working-directory: tools/render-parity
         run: ./run.sh
