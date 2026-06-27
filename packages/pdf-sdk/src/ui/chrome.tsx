@@ -245,7 +245,15 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
 }
 
 /* ── Floating bottom view bar ─────────────────────────────────────────────── */
-function BottomBar({ documentId }: { documentId: string }) {
+function BottomBar({
+  documentId,
+  searchOpen,
+  onToggleSearch,
+}: {
+  documentId: string;
+  searchOpen: boolean;
+  onToggleSearch: () => void;
+}) {
   const { state: zoom, provides: zoomApi } = useZoom(documentId);
   const { state: scroll, provides: scrollApi } = useScroll(documentId);
   const { provides: scrollCap } = useScrollCapability();
@@ -261,6 +269,10 @@ function BottomBar({ documentId }: { documentId: string }) {
 
   return (
     <div className="cpdf__bottom" role="toolbar" aria-label="View controls">
+      <div className="cpdf__group">
+        <IconButton icon="search" label="Find in document" active={searchOpen} onClick={onToggleSearch} />
+      </div>
+      <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
         <IconButton icon="chevron-left" label="Previous page" disabled={page <= 1} onClick={() => scrollApi?.scrollToPreviousPage()} />
         <span className="cpdf__pagebox">
@@ -313,6 +325,16 @@ function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () 
   const [q, setQ] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => inputRef.current?.focus(), []);
+  // Search as you type (debounced) so results appear without pressing Enter.
+  useEffect(() => {
+    if (!provides) return;
+    const term = q.trim();
+    const id = setTimeout(() => {
+      if (term) provides.searchAllPages(term);
+      else provides.stopSearch();
+    }, 250);
+    return () => clearTimeout(id);
+  }, [q, provides]);
   const total = state?.total ?? 0;
   const active = total > 0 ? (state?.activeResultIndex ?? 0) + 1 : 0;
   return (
@@ -326,7 +348,7 @@ function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () 
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') e.shiftKey ? provides?.previousResult() : provides && q.trim() && provides.searchAllPages(q.trim());
+          if (e.key === 'Enter') e.shiftKey ? provides?.previousResult() : provides?.nextResult();
           if (e.key === 'Escape') onClose();
         }}
       />
@@ -500,7 +522,9 @@ export function Viewer({
                 <PagePointerProvider documentId={documentId} pageIndex={pageIndex} className="cpdf__page" style={{ width, height, position: 'relative' }}>
                   <RenderLayer documentId={documentId} pageIndex={pageIndex} />
                   <SearchLayer documentId={documentId} pageIndex={pageIndex} />
-                  {mode === 'view' && <SelectionLayer documentId={documentId} pageIndex={pageIndex} />}
+                  {/* Text selection/copy in every mode; the interaction-manager
+                      yields the pointer to an annotation tool when one is active. */}
+                  <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
                   <AnnotationLayer documentId={documentId} pageIndex={pageIndex} style={{ position: 'absolute', inset: 0 }} />
                 </PagePointerProvider>
               )}
@@ -508,14 +532,8 @@ export function Viewer({
           </Viewport>
           {editing && <PropertiesPanel documentId={documentId} />}
         </div>
-        <BottomBar documentId={documentId} />
-        {searchOpen ? (
-          <SearchPanel documentId={documentId} onClose={() => setSearchOpen(false)} />
-        ) : (
-          <button type="button" className="cpdf__findfab" aria-label="Find in document" onClick={() => setSearchOpen(true)}>
-            <Icon name="search" size={18} />
-          </button>
-        )}
+        <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
+        {searchOpen && <SearchPanel documentId={documentId} onClose={() => setSearchOpen(false)} />}
       </div>
     </AnnotationRendererProvider>
   );
