@@ -325,8 +325,11 @@ function BottomBar({
 /* ── Find bar (floats top-right of the canvas) ────────────────────────────── */
 function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () => void }) {
   const { state, provides } = useSearch(documentId);
+  const { provides: scrollApi } = useScroll(documentId);
   const [q, setQ] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef(state?.results);
+  resultsRef.current = state?.results;
   useEffect(() => inputRef.current?.focus(), []);
   // Search as you type (debounced) so results appear without pressing Enter.
   useEffect(() => {
@@ -338,6 +341,21 @@ function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () 
     }, 250);
     return () => clearTimeout(id);
   }, [q, provides]);
+  // Scroll the page to the active match whenever it changes (first/next/prev).
+  useEffect(() => {
+    if (!provides) return;
+    return provides.onActiveResultChange((ev: number | { index: number }) => {
+      const idx = typeof ev === 'number' ? ev : ev.index;
+      const r = resultsRef.current?.[idx];
+      const rect = r?.rects?.[0];
+      if (r && rect && scrollApi) {
+        scrollApi.scrollToPage({
+          pageNumber: r.pageIndex + 1,
+          pageCoordinates: { x: rect.origin.x, y: rect.origin.y },
+        });
+      }
+    });
+  }, [provides, scrollApi]);
   const total = state?.total ?? 0;
   const active = total > 0 ? (state?.activeResultIndex ?? 0) + 1 : 0;
   return (
@@ -463,8 +481,11 @@ export function Viewer({
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
+  const { state: fs } = useFullscreen();
   const activeToolId = anno?.activeToolId ?? null;
-  const editing = mode !== 'view';
+  // Presentation mode: full screen is a clean reading view — hide editing chrome.
+  const presenting = fs.isFullscreen;
+  const editing = mode !== 'view' && !presenting;
 
   // Imperative API for host menus.
   useEffect(() => {
@@ -484,6 +505,11 @@ export function Viewer({
     };
   }, [apiRef, annoApi, history, exportCap]);
 
+  // Entering presentation (full screen) drops any active tool — it's read-only.
+  useEffect(() => {
+    if (presenting) annoApi?.setActiveTool(null);
+  }, [presenting, annoApi]);
+
   // After placing a one-shot annotation, revert to Select so it's immediately
   // adjustable (EmbedPDF auto-selects it). Ink/markup tools stay active.
   useEffect(() => {
@@ -501,6 +527,15 @@ export function Viewer({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      // Duplicate selection (⌘/Ctrl+D) — imported copies are re-id'd by the plugin.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        const sel = annoApi?.getSelectedAnnotations() ?? [];
+        if (annoApi && sel.length) {
+          e.preventDefault();
+          annoApi.importAnnotations(sel.map((a) => ({ annotation: a.object })));
+        }
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'Escape') {
         annoApi?.setActiveTool(null);
@@ -526,9 +561,9 @@ export function Viewer({
     <AnnotationRendererProvider>
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} />
-          {leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
-          {leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} />}
+          {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
+          {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           <Viewport documentId={documentId} className="cpdf__viewport">
             <Scroller
               documentId={documentId}
