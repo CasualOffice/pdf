@@ -24,13 +24,14 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 **Reuse:** EmbedPDF, design-system, desktop shell.
 **Gates:** UX-P1..P5, UX-I2, UX-I6, UX-F1, UX-F3. *(UX-F1 ✅ kept green; UX-P/I verified by headless drive: 4-page nav, zoom→140%, search 19 matches, thumbnails, light/dark.)*
 
-## Phase 2 — Annotation editor (single-user)
+## Phase 2 — Annotation editor (single-user) (in progress)
 **Goal:** Tier-1 editing, Apryse-class feel.
-- Annotations: highlight, ink, note, shapes, text, stamp; contextual property bar; direct manipulation (drag/resize/rotate/snap/multi-select); undo/redo.
-- Form fill (AcroForm) + flatten.
-- Write-side: bake annotations/forms into binary via `pdf-lib` (incremental update); autosave + desktop recovery.
-- Define the **Yjs document model** (even single-user, so collab drops in cleanly).
-**Reuse:** pdf-lib, desktop recovery/save.
+- [x] Annotations via `@embedpdf/plugin-annotation`: highlight, ink/draw, free-text, note/comment, rectangle, ellipse, arrow — tool palette in the toolbar (Edit/Suggest modes only), plus the **Insert** menu. Direct manipulation (select/resize/rotate) and selection handles come from the plugin. **undo/redo** via `@embedpdf/plugin-history` (toolbar + Edit menu). Each page wraps layers in `PagePointerProvider`; the SDK exposes an imperative `CasualPdfApi` (download/undo/redo/deleteSelection/setTool) on `apiRef` for host menus.
+- [x] Write-side **save** via `@embedpdf/plugin-export` (`download`/`saveAsCopy`) — File → Download now bakes annotations into the PDF bytes.
+- [ ] Contextual property bar (color / stroke width / opacity); stamp + image; multi-select + snap.
+- [ ] Form fill (AcroForm) + flatten.
+- [ ] Autosave + desktop recovery; define the **Yjs document model** (so Phase 3 collab drops in cleanly).
+**Reuse:** EmbedPDF annotation/history/export, pdf-lib (later), desktop recovery/save.
 **Gates:** UX-I1..I5, UX-P4, UX-F2.
 
 ## Phase 3 — Co-editing, comments, public links

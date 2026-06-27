@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, MutableRefObject } from 'react';
 
 /**
  * Interaction mode — what the user may do. Orthogonal to collab (single-user vs
@@ -43,6 +43,19 @@ export interface Identity {
   color?: string;
 }
 
+/** Imperative handle the host can call (e.g. from app menus) once the viewer is
+ *  ready. Populated on the `apiRef` prop. Null until a document is loaded. */
+export interface CasualPdfApi {
+  /** Download the current document (annotations baked in). */
+  download(): void;
+  undo(): void;
+  redo(): void;
+  /** Delete the currently selected annotation(s). */
+  deleteSelection(): void;
+  /** Activate an annotation tool by id, or null to return to select. */
+  setTool(toolId: string | null): void;
+}
+
 export interface CasualPdfProps {
   /** PDF source URL. (Byte-array sources land in Phase 1.) */
   src: string;
@@ -55,6 +68,8 @@ export interface CasualPdfProps {
   collab?: CollabConfig;
   /** Local user identity (authorship + presence). */
   identity?: Identity;
+  /** Receives an imperative API once the document is ready (for host menus). */
+  apiRef?: MutableRefObject<CasualPdfApi | null>;
   className?: string;
   style?: CSSProperties;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CasualPdf, type Mode } from '@casualoffice/pdf';
+import { CasualPdf, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { MenuBar, type MenuDef } from './Menu';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
@@ -29,6 +29,13 @@ export function App() {
   const [about, setAbout] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
+  const api = useRef<CasualPdfApi | null>(null);
+
+  /** Run an editor action, switching into Edit mode first if needed. */
+  const editAction = (fn: (a: CasualPdfApi) => void) => {
+    if (mode === 'view') setMode('edit');
+    if (api.current) fn(api.current);
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : '';
@@ -47,6 +54,11 @@ export function App() {
   };
 
   const download = async () => {
+    // Prefer the viewer's exporter so annotations are baked into the saved file.
+    if (api.current) {
+      api.current.download();
+      return;
+    }
     try {
       const res = await fetch(src);
       const blob = await res.blob();
@@ -78,6 +90,28 @@ export function App() {
         { divider: true },
         { label: 'Download', shortcut: '⌘S', onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
+      ],
+    },
+    {
+      label: 'Edit',
+      items: [
+        { label: 'Undo', shortcut: '⌘Z', disabled: mode === 'view', onSelect: () => api.current?.undo() },
+        { label: 'Redo', shortcut: '⌘⇧Z', disabled: mode === 'view', onSelect: () => api.current?.redo() },
+        { divider: true },
+        { label: 'Delete selection', shortcut: '⌫', disabled: mode === 'view', onSelect: () => api.current?.deleteSelection() },
+      ],
+    },
+    {
+      label: 'Insert',
+      items: [
+        { label: 'Text box', onSelect: () => editAction((a) => a.setTool('freeText')) },
+        { label: 'Comment', onSelect: () => editAction((a) => a.setTool('textComment')) },
+        { label: 'Highlight', onSelect: () => editAction((a) => a.setTool('highlight')) },
+        { divider: true },
+        { label: 'Rectangle', onSelect: () => editAction((a) => a.setTool('square')) },
+        { label: 'Ellipse', onSelect: () => editAction((a) => a.setTool('circle')) },
+        { label: 'Arrow', onSelect: () => editAction((a) => a.setTool('lineArrow')) },
+        { label: 'Drawing', onSelect: () => editAction((a) => a.setTool('ink')) },
       ],
     },
     {
@@ -159,7 +193,7 @@ export function App() {
 
       <main className="canvas">
         {/* key={src} remounts the viewer on a new document so the engine reloads. */}
-        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} className="viewer" />
+        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} className="viewer" />
       </main>
 
       {about && (

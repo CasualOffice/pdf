@@ -8,7 +8,7 @@
  * components render *inside* the <EmbedPDF> provider (see CasualPdf.tsx), which
  * is what makes the hooks resolve.
  */
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
 import { Viewport } from '@embedpdf/plugin-viewport/react';
 import { Scroller } from '@embedpdf/plugin-scroll/react';
 import { RenderLayer } from '@embedpdf/plugin-render/react';
@@ -22,10 +22,25 @@ import { useSearch, SearchLayer } from '@embedpdf/plugin-search/react';
 import { SelectionLayer } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
 import { useBookmarkCapability } from '@embedpdf/plugin-bookmark/react';
+import { PagePointerProvider } from '@embedpdf/plugin-interaction-manager/react';
+import { useAnnotation, AnnotationLayer, AnnotationRendererProvider } from '@embedpdf/plugin-annotation/react';
+import { useHistoryCapability } from '@embedpdf/plugin-history/react';
+import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
-import type { Mode } from '../modes';
+import type { Mode, CasualPdfApi } from '../modes';
 import './viewer.css';
+
+/** Annotation tools surfaced in Edit/Suggest mode (EmbedPDF tool ids). */
+const ANNOTATION_TOOLS: { id: string; icon: IconName; label: string }[] = [
+  { id: 'highlight', icon: 'marker', label: 'Highlight' },
+  { id: 'ink', icon: 'ink', label: 'Draw' },
+  { id: 'freeText', icon: 'text-tool', label: 'Text box' },
+  { id: 'textComment', icon: 'note', label: 'Comment' },
+  { id: 'square', icon: 'square', label: 'Rectangle' },
+  { id: 'circle', icon: 'circle', label: 'Ellipse' },
+  { id: 'lineArrow', icon: 'arrow', label: 'Arrow' },
+];
 
 const ROOT_ID = 'cpdf-root';
 
@@ -133,8 +148,12 @@ function Toolbar({
   const { spreadMode, provides: spreadApi } = useSpread(documentId);
   const { state: fs, provides: fsApi } = useFullscreen();
   const { isPanning, provides: panApi } = usePan(documentId);
+  const { state: anno, provides: annoApi } = useAnnotation(documentId);
+  const { provides: history } = useHistoryCapability();
   const [horizontal, setHorizontal] = useState(false);
 
+  const editing = mode !== 'view';
+  const activeToolId = anno?.activeToolId ?? null;
   const page = scroll?.currentPage ?? 1;
   const total = scroll?.totalPages ?? 0;
   const pct = Math.round((zoom?.currentZoomLevel ?? 1) * 100);
@@ -167,6 +186,33 @@ function Toolbar({
           onClick={() => onToggleLeft('outline')}
         />
       </div>
+      {editing && (
+        <>
+          <span className="cpdf__sep" aria-hidden="true" />
+          <div className="cpdf__group">
+            <IconButton
+              icon="cursor"
+              label="Select"
+              active={activeToolId === null}
+              onClick={() => annoApi?.setActiveTool(null)}
+            />
+            {ANNOTATION_TOOLS.map((t) => (
+              <IconButton
+                key={t.id}
+                icon={t.icon}
+                label={t.label}
+                active={activeToolId === t.id}
+                onClick={() => annoApi?.setActiveTool(activeToolId === t.id ? null : t.id)}
+              />
+            ))}
+          </div>
+          <span className="cpdf__sep" aria-hidden="true" />
+          <div className="cpdf__group">
+            <IconButton icon="undo" label="Undo" onClick={() => history?.undo()} />
+            <IconButton icon="redo" label="Redo" onClick={() => history?.redo()} />
+          </div>
+        </>
+      )}
       <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
         <IconButton
@@ -386,16 +432,42 @@ export function Viewer({
   documentId,
   mode,
   onModeChange,
+  apiRef,
 }: {
   documentId: string;
   mode: Mode;
   onModeChange?: (m: Mode) => void;
+  apiRef?: MutableRefObject<CasualPdfApi | null>;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
   const toggleLeft = (p: 'thumbs' | 'outline') => setLeftPanel((cur) => (cur === p ? null : p));
 
+  // Expose an imperative API to the host (app menus call these).
+  const { provides: annoApi } = useAnnotation(documentId);
+  const { provides: history } = useHistoryCapability();
+  const { provides: exportCap } = useExportCapability();
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = {
+      download: () => exportCap?.download(),
+      undo: () => history?.undo(),
+      redo: () => history?.redo(),
+      deleteSelection: () => {
+        const sel = annoApi?.getSelectedAnnotations() ?? [];
+        if (annoApi && sel.length) {
+          annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
+        }
+      },
+      setTool: (id) => annoApi?.setActiveTool(id),
+    };
+    return () => {
+      if (apiRef) apiRef.current = null;
+    };
+  }, [apiRef, annoApi, history, exportCap]);
+
   return (
+    <AnnotationRendererProvider>
     <div className="cpdf" id={ROOT_ID}>
       <Toolbar
         documentId={documentId}
@@ -417,16 +489,29 @@ export function Viewer({
           <Scroller
             documentId={documentId}
             renderPage={({ width, height, pageIndex }) => (
-              <div className="cpdf__page" style={{ width, height, position: 'relative' }}>
+              <PagePointerProvider
+                documentId={documentId}
+                pageIndex={pageIndex}
+                className="cpdf__page"
+                style={{ width, height, position: 'relative' }}
+              >
                 <RenderLayer documentId={documentId} pageIndex={pageIndex} />
                 <SearchLayer documentId={documentId} pageIndex={pageIndex} />
-                <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
-              </div>
+                {/* Text selection in view mode; in edit/suggest the annotation
+                    tools own the pointer surface. */}
+                {mode === 'view' && <SelectionLayer documentId={documentId} pageIndex={pageIndex} />}
+                <AnnotationLayer
+                  documentId={documentId}
+                  pageIndex={pageIndex}
+                  style={{ position: 'absolute', inset: 0 }}
+                />
+              </PagePointerProvider>
             )}
           />
         </Viewport>
       </div>
       {searchOpen && <SearchPanel documentId={documentId} onClose={() => setSearchOpen(false)} />}
     </div>
+    </AnnotationRendererProvider>
   );
 }

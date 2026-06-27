@@ -30,7 +30,18 @@ export type IconName =
   | 'suggest'
   | 'chevron-down'
   | 'check'
-  | 'scroll-h';
+  | 'scroll-h'
+  | 'cursor'
+  | 'marker'
+  | 'ink'
+  | 'text-tool'
+  | 'note'
+  | 'square'
+  | 'circle'
+  | 'arrow'
+  | 'undo'
+  | 'redo'
+  | 'trash';
 
 interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: IconName;
@@ -250,6 +261,87 @@ function paths(name: IconName, filled: boolean) {
       );
     case 'check':
       return <polyline points="5 12.5 10 17.5 19 6.5" {...OUTLINE} />;
+    case 'cursor':
+      return (
+        <path
+          d="M5 3l14 7-6 1.6L9.6 18z"
+          {...(filled ? SOLID : OUTLINE)}
+        />
+      );
+    case 'marker':
+      // highlighter
+      return filled ? (
+        <g {...SOLID}>
+          <path d="M4 19h7l1.5-1.5-5-5L4 16z" />
+          <rect x="11" y="3.5" width="5.5" height="9" rx="1.5" transform="rotate(45 13.7 8)" />
+        </g>
+      ) : (
+        <g {...OUTLINE}>
+          <path d="M3.5 19.5h6l9-9a2 2 0 0 0 0-2.8l-2.2-2.2a2 2 0 0 0-2.8 0l-9 9z" />
+          <line x1="13" y1="6.5" x2="17.5" y2="11" />
+          <line x1="3.5" y1="19.5" x2="9.5" y2="19.5" />
+        </g>
+      );
+    case 'ink':
+      // freehand pen squiggle
+      return (
+        <g {...OUTLINE}>
+          <path d="M3 17c3 0 3-9 6-9s3 9 6 9 3-6 6-6" />
+        </g>
+      );
+    case 'text-tool':
+      return (
+        <g {...(filled ? { fill: 'currentColor', stroke: 'none' } : OUTLINE)}>
+          {filled ? (
+            <path d="M5 4h14v3.2h-1.6V6.6H13V18h2v1.6H9V18h2V6.6H6.6v.6H5z" />
+          ) : (
+            <g>
+              <polyline points="5 5 19 5 19 8" />
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="9" y1="19" x2="15" y2="19" />
+            </g>
+          )}
+        </g>
+      );
+    case 'note':
+      return filled ? (
+        <path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" {...SOLID} />
+      ) : (
+        <path d="M4 4.5h16a.5.5 0 0 1 .5.5v9.5a.5.5 0 0 1-.5.5H8.5l-3.5 3.5V15H4a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5z" {...OUTLINE} />
+      );
+    case 'square':
+      return <rect x="4" y="5.5" width="16" height="13" rx="1.5" {...(filled ? SOLID : OUTLINE)} />;
+    case 'circle':
+      return <circle cx="12" cy="12" r="8" {...(filled ? SOLID : OUTLINE)} />;
+    case 'arrow':
+      return (
+        <g {...OUTLINE}>
+          <line x1="5" y1="19" x2="18" y2="6" />
+          <polyline points="11 6 18 6 18 13" />
+        </g>
+      );
+    case 'undo':
+      return (
+        <g {...OUTLINE}>
+          <path d="M8 7 4 11l4 4" />
+          <path d="M4 11h10a5 5 0 0 1 5 5v1" />
+        </g>
+      );
+    case 'redo':
+      return (
+        <g {...OUTLINE}>
+          <path d="M16 7l4 4-4 4" />
+          <path d="M20 11H10a5 5 0 0 0-5 5v1" />
+        </g>
+      );
+    case 'trash':
+      return (
+        <g {...OUTLINE}>
+          <polyline points="4 7 20 7" />
+          <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          <path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" />
+        </g>
+      );
   }
 }
 

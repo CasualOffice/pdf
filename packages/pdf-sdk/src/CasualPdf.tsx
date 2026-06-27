@@ -16,6 +16,9 @@ import { SearchPluginPackage } from '@embedpdf/plugin-search/react';
 import { SelectionPluginPackage } from '@embedpdf/plugin-selection/react';
 import { ThumbnailPluginPackage } from '@embedpdf/plugin-thumbnail/react';
 import { BookmarkPluginPackage } from '@embedpdf/plugin-bookmark/react';
+import { AnnotationPluginPackage } from '@embedpdf/plugin-annotation/react';
+import { HistoryPluginPackage } from '@embedpdf/plugin-history/react';
+import { ExportPluginPackage } from '@embedpdf/plugin-export/react';
 import { TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
 import { Viewer } from './ui/chrome';
 import './ui/viewer.css';
@@ -32,7 +35,7 @@ import type { CasualPdfProps } from './modes';
  * plugins, driven by the floating toolbar in ./ui/chrome. The annotation
  * overlay, suggest-mode review, and collab binding layer on in Phases 2–3.
  */
-export function CasualPdf({ src, mode = 'view', onModeChange, className, style }: CasualPdfProps) {
+export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className, style }: CasualPdfProps) {
   const { engine, isLoading, error } = usePdfiumEngine();
 
   const plugins = useMemo(
@@ -54,6 +57,9 @@ export function CasualPdf({ src, mode = 'view', onModeChange, className, style }
       createPluginRegistration(SelectionPluginPackage),
       createPluginRegistration(ThumbnailPluginPackage),
       createPluginRegistration(BookmarkPluginPackage),
+      createPluginRegistration(HistoryPluginPackage),
+      createPluginRegistration(AnnotationPluginPackage),
+      createPluginRegistration(ExportPluginPackage),
     ],
     [src],
   );
@@ -87,7 +93,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, className, style }
             <DocumentContent documentId={activeDocumentId}>
               {({ isLoaded }) =>
                 isLoaded ? (
-                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} />
+                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} />
                 ) : (
                   <div className="cpdf__status">
                     <span className="cpdf__spinner" aria-hidden="true" />
