@@ -13,13 +13,15 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 - [x] **UX-F1** web-vs-native render-diff harness stood up (`tools/render-parity/`) + CI job — web (PDFium-WASM) vs native (pdfium-render) on a fixture page **diff 0.217%**, well under the 2% threshold (residual is glyph-edge antialiasing only).
 **Gates:** UX-P1, UX-P2 (basic) ✅ (render + scroll); **UX-F1 ✅ passing**. Zoom/search → Phase 1.
 
-## Phase 1 — Production viewer
+## Phase 1 — Production viewer (in progress)
 **Goal:** a viewer that beats OSS baselines on polish.
-- Virtualized rendering, fit modes, rotate, thumbnails, outline/bookmarks, search+selection, continuous & page modes.
-- Toolbar + responsive layout via design-system; light/dark.
-- Desktop integration MVP: add `DocKind::Pdf` to shell, `desk-bridge-bootstrap`, open `.pdf` from disk, native print-to-PDF export.
+- [x] Virtualized rendering (EmbedPDF scroll + tiling), fit modes (fit-width/fit-page), zoom, rotate, page nav, two-page spread, pan, fullscreen, thumbnails, text search + highlights, text selection — all wired via EmbedPDF plugins in `packages/pdf-sdk` and driven by a floating toolbar (`src/ui/chrome.tsx`).
+- [x] Toolbar + responsive layout via design-system tokens; light/dark; SVG icons (filled = active) + WCAG 2.2 (aria-labels, `aria-pressed`, visible focus, ≥36px targets).
+- [ ] Outline/bookmarks panel (plugin registered-ready; `getBookmarks` Task → tree UI still to build).
+- [ ] Continuous vs single-page scroll-mode toggle (scroll strategy/spread refinement).
+- [ ] Desktop integration MVP: add `DocKind::Pdf` to shell, `desk-bridge-bootstrap`, open `.pdf` from disk, native print-to-PDF export. *(Lives in the separate `services/desktop` repo.)*
 **Reuse:** EmbedPDF, design-system, desktop shell.
-**Gates:** UX-P1..P5, UX-I2, UX-I6, UX-F1, UX-F3.
+**Gates:** UX-P1..P5, UX-I2, UX-I6, UX-F1, UX-F3. *(UX-F1 ✅ kept green; UX-P/I verified by headless drive: 4-page nav, zoom→140%, search 19 matches, thumbnails, light/dark.)*
 
 ## Phase 2 — Annotation editor (single-user)
 **Goal:** Tier-1 editing, Apryse-class feel.

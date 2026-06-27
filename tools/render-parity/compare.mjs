@@ -4,7 +4,7 @@
 // fidelity divergence is not). Exits non-zero if over threshold.
 //
 // Usage: node compare.mjs <a.png> <b.png> <diff.png> [maxRatio]
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import sharp from 'sharp';
@@ -17,14 +17,15 @@ if (!aPath || !bPath || !diffPath) {
   process.exit(2);
 }
 
-// Normalise to A's dimensions so a width/DPR mismatch doesn't dominate the diff.
-const a = PNG.sync.read(readFileSync(aPath));
-const { width, height } = a;
-const bResized = await sharp(bPath).resize(width, height, { fit: 'fill' }).png().toBuffer();
-const b = PNG.sync.read(bResized);
+// Decode both via sharp (format-agnostic — the web side is a raw engine blob)
+// and normalise B to A's pixel grid so a width/DPR mismatch doesn't dominate.
+const meta = await sharp(aPath).metadata();
+const { width, height } = meta;
+const a = await sharp(aPath).ensureAlpha().raw().toBuffer();
+const b = await sharp(bPath).resize(width, height, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
 
 const diff = new PNG({ width, height });
-const mismatched = pixelmatch(a.data, b.data, diff.data, width, height, {
+const mismatched = pixelmatch(a, b, diff.data, width, height, {
   threshold: 0.1,
   includeAA: false,
 });

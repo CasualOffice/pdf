@@ -2,13 +2,22 @@ import { useMemo } from 'react';
 import { createPluginRegistration } from '@embedpdf/core';
 import { EmbedPDF } from '@embedpdf/core/react';
 import { usePdfiumEngine } from '@embedpdf/engines/react';
-import { Viewport, ViewportPluginPackage } from '@embedpdf/plugin-viewport/react';
-import { Scroller, ScrollPluginPackage } from '@embedpdf/plugin-scroll/react';
-import {
-  DocumentContent,
-  DocumentManagerPluginPackage,
-} from '@embedpdf/plugin-document-manager/react';
-import { RenderLayer, RenderPluginPackage } from '@embedpdf/plugin-render/react';
+import { ViewportPluginPackage } from '@embedpdf/plugin-viewport/react';
+import { ScrollPluginPackage } from '@embedpdf/plugin-scroll/react';
+import { DocumentManagerPluginPackage, DocumentContent } from '@embedpdf/plugin-document-manager/react';
+import { RenderPluginPackage } from '@embedpdf/plugin-render/react';
+import { InteractionManagerPluginPackage } from '@embedpdf/plugin-interaction-manager/react';
+import { ZoomPluginPackage } from '@embedpdf/plugin-zoom/react';
+import { RotatePluginPackage } from '@embedpdf/plugin-rotate/react';
+import { SpreadPluginPackage } from '@embedpdf/plugin-spread/react';
+import { FullscreenPluginPackage } from '@embedpdf/plugin-fullscreen/react';
+import { PanPluginPackage } from '@embedpdf/plugin-pan/react';
+import { SearchPluginPackage } from '@embedpdf/plugin-search/react';
+import { SelectionPluginPackage } from '@embedpdf/plugin-selection/react';
+import { ThumbnailPluginPackage } from '@embedpdf/plugin-thumbnail/react';
+import { TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
+import { Viewer } from './ui/chrome';
+import './ui/viewer.css';
 import type { CasualPdfProps } from './modes';
 
 /**
@@ -16,12 +25,14 @@ import type { CasualPdfProps } from './modes';
  * the web app, the desktop shell, and third-party embeds; `mode` and `collab`
  * are runtime flags on this one core (docs/ARCHITECTURE.md §2b).
  *
- * Phase 0 wires the PDFium-WASM viewer (render / virtualized scroll / zoom).
- * The annotation overlay, suggest-mode review, and collab binding layer onto
- * this in Phases 2–3 via the model + collab modules.
+ * Phase 1 layers the production viewer onto the PDFium-WASM engine: virtualized
+ * scroll + tiling, zoom / fit modes, rotate, page nav, two-page spread, text
+ * search + selection, thumbnails, pan, and fullscreen — all via EmbedPDF
+ * plugins, driven by the floating toolbar in ./ui/chrome. The annotation
+ * overlay, suggest-mode review, and collab binding layer on in Phases 2–3.
  */
 export function CasualPdf({ src, mode = 'view', className, style }: CasualPdfProps) {
-  const { engine, isLoading } = usePdfiumEngine();
+  const { engine, isLoading, error } = usePdfiumEngine();
 
   const plugins = useMemo(
     () => [
@@ -31,14 +42,34 @@ export function CasualPdf({ src, mode = 'view', className, style }: CasualPdfPro
       createPluginRegistration(ViewportPluginPackage),
       createPluginRegistration(ScrollPluginPackage),
       createPluginRegistration(RenderPluginPackage),
+      createPluginRegistration(TilingPluginPackage),
+      createPluginRegistration(InteractionManagerPluginPackage),
+      createPluginRegistration(ZoomPluginPackage),
+      createPluginRegistration(RotatePluginPackage),
+      createPluginRegistration(SpreadPluginPackage),
+      createPluginRegistration(FullscreenPluginPackage),
+      createPluginRegistration(PanPluginPackage),
+      createPluginRegistration(SearchPluginPackage),
+      createPluginRegistration(SelectionPluginPackage),
+      createPluginRegistration(ThumbnailPluginPackage),
     ],
     [src],
   );
 
+  if (error) {
+    return (
+      <div className={className} style={style} data-casual-pdf-mode={mode}>
+        <div className="cpdf__status" role="alert">
+          Could not load the PDF engine.
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading || !engine) {
     return (
       <div className={className} style={style} data-casual-pdf-mode={mode}>
-        Loading PDF engine…
+        <div className="cpdf__status">Loading PDF engine…</div>
       </div>
     );
   }
@@ -51,20 +82,15 @@ export function CasualPdf({ src, mode = 'view', className, style }: CasualPdfPro
             <DocumentContent documentId={activeDocumentId}>
               {({ isLoaded }) =>
                 isLoaded ? (
-                  <Viewport documentId={activeDocumentId}>
-                    <Scroller
-                      documentId={activeDocumentId}
-                      renderPage={({ width, height, pageIndex }) => (
-                        <div style={{ width, height }}>
-                          <RenderLayer documentId={activeDocumentId} pageIndex={pageIndex} />
-                        </div>
-                      )}
-                    />
-                  </Viewport>
-                ) : null
+                  <Viewer documentId={activeDocumentId} />
+                ) : (
+                  <div className="cpdf__status">Loading document…</div>
+                )
               }
             </DocumentContent>
-          ) : null
+          ) : (
+            <div className="cpdf__status">No document</div>
+          )
         }
       </EmbedPDF>
     </div>
