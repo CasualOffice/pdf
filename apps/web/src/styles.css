@@ -220,7 +220,7 @@ body {
   flex: 1;
 }
 .menubar__item-sc {
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-secondary, #555);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -269,7 +269,7 @@ body {
 }
 .dialog__shortcuts {
   margin: 0 0 18px;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-secondary, #555);
   font: 400 12px/1.5 var(--font-sans, system-ui, sans-serif);
 }
 .dialog__close {
