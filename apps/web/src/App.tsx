@@ -181,7 +181,7 @@ export function App() {
               e-signing, and granular rights.
             </p>
             <p className="dialog__shortcuts">
-              <strong>Shortcuts</strong> — Open ⌘O · Save ⌘S · Find (top-right) · Tools: V H D T N R O A
+              <strong>Shortcuts</strong> — Open ⌘O · Save ⌘S · Undo ⌘Z · Redo ⌘⇧Z · Find (top-right) · Tools: V H D T N R O A
             </p>
             <button type="button" className="dialog__close" onClick={() => setAbout(false)}>
               Close

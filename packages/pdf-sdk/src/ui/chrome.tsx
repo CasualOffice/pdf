@@ -594,6 +594,18 @@ export function Viewer({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      // Undo / redo (⌘/Ctrl+Z, ⇧ for redo; Ctrl+Y also redoes).
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) history?.redo();
+        else history?.undo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        history?.redo();
+        return;
+      }
       // Duplicate selection (⌘/Ctrl+D) — imported copies are re-id'd by the plugin.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         const sel = annoApi?.getSelectedAnnotations() ?? [];
@@ -622,7 +634,7 @@ export function Viewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editing, annoApi]);
+  }, [editing, annoApi, history]);
 
   return (
     <AnnotationRendererProvider>
