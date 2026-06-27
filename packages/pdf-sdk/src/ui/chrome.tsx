@@ -23,7 +23,12 @@ import { SelectionLayer } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
 import { useBookmarkCapability } from '@embedpdf/plugin-bookmark/react';
 import { PagePointerProvider } from '@embedpdf/plugin-interaction-manager/react';
-import { useAnnotation, AnnotationLayer, AnnotationRendererProvider } from '@embedpdf/plugin-annotation/react';
+import {
+  useAnnotation,
+  useAnnotationCapability,
+  AnnotationLayer,
+  AnnotationRendererProvider,
+} from '@embedpdf/plugin-annotation/react';
 import { useHistoryCapability } from '@embedpdf/plugin-history/react';
 import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { IconButton } from './IconButton';
@@ -360,6 +365,83 @@ function ThumbnailSidebar({ documentId, onClose }: { documentId: string; onClose
   );
 }
 
+/** Contextual annotation property bar — color + stroke width. Shows when a tool
+ *  is active or annotation(s) are selected. */
+const PALETTE = ['#1f2430', '#e8453c', '#f5a623', '#2bb673', '#2d8cff', '#8b5cf6'];
+const STROKE_WIDTHS = [1, 2, 4];
+const STROKE_TOOLS = new Set(['ink', 'inkHighlighter', 'line', 'lineArrow', 'square', 'circle', 'polygon', 'polyline']);
+const patchFor = (toolId: string | undefined, color: string) =>
+  toolId && STROKE_TOOLS.has(toolId) ? { strokeColor: color } : { color };
+const norm = (c?: string) => (c ?? '').toLowerCase();
+
+function PropertyBar({ documentId }: { documentId: string }) {
+  const { provides: cap } = useAnnotationCapability();
+  const { state: anno, provides: scope } = useAnnotation(documentId);
+  const activeToolId = anno?.activeToolId ?? null;
+  const selected = scope?.getSelectedAnnotations() ?? [];
+  if (!activeToolId && selected.length === 0) return null;
+
+  const firstObj = selected[0]?.object as { color?: string; strokeColor?: string; type?: number } | undefined;
+  const toolDefaults = activeToolId ? (cap?.getTool(activeToolId)?.defaults as Record<string, unknown> | undefined) : undefined;
+  const currentColor = norm(
+    firstObj?.strokeColor ?? firstObj?.color ?? (toolDefaults?.strokeColor as string) ?? (toolDefaults?.color as string),
+  );
+
+  const widthRelevant =
+    (activeToolId !== null && STROKE_TOOLS.has(activeToolId)) ||
+    selected.some((a) => STROKE_TOOLS.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
+
+  const applyColor = (color: string) => {
+    if (selected.length && scope) {
+      scope.updateAnnotations(
+        selected.map((a) => ({
+          pageIndex: a.object.pageIndex,
+          id: a.object.id,
+          patch: patchFor(scope.findToolForAnnotation(a.object)?.id, color),
+        })),
+      );
+    } else if (activeToolId && cap) {
+      cap.setToolDefaults(activeToolId, patchFor(activeToolId, color));
+    }
+  };
+  const applyWidth = (w: number) => {
+    if (selected.length && scope) {
+      scope.updateAnnotations(selected.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id, patch: { strokeWidth: w } })));
+    } else if (activeToolId && cap) {
+      cap.setToolDefaults(activeToolId, { strokeWidth: w });
+    }
+  };
+
+  return (
+    <div className="cpdf__propbar" role="toolbar" aria-label="Annotation properties">
+      <span className="cpdf__prop-label">Color</span>
+      {PALETTE.map((c) => (
+        <button
+          key={c}
+          type="button"
+          className="cpdf__swatch"
+          data-active={norm(c) === currentColor ? 'true' : undefined}
+          style={{ background: c }}
+          aria-label={`Color ${c}`}
+          aria-pressed={norm(c) === currentColor}
+          onClick={() => applyColor(c)}
+        />
+      ))}
+      {widthRelevant && (
+        <>
+          <span className="cpdf__sep" aria-hidden="true" />
+          <span className="cpdf__prop-label">Width</span>
+          {STROKE_WIDTHS.map((w) => (
+            <button key={w} type="button" className="cpdf__wbtn" aria-label={`Stroke width ${w}`} onClick={() => applyWidth(w)}>
+              <span style={{ height: w }} />
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Document outline / bookmarks. Fetched async via the bookmark plugin. */
 function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: () => void }) {
   const { provides } = useBookmarkCapability();
@@ -478,6 +560,7 @@ export function Viewer({
         leftPanel={leftPanel}
         onToggleLeft={toggleLeft}
       />
+      {mode !== 'view' && <PropertyBar documentId={documentId} />}
       <div className="cpdf__body">
         {leftPanel === 'thumbs' && (
           <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />
