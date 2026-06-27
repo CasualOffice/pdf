@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
       - name: Markdown lint
-        run: npx --yes markdownlint-cli2 "**/*.md" "#node_modules"
+        run: npx --yes markdownlint-cli2 "**/*.md" "#node_modules" "#vendor"
       - name: Check local doc links
         run: bash scripts/check-links.sh
 
@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive # vendor/design-system (link: override) must be present for install
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

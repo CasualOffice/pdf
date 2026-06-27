@@ -40,8 +40,8 @@ One engine → identical rendering fidelity everywhere, one set of bugs, one men
 
 ## CI & deployment
 
-- **CI** (`.github/workflows/ci.yml`): markdown lint + link check now; web (lint/typecheck/build/test) and Rust (`fmt`/`clippy`/`test`/wasm) pipelines auto-activate once `apps/web/` and `crates/` land.
-- **Deploy** (`.github/workflows/deploy-pages.yml`): GitHub Pages, **manual until Phase 1**. To go live: enable Pages (Source: GitHub Actions), set repo variable `PAGES_CUSTOM_DOMAIN` (writes `CNAME`), point DNS, and uncomment the `push:` trigger. See [`docs/OVERVIEW.md`](docs/OVERVIEW.md#ci--deployment).
+- **CI** (`.github/workflows/ci.yml`): markdown lint + link check, plus the web (lint/typecheck/build/test) and Rust (`fmt`/`clippy`/`test`/wasm) pipelines — all active as of the Phase 0 scaffold. The web checkout fetches submodules so `vendor/design-system` is present for install.
+- **Deploy** (`.github/workflows/deploy-pages.yml`): **live on push to `main`** → [pdf.casualoffice.org](https://pdf.casualoffice.org). Pages Source = GitHub Actions, repo variable `PAGES_CUSTOM_DOMAIN=pdf.casualoffice.org` (writes `CNAME`), DNS pointed, Enforce HTTPS. See [`docs/OVERVIEW.md`](docs/OVERVIEW.md#ci--deployment).
 
 ## License
 

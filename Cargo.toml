@@ -1,0 +1,8 @@
+# Cargo workspace root. The heavy PDF engine lives in crates/casual-pdf-core and
+# compiles to both native (desktop/Tauri) and wasm32 (browser worker) — see that
+# crate's Cargo.toml. Declaring the workspace here lets `cargo <cmd> -p
+# casual-pdf-core` run from the repo root and gives every member one shared
+# target/ and lockfile.
+[workspace]
+members = ["crates/*"]
+resolver = "2"

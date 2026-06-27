@@ -1,0 +1,19 @@
+{
+  "name": "casual-pdf",
+  "private": true,
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "dev": "pnpm --filter @casual-pdf/web dev",
+    "build": "pnpm -r build",
+    "build:web": "pnpm --filter @casual-pdf/web build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@schnsrw/design-system": "link:vendor/design-system"
+    }
+  }
+}

@@ -19,7 +19,7 @@ while IFS= read -r file; do
       broken=1
     fi
   done < <(grep -oE '\]\([^)]+\)' "$file" | sed -E 's/^\]\(//; s/\)$//')
-done < <(find . -name '*.md' -not -path './node_modules/*')
+done < <(find . -name '*.md' -not -path './node_modules/*' -not -path './vendor/*')
 
 if [ "$broken" -ne 0 ]; then
   echo "Found broken local links." >&2

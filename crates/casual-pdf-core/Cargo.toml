@@ -1,0 +1,22 @@
+[package]
+name = "casual-pdf-core"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Shared PDF engine (PDFium) for Casual PDF — one crate, native (desktop) + wasm (browser worker) targets."
+publish = false
+
+[lib]
+# rlib: linked natively into the Tauri desktop shell.
+# cdylib: built to wasm32 for the browser worker (and a C ABI on desktop if needed).
+crate-type = ["cdylib", "rlib"]
+
+# PDFium binding lives on native targets for Phase 0. The browser gets the same
+# engine via PDFium-WASM (EmbedPDF) today; wiring this crate's own pdfium calls
+# through a wasm PDFium build is the immediate Phase 0.5 step (see src/lib.rs).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pdfium-render = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"

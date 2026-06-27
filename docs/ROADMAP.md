@@ -6,11 +6,12 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 
 ## Phase 0 — Scaffold & spike (foundation)
 **Goal:** prove the engine + the reuse points before committing to UX.
-- Scaffold repo (mirror `document`/`sheet`): `apps/web` (Vite+React+TS), `packages/pdf-sdk`, `crates/casual-pdf-core`, `CLAUDE.md`, pnpm workspace.
-- Spike EmbedPDF: render a PDF in React, virtualized scroll, zoom, text search.
-- Spike `casual-pdf-core`: PDFium via `pdfium-render` → render a page tile **both** native and `wasm32`. Confirm one crate, two targets.
-- Wire `@schnsrw/design-system` (tokens + a Button) to confirm UI baseline.
-**Gates:** UX-P1, UX-P2 (basic), UX-F1 (web vs native render diff harness stood up).
+- [x] Scaffold repo (mirror `document`/`sheet`): `apps/web` (Vite+React+TS), `packages/pdf-sdk`, `crates/casual-pdf-core`, `CLAUDE.md`, pnpm workspace + root Cargo workspace.
+- [x] EmbedPDF wired in React (PDFium-WASM viewer: render/scroll plugins) — **compiles & bundles** `pdfium.wasm` + worker engine. *Runtime render + virtualized scroll/zoom/text search still to confirm in a browser (UX-P1/P2).*
+- [x] `casual-pdf-core`: PDFium via `pdfium-render` (native render + page-count) compiling to **both** `wasm32` + native — one crate, two targets, confirmed by `cargo build`/check on each.
+- [x] Wire `@schnsrw/design-system` (tokens + `Button`) — `vendor/` submodule + `link:` override; App toolbar uses it.
+- [ ] **UX-F1** web-vs-native render-diff (screenshot) harness — still to stand up.
+**Gates:** UX-P1, UX-P2 (basic) — build/bundle proven, runtime render pending; UX-F1 harness pending.
 
 ## Phase 1 — Production viewer
 **Goal:** a viewer that beats OSS baselines on polish.
@@ -57,7 +58,7 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 
 ## Phase 6 — Polish, embed, hardening
 **Goal:** ship quality.
-- Publish `@casualoffice/pdf` SDK with subpath exports (`/viewer`, `/collab`, `/embed`) — embed in `drive`/`site`.
+- Publish `@casualoffice/pdf` SDK with subpath exports (`/viewer`, `/collab`, `/embed`) — embed in `drive`/`site`. Before publishing: emit a real `dist` (e.g. tsup) and move `yjs` + `@hocuspocus/provider` to `peerDependencies` (optional) so a host embedding the SDK can't end up with a duplicate Yjs (CRDT identity breaks). Phase 0 keeps them as direct deps since the SDK is consumed as workspace source.
 - Performance budgets in CI; screenshot-diff (UX-F1); Acrobat-validation fixture (UX-S2); text-extract redaction test (UX-S5).
 - Accessibility, keyboard map, i18n, error/empty states.
 **Gates:** all UX-* gates green in CI.

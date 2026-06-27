@@ -62,6 +62,8 @@ UI (React 18 + Vite + TS, @schnsrw/design-system)
 
 ## Status (2026-06-27)
 
-- **Planning complete.** README + `docs/{RESEARCH,BENCHMARK,ARCHITECTURE,FEATURES,ROADMAP}.md` written. No code yet.
+- **Planning complete.** README + `docs/{RESEARCH,BENCHMARK,ARCHITECTURE,FEATURES,ROADMAP,OVERVIEW}.md` written.
 - **Decisions locked** (see above): PDFium-everywhere, CRDT-overlay, reuse collab/desktop/design-system, standalone repo, v1 = Tier 1.
-- **Next:** Phase 0 scaffold + EmbedPDF spike + `casual-pdf-core` native/wasm render spike + screenshot-diff harness (see `docs/ROADMAP.md`).
+- **Phase 0 scaffold built & verified.** `apps/web` (Vite+React+TS), `packages/pdf-sdk` (`@casualoffice/pdf`), `crates/casual-pdf-core` are in place. Verified green: JS typecheck + web build (bundles real **PDFium-WASM** via EmbedPDF — engine spike compiles & bundles), Rust `fmt`/`clippy -D warnings`/`test`, and **one crate → both `wasm32` + native** targets. `@schnsrw/design-system` wired as a `vendor/` git submodule (`link:` pnpm override, like `sheet`); App toolbar uses its `Button` + `tokens.css`. Deploy is **live on push to `main`** at **pdf.casualoffice.org** (repo var `PAGES_CUSTOM_DOMAIN` set; CI checkout fetches submodules).
+- **Deferred (tracked in ROADMAP):** runtime EmbedPDF render verification + screenshot-diff harness for **UX-F1**; SDK `peerDependencies` for `yjs`/`@hocuspocus/provider` + `/viewer`,`/collab`,`/embed` subpath exports (Phase 6 publish); collab `signer` role + write-gating (Phase 3/4); desktop `DocKind::Pdf` + `copy-editors.sh` `/pdf` (Phase 1).
+- **Next:** finish Phase 0 gates (UX-P1/P2 runtime render, UX-F1 render-diff harness), then Phase 1 viewer.

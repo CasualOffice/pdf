@@ -1,14 +1,13 @@
 name: Deploy (GitHub Pages)
 
-# Manual-only until Phase 1. After Phase 1, to enable auto-deploy on merge:
-#   1. Repo Settings -> Pages -> Source: GitHub Actions
-#   2. Set repo variable PAGES_CUSTOM_DOMAIN to your domain (writes CNAME below)
-#   3. Point DNS (CNAME -> casualoffice.github.io) and enable Enforce HTTPS
-#   4. Uncomment the `push:` trigger below
+# Auto-deploys to pdf.casualoffice.org on push to main.
+# Prereqs (done 2026-06-27): Pages Source = GitHub Actions; repo variable
+# PAGES_CUSTOM_DOMAIN = pdf.casualoffice.org (writes CNAME below); DNS CNAME ->
+# casualoffice.github.io with Enforce HTTPS.
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -26,6 +25,8 @@ jobs:
     if: ${{ hashFiles('apps/web/package.json') != '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive # vendor/design-system (link: override) must be present for install
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

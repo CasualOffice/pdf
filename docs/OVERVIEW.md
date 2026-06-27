@@ -80,12 +80,11 @@ Mode and collab are **independent runtime flags**, not separate builds. Full det
 
 - **CI** (`.github/workflows/ci.yml`) runs on every push/PR to `main`:
   - **docs** — markdown lint + relative-link check (active now).
-  - **web** — install / lint / typecheck / build / test (auto-activates when `apps/web/` lands).
-  - **rust** — `fmt` / `clippy -D warnings` / `test` / `wasm32` build (auto-activates when `crates/` lands).
+  - **web** — install / lint / typecheck / build / test (active since Phase 0). Checkout uses `submodules: recursive` so `vendor/design-system` (consumed via the `link:` override) is present for install.
+  - **rust** — `fmt` / `clippy -D warnings` / `test` / `wasm32` build (active since Phase 0).
   - Each future feature must also pass its referenced **UX-\*** gate from [`BENCHMARK.md`](./BENCHMARK.md).
-- **Deploy** (`.github/workflows/deploy-pages.yml`) → GitHub Pages. **Manual-only (`workflow_dispatch`) until Phase 1.** To go live after Phase 1:
+- **Deploy** (`.github/workflows/deploy-pages.yml`) → GitHub Pages, **live on push to `main`** at [pdf.casualoffice.org](https://pdf.casualoffice.org). Configured 2026-06-27:
   1. Repo **Settings → Pages → Source: GitHub Actions**.
-  2. Set repo variable **`PAGES_CUSTOM_DOMAIN`** to your domain → the workflow writes a `CNAME` so DNS/SSL bind automatically.
-  3. Point the domain's DNS (CNAME → `casualoffice.github.io`, or A/AAAA to GitHub Pages IPs) and enable **Enforce HTTPS**.
-  4. Uncomment the `push:` trigger in `deploy-pages.yml` for auto-deploy on merge.
-  - Set the Vite `base` to `/` for a custom domain (or `/pdf/` for the default `*.github.io/pdf` path).
+  2. Repo variable **`PAGES_CUSTOM_DOMAIN` = `pdf.casualoffice.org`** → the workflow writes a `CNAME` so DNS/SSL bind automatically.
+  3. DNS CNAME → `casualoffice.github.io` (or A/AAAA to GitHub Pages IPs); **Enforce HTTPS** enabled.
+  - The custom domain serves at root, so Vite `base` stays `/` (set `PAGES_BASE=/pdf/` only for the default `*.github.io/pdf` path).
