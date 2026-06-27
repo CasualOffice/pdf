@@ -1,0 +1,19 @@
+{
+  "name": "@casual-pdf/render-parity",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "UX-F1 render-parity harness: diff web (PDFium-WASM) vs native (pdfium-render) page renders.",
+  "scripts": {
+    "gen-fixture": "node gen-fixture.mjs",
+    "render-web": "node render-web.mjs",
+    "compare": "node compare.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pixelmatch": "^6.0.0",
+    "playwright-core": "^1.49.1",
+    "pngjs": "^7.0.0",
+    "sharp": "^0.33.5"
+  }
+}

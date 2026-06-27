@@ -7,6 +7,10 @@ build/
 target/
 *.wasm
 
+# Render-parity harness artifacts (keep fixtures/, drop renders + libs)
+tools/render-parity/out/
+tools/render-parity/libpdfium.*
+
 # Rust
 crates/**/target/
 

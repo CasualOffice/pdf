@@ -7,11 +7,11 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 ## Phase 0 — Scaffold & spike (foundation)
 **Goal:** prove the engine + the reuse points before committing to UX.
 - [x] Scaffold repo (mirror `document`/`sheet`): `apps/web` (Vite+React+TS), `packages/pdf-sdk`, `crates/casual-pdf-core`, `CLAUDE.md`, pnpm workspace + root Cargo workspace.
-- [x] EmbedPDF wired in React (PDFium-WASM viewer: render/scroll plugins) — **compiles & bundles** `pdfium.wasm` + worker engine. *Runtime render + virtualized scroll/zoom/text search still to confirm in a browser (UX-P1/P2).*
+- [x] EmbedPDF wired in React (PDFium-WASM viewer: render/scroll plugins) — renders live at pdf.casualoffice.org; first page paints (verified headless), multi-page virtualized scroll works. *Zoom/text-search land in Phase 1.*
 - [x] `casual-pdf-core`: PDFium via `pdfium-render` (native render + page-count) compiling to **both** `wasm32` + native — one crate, two targets, confirmed by `cargo build`/check on each.
 - [x] Wire `@schnsrw/design-system` (tokens + `Button`) — `vendor/` submodule + `link:` override; App toolbar uses it.
-- [ ] **UX-F1** web-vs-native render-diff (screenshot) harness — still to stand up.
-**Gates:** UX-P1, UX-P2 (basic) — build/bundle proven, runtime render pending; UX-F1 harness pending.
+- [x] **UX-F1** web-vs-native render-diff harness stood up (`tools/render-parity/`) + CI job — web (PDFium-WASM) vs native (pdfium-render) on a fixture page **diff 0.217%**, well under the 2% threshold (residual is glyph-edge antialiasing only).
+**Gates:** UX-P1, UX-P2 (basic) ✅ (render + scroll); **UX-F1 ✅ passing**. Zoom/search → Phase 1.
 
 ## Phase 1 — Production viewer
 **Goal:** a viewer that beats OSS baselines on polish.

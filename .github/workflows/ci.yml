@@ -80,3 +80,42 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-features
       - run: cargo build --target wasm32-unknown-unknown
+
+  # UX-F1 render parity: a page rendered by web PDFium-WASM (EmbedPDF) must match
+  # the same page rendered by native pdfium-render. Activates once both the web
+  # app and the crate exist.
+  render-parity:
+    needs: detect
+    if: needs.detect.outputs.has_web == 'true' && needs.detect.outputs.has_rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # vendor/design-system needed to build apps/web
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - name: Fetch PDFium (native engine)
+        run: |
+          curl -sSL -o /tmp/pdfium.tgz \
+            https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
+          mkdir -p /tmp/pdfium && tar xzf /tmp/pdfium.tgz -C /tmp/pdfium
+          cp /tmp/pdfium/lib/libpdfium.so tools/render-parity/libpdfium.so
+      - name: Install harness deps + Chromium
+        working-directory: tools/render-parity
+        run: |
+          npm install
+          npx --yes playwright@1.49 install chromium
+      - name: Run render-parity (UX-F1)
+        working-directory: tools/render-parity
+        run: ./run.sh
+      - name: Upload renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-parity
+          path: tools/render-parity/out/
