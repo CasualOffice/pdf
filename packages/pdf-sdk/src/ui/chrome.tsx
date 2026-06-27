@@ -552,6 +552,7 @@ export function Viewer({
   const toggleLeft = (p: 'thumbs' | 'outline') => setLeftPanel((cur) => (cur === p ? null : p));
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
+  const { provides: annoCap } = useAnnotationCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
   const { state: fs } = useFullscreen();
@@ -634,6 +635,30 @@ export function Viewer({
           e.preventDefault();
           annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
         }
+      } else if (e.key.startsWith('Arrow')) {
+        // Nudge the selection: arrows move by 1pt, Shift+arrow by 10pt.
+        // transformAnnotation builds a type-correct patch (rect + vertices/ink).
+        const sel = annoApi?.getSelectedAnnotations() ?? [];
+        const delta: Record<string, [number, number]> = {
+          ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+        };
+        const d = delta[e.key];
+        if (annoApi && annoCap && sel.length && d) {
+          e.preventDefault();
+          const step = e.shiftKey ? 10 : 1;
+          const [dx, dy] = [d[0] * step, d[1] * step];
+          annoApi.updateAnnotations(
+            sel.map((a) => {
+              const r = a.object.rect;
+              const rect = { origin: { x: r.origin.x + dx, y: r.origin.y + dy }, size: r.size };
+              return {
+                pageIndex: a.object.pageIndex,
+                id: a.object.id,
+                patch: annoCap.transformAnnotation(a.object, { type: 'move', changes: { rect } }),
+              };
+            }),
+          );
+        }
       } else if (e.key.toLowerCase() === 'v') {
         annoApi?.setActiveTool(null);
       } else {
@@ -643,7 +668,7 @@ export function Viewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editing, annoApi, history]);
+  }, [editing, annoApi, annoCap, history]);
 
   return (
     <AnnotationRendererProvider>
