@@ -759,7 +759,9 @@ export function Viewer({
                 documentId={documentId}
                 renderPage={({ width, height, pageIndex }) => (
                   <PagePointerProvider documentId={documentId} pageIndex={pageIndex} className="cpdf__page" style={{ width, height, position: 'relative' }}>
-                    <RenderLayer documentId={documentId} pageIndex={pageIndex} />
+                    {/* EmbedPDF types RenderLayer props as HTMLAttributes (no `alt`),
+                        so name the rendered page image via aria-label for WCAG image-alt. */}
+                    <RenderLayer documentId={documentId} pageIndex={pageIndex} aria-label={`Page ${pageIndex + 1}`} />
                     <SearchLayer documentId={documentId} pageIndex={pageIndex} />
                     {/* Text selection is needed in View mode (read/copy) and when a
                         text-markup tool is active (highlight/underline/… select text
