@@ -361,12 +361,68 @@
 .cpdf__pagetotal {
   color: var(--color-text-secondary, #555);
 }
+.cpdf__zoommenu {
+  position: relative;
+  display: inline-flex;
+}
 .cpdf__zoomlabel {
   min-width: 3.4em;
+  height: 30px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm, 8px);
   text-align: center;
   color: var(--color-text-secondary, #444);
   font: 500 12px/1 var(--font-sans, system-ui, sans-serif);
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.cpdf__zoomlabel:hover,
+.cpdf__zoomlabel[aria-expanded='true'] {
+  background: var(--color-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-text, #111);
+}
+.cpdf__zoomlabel:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 1px;
+}
+.cpdf__zoompop {
+  /* Portaled to <body>; left/bottom are set inline from the anchor rect. */
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  min-width: 92px;
+  background: var(--color-surface-raised, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.18));
+}
+.cpdf__zoomopt {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--color-text, #111);
+  font: 500 12px/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+}
+.cpdf__zoomopt:hover {
+  background: var(--color-hover, rgba(0, 0, 0, 0.06));
+}
+.cpdf__zoomopt[data-active='true'] {
+  background: var(--color-accent-soft, rgba(70, 90, 255, 0.14));
+  color: var(--color-accent, #4658ff);
+}
+.cpdf__zoomopt:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: -2px;
 }
 
 /* ── Find bar: floats top-center, clear of the rail and properties panel ──── */

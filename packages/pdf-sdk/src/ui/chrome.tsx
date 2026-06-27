@@ -10,6 +10,7 @@
  * hook and renders inside the <EmbedPDF> provider (see CasualPdf.tsx).
  */
 import { Fragment, useEffect, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Viewport } from '@embedpdf/plugin-viewport/react';
 import { Scroller } from '@embedpdf/plugin-scroll/react';
 import { RenderLayer } from '@embedpdf/plugin-render/react';
@@ -320,6 +321,80 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   );
 }
 
+/* ── Zoom-level preset menu (the % in the view bar) ───────────────────────── */
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 4];
+function ZoomMenu({ pct, zoomApi }: { pct: number; zoomApi: ReturnType<typeof useZoom>['provides'] }) {
+  const [open, setOpen] = useState(false);
+  // Anchor rect captured at open time. The popover is portaled to <body> so it
+  // escapes the view bar's `overflow-x:auto` clip + `transform` containing block.
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+  const toggle = () => {
+    if (!open && btnRef.current) setAnchor(btnRef.current.getBoundingClientRect());
+    setOpen((v) => !v);
+  };
+  const pick = (level: number) => {
+    zoomApi?.requestZoom(level);
+    setOpen(false);
+  };
+  return (
+    <div className="cpdf__zoommenu">
+      <button
+        ref={btnRef}
+        type="button"
+        className="cpdf__zoomlabel"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Zoom level"
+        onClick={toggle}
+      >
+        {pct}%
+      </button>
+      {open && anchor &&
+        createPortal(
+          <div
+            ref={popRef}
+            className="cpdf__zoompop"
+            role="menu"
+            aria-label="Zoom level"
+            style={{ left: anchor.left + anchor.width / 2, bottom: window.innerHeight - anchor.top + 8 }}
+          >
+            {ZOOM_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                role="menuitemradio"
+                aria-checked={Math.round(p * 100) === pct}
+                data-active={Math.round(p * 100) === pct ? 'true' : undefined}
+                className="cpdf__zoomopt"
+                onClick={() => pick(p)}
+              >
+                {Math.round(p * 100)}%
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
 /* ── Floating bottom view bar ─────────────────────────────────────────────── */
 function BottomBar({
   documentId,
@@ -369,7 +444,7 @@ function BottomBar({
       <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
         <IconButton icon="zoom-out" label="Zoom out" onClick={() => zoomApi?.zoomOut()} />
-        <span className="cpdf__zoomlabel">{pct}%</span>
+        <ZoomMenu pct={pct} zoomApi={zoomApi} />
         <IconButton icon="zoom-in" label="Zoom in" onClick={() => zoomApi?.zoomIn()} />
         <IconButton icon="fit-width" label="Fit width" active={zoom?.zoomLevel === ZoomMode.FitWidth} onClick={() => zoomApi?.requestZoom(ZoomMode.FitWidth)} />
         <IconButton icon="fit-page" label="Fit page" active={zoom?.zoomLevel === ZoomMode.FitPage} onClick={() => zoomApi?.requestZoom(ZoomMode.FitPage)} />
