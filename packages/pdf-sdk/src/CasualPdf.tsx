@@ -31,7 +31,7 @@ import type { CasualPdfProps } from './modes';
  * plugins, driven by the floating toolbar in ./ui/chrome. The annotation
  * overlay, suggest-mode review, and collab binding layer on in Phases 2–3.
  */
-export function CasualPdf({ src, mode = 'view', className, style }: CasualPdfProps) {
+export function CasualPdf({ src, mode = 'view', onModeChange, className, style }: CasualPdfProps) {
   const { engine, isLoading, error } = usePdfiumEngine();
 
   const plugins = useMemo(
@@ -82,7 +82,7 @@ export function CasualPdf({ src, mode = 'view', className, style }: CasualPdfPro
             <DocumentContent documentId={activeDocumentId}>
               {({ isLoaded }) =>
                 isLoaded ? (
-                  <Viewer documentId={activeDocumentId} />
+                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} />
                 ) : (
                   <div className="cpdf__status">Loading document…</div>
                 )

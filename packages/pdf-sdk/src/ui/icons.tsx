@@ -24,7 +24,12 @@ export type IconName =
   | 'spread'
   | 'sun'
   | 'moon'
-  | 'close';
+  | 'close'
+  | 'eye'
+  | 'pencil'
+  | 'suggest'
+  | 'chevron-down'
+  | 'check';
 
 interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: IconName;
@@ -189,6 +194,45 @@ function paths(name: IconName, filled: boolean) {
           <line x1="18" y1="6" x2="6" y2="18" />
         </g>
       );
+    case 'eye':
+      return filled ? (
+        <g>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" {...SOLID} />
+          <circle cx="12" cy="12" r="2.6" fill="var(--color-surface-raised, #fff)" />
+        </g>
+      ) : (
+        <g {...OUTLINE}>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+          <circle cx="12" cy="12" r="3" />
+        </g>
+      );
+    case 'pencil':
+      return filled ? (
+        <path d="M14.8 4.9 19.1 9.2 8.3 20H4v-4.3zM16.2 3.5l1.6-1.6a1.5 1.5 0 0 1 2.1 0l2.2 2.2a1.5 1.5 0 0 1 0 2.1l-1.6 1.6z" {...SOLID} />
+      ) : (
+        <g {...OUTLINE}>
+          <path d="M14.5 5.2 18.8 9.5 8 20.3H3.7V16z" />
+          <path d="M16 3.7 18 1.7a1 1 0 0 1 1.4 0l2.9 2.9a1 1 0 0 1 0 1.4l-2 2z" />
+        </g>
+      );
+    case 'suggest':
+      // pencil with a small accent mark — "tracked change" feel
+      return (
+        <g>
+          <path
+            d="M13.5 6.2 17.8 10.5 7 21.3H2.7V17z"
+            {...(filled ? SOLID : OUTLINE)}
+          />
+          <path d="M15 4.7 17 2.7a1 1 0 0 1 1.4 0L21.3 5.6a1 1 0 0 1 0 1.4l-2 2z" {...(filled ? SOLID : OUTLINE)} />
+          <circle cx="19.5" cy="18.5" r="2.6" fill="currentColor" />
+          <line x1="19.5" y1="16.8" x2="19.5" y2="20.2" stroke="var(--color-surface-raised, #fff)" strokeWidth="1.4" strokeLinecap="round" />
+          <line x1="17.8" y1="18.5" x2="21.2" y2="18.5" stroke="var(--color-surface-raised, #fff)" strokeWidth="1.4" strokeLinecap="round" />
+        </g>
+      );
+    case 'chevron-down':
+      return <polyline points="6 9 12 15 18 9" {...OUTLINE} />;
+    case 'check':
+      return <polyline points="5 12.5 10 17.5 19 6.5" {...OUTLINE} />;
   }
 }
 

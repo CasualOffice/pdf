@@ -16,7 +16,7 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 ## Phase 1 — Production viewer (in progress)
 **Goal:** a viewer that beats OSS baselines on polish.
 - [x] Virtualized rendering (EmbedPDF scroll + tiling), fit modes (fit-width/fit-page), zoom, rotate, page nav, two-page spread, pan, fullscreen, thumbnails, text search + highlights, text selection — all wired via EmbedPDF plugins in `packages/pdf-sdk` and driven by a floating toolbar (`src/ui/chrome.tsx`).
-- [x] Toolbar + responsive layout via design-system tokens; light/dark; SVG icons (filled = active) + WCAG 2.2 (aria-labels, `aria-pressed`, visible focus, ≥36px targets).
+- [x] **Google-Docs-style layout**: top app bar (logo + title + Share + account), left-aligned rounded toolbar, grey canvas with white page cards, and the view/edit/suggest control as a Docs-style **mode dropdown** (Viewing/Suggesting/Editing) at the toolbar's right. Design-system tokens; light/dark; SVG icons (filled = active) + WCAG 2.2 (aria-labels, `aria-pressed`/`menuitemradio`, visible focus, ≥36px targets). Brand **logo + favicon** added (`apps/web/public/`).
 - [ ] Outline/bookmarks panel (plugin registered-ready; `getBookmarks` Task → tree UI still to build).
 - [ ] Continuous vs single-page scroll-mode toggle (scroll strategy/spread refinement).
 - [ ] Desktop integration MVP: add `DocKind::Pdf` to shell, `desk-bridge-bootstrap`, open `.pdf` from disk, native print-to-PDF export. *(Lives in the separate `services/desktop` repo.)*

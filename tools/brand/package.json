@@ -1,0 +1,9 @@
+{
+  "name": "@casual-pdf/brand",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Generate favicon/app-icon raster assets from the source logo.svg.",
+  "scripts": { "gen": "node gen-icons.mjs" },
+  "dependencies": { "sharp": "^0.33.5" }
+}

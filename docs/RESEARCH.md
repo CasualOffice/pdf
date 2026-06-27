@@ -13,12 +13,15 @@ Goal: build a production-grade PDF editor/viewer by **assembling permissively-li
 | **Nutrient (PSPDFKit)** | Commercial SDK | Polished web/native, collaboration add-on, signing | UX reference for toolbars, annotation interactions. |
 | **PDF Expert / Xodo / Foxit** | Proprietary | Fast viewers, annotation, sign | UX reference for "clean and polished." |
 | **Stirling-PDF** | **OSS (MIT)** | Self-host toolbox: merge/split/OCR/convert/sign/redact | Great reference + potential backend helper for batch ops. |
+| **iLovePDF** | Freemium SaaS + REST API | Broad task-suite (convert/compress/merge/split/OCR/sign/redact), polished per-tool UX, mature API w/ SDKs, eIDAS-compliant e-sign | Utility suite, **not a live editor**: no real-time co-editing/rights, server-side processing (upload→process→download). Reference for tool discoverability + batch/conversion breadth; we win on fidelity, co-editing, privacy. |
 | **SimplePDF / PDF.js viewer** | OSS | Form fill, basic annotation, signatures | Baseline; we exceed via headless EmbedPDF. |
 
 **Takeaways**
 - "Full-featured editor" splits into two very different tiers (see Architecture §2): **Tier 1 = annotate/forms/page-ops/sign** (achievable, production-grade with OSS) and **Tier 2 = true body-text editing with reflow** (Adobe's moat; treat as a later, scoped stretch).
-- Co-editing on PDF is rare in the market — it's our differentiator, and we already own the infra (`collab`).
-- Certified/PKCS#7 **digital signatures** + **redaction** are table-stakes for "production grade" but most OSS viewers skip them. We'll build these explicitly.
+- Co-editing on PDF is rare in the market — it's our differentiator, and we already own the infra (`collab`). The big **tool-suites (iLovePDF, Smallpdf, Stirling-PDF)** have *none* — their "collaboration" is cloud-storage sync + sequential sign requests, not live multi-cursor editing with rights.
+- The **tool-suite pattern is iLovePDF's moat and a gap for us**: discrete one-click utilities (convert PDF↔Office/JPG, compress, OCR, merge/split) drive their traffic. Worth borrowing as a UX layer (discoverable tools) alongside our live editor — `casual-pdf-core` (pdfium-render + lopdf) and Stirling-PDF as a backend helper can cover the high-value ones.
+- **Privacy is a wedge**: iLovePDF uploads every file to its servers (auto-deleted ~2h, but off-device). Our client-WASM + desktop-native PDFium keeps sensitive docs on-device — a real selling point for legal/finance that a server-side suite structurally can't match.
+- Certified/PKCS#7 **digital signatures** + **redaction** are table-stakes for "production grade" but most OSS viewers skip them. We'll build these explicitly. Note iLovePDF already ships multi-signer ordering + audit trail + eIDAS-compliant certified signatures, so our edge there is **combining** certified signing with high-fidelity in-app editing + co-review + an embeddable SDK, not signing alone.
 
 ---
 

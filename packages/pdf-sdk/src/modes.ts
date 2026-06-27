@@ -48,6 +48,9 @@ export interface CasualPdfProps {
   src: string;
   /** Interaction mode. Defaults to `view`. */
   mode?: Mode;
+  /** Called when the user changes mode via the toolbar's mode dropdown. When
+   *  omitted, the dropdown renders as a static (read-only) indicator. */
+  onModeChange?: (mode: Mode) => void;
   /** Attach to a collab server for co-editing. Omit → solo, persisted locally. */
   collab?: CollabConfig;
   /** Local user identity (authorship + presence). */

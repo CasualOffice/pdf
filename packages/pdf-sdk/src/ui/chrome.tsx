@@ -1,6 +1,8 @@
 /**
- * Viewer chrome: the floating toolbar, search bar, thumbnail rail, and the
- * stateful inner viewer that stitches them to the EmbedPDF page layers.
+ * Viewer chrome: a Google-Docs-style toolbar (left-aligned grouped controls with
+ * a "Viewing / Suggesting / Editing" mode dropdown at the right), a find bar, a
+ * thumbnail rail, and the stateful inner viewer that stitches them to the
+ * EmbedPDF page layers.
  *
  * Every control is wired to a verified EmbedPDF plugin hook. All of these
  * components render *inside* the <EmbedPDF> provider (see CasualPdf.tsx), which
@@ -20,19 +22,94 @@ import { useSearch, SearchLayer } from '@embedpdf/plugin-search/react';
 import { SelectionLayer } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
 import { IconButton } from './IconButton';
+import { Icon, type IconName } from './icons';
+import type { Mode } from '../modes';
 import './viewer.css';
 
 const ROOT_ID = 'cpdf-root';
 
-/** Floating pill toolbar. */
+const MODE_META: Record<Mode, { label: string; icon: IconName; desc: string }> = {
+  view: { label: 'Viewing', icon: 'eye', desc: 'Read only' },
+  suggest: { label: 'Suggesting', icon: 'suggest', desc: 'Edits become suggestions' },
+  edit: { label: 'Editing', icon: 'pencil', desc: 'Edit directly' },
+};
+const MODE_ORDER: Mode[] = ['edit', 'suggest', 'view'];
+
+/** Google-Docs-style mode dropdown. Read-only indicator when no onModeChange. */
+function ModeMenu({ mode, onModeChange }: { mode: Mode; onModeChange?: (m: Mode) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const readOnly = !onModeChange;
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+  const cur = MODE_META[mode];
+  return (
+    <div className="cpdf__mode" ref={ref} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
+      <button
+        type="button"
+        className="cpdf__mode-btn"
+        data-mode={mode}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Mode: ${cur.label}`}
+        disabled={readOnly}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name={cur.icon} filled size={18} />
+        <span className="cpdf__mode-label">{cur.label}</span>
+        {!readOnly && <Icon name="chevron-down" size={16} />}
+      </button>
+      {open && (
+        <div className="cpdf__menu" role="menu" aria-label="Editing mode">
+          {MODE_ORDER.map((m) => {
+            const meta = MODE_META[m];
+            return (
+              <button
+                key={m}
+                type="button"
+                role="menuitemradio"
+                aria-checked={mode === m}
+                className="cpdf__menu-item"
+                data-active={mode === m ? 'true' : undefined}
+                onClick={() => {
+                  onModeChange?.(m);
+                  setOpen(false);
+                }}
+              >
+                <Icon name={meta.icon} filled={mode === m} size={18} />
+                <span className="cpdf__menu-text">
+                  <span className="cpdf__menu-title">{meta.label}</span>
+                  <span className="cpdf__menu-desc">{meta.desc}</span>
+                </span>
+                <span className="cpdf__menu-check">{mode === m && <Icon name="check" size={16} />}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Left-aligned toolbar bar. */
 function Toolbar({
   documentId,
+  mode,
+  onModeChange,
   searchOpen,
   onToggleSearch,
   thumbsOpen,
   onToggleThumbs,
 }: {
   documentId: string;
+  mode: Mode;
+  onModeChange?: (m: Mode) => void;
   searchOpen: boolean;
   onToggleSearch: () => void;
   thumbsOpen: boolean;
@@ -64,6 +141,7 @@ function Toolbar({
 
   return (
     <div className="cpdf__toolbar" role="toolbar" aria-label="PDF viewer toolbar">
+      <div className="cpdf__toolbar-scroll">
       <div className="cpdf__group">
         <IconButton icon="thumbnails" label="Page thumbnails" active={thumbsOpen} onClick={onToggleThumbs} />
       </div>
@@ -120,12 +198,7 @@ function Toolbar({
           active={spreadMode !== SpreadMode.None}
           onClick={() => spreadApi?.setSpreadMode(spreadMode === SpreadMode.None ? SpreadMode.Odd : SpreadMode.None)}
         />
-        <IconButton
-          icon="hand"
-          label="Pan tool"
-          active={isPanning}
-          onClick={() => panApi?.togglePan()}
-        />
+        <IconButton icon="hand" label="Pan tool" active={isPanning} onClick={() => panApi?.togglePan()} />
       </div>
       <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
@@ -142,6 +215,8 @@ function Toolbar({
           onClick={toggleTheme}
         />
       </div>
+      </div>
+      <ModeMenu mode={mode} onModeChange={onModeChange} />
     </div>
   );
 }
@@ -169,7 +244,7 @@ function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () 
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.shiftKey ? provides?.previousResult() : run());
+          if (e.key === 'Enter') e.shiftKey ? provides?.previousResult() : run();
           if (e.key === 'Escape') onClose();
         }}
       />
@@ -217,7 +292,15 @@ function ThumbnailSidebar({ documentId, onClose }: { documentId: string; onClose
 }
 
 /** The stateful viewer: chrome + page layers. Rendered once the doc is loaded. */
-export function Viewer({ documentId }: { documentId: string }) {
+export function Viewer({
+  documentId,
+  mode,
+  onModeChange,
+}: {
+  documentId: string;
+  mode: Mode;
+  onModeChange?: (m: Mode) => void;
+}) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [thumbsOpen, setThumbsOpen] = useState(false);
 
@@ -225,6 +308,8 @@ export function Viewer({ documentId }: { documentId: string }) {
     <div className="cpdf" id={ROOT_ID}>
       <Toolbar
         documentId={documentId}
+        mode={mode}
+        onModeChange={onModeChange}
         searchOpen={searchOpen}
         onToggleSearch={() => setSearchOpen((v) => !v)}
         thumbsOpen={thumbsOpen}
@@ -236,7 +321,7 @@ export function Viewer({ documentId }: { documentId: string }) {
           <Scroller
             documentId={documentId}
             renderPage={({ width, height, pageIndex }) => (
-              <div style={{ width, height, position: 'relative' }}>
+              <div className="cpdf__page" style={{ width, height, position: 'relative' }}>
                 <RenderLayer documentId={documentId} pageIndex={pageIndex} />
                 <SearchLayer documentId={documentId} pageIndex={pageIndex} />
                 <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
