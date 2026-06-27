@@ -125,6 +125,11 @@
 }
 
 /* ── Center canvas ──────────────────────────────────────────────────────── */
+.cpdf__zoomwrap {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
 .cpdf__viewport {
   flex: 1;
   min-width: 0;

@@ -13,7 +13,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode, type MutableRefO
 import { Viewport } from '@embedpdf/plugin-viewport/react';
 import { Scroller } from '@embedpdf/plugin-scroll/react';
 import { RenderLayer } from '@embedpdf/plugin-render/react';
-import { useZoom, ZoomMode } from '@embedpdf/plugin-zoom/react';
+import { useZoom, ZoomMode, ZoomGestureWrapper } from '@embedpdf/plugin-zoom/react';
 import { useScroll, useScrollCapability, ScrollStrategy } from '@embedpdf/plugin-scroll/react';
 import { useRotate } from '@embedpdf/plugin-rotate/react';
 import { useSpread, SpreadMode } from '@embedpdf/plugin-spread/react';
@@ -596,21 +596,24 @@ export function Viewer({
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
-          <Viewport documentId={documentId} className="cpdf__viewport">
-            <Scroller
-              documentId={documentId}
-              renderPage={({ width, height, pageIndex }) => (
-                <PagePointerProvider documentId={documentId} pageIndex={pageIndex} className="cpdf__page" style={{ width, height, position: 'relative' }}>
-                  <RenderLayer documentId={documentId} pageIndex={pageIndex} />
-                  <SearchLayer documentId={documentId} pageIndex={pageIndex} />
-                  {/* Text selection/copy in every mode; the interaction-manager
-                      yields the pointer to an annotation tool when one is active. */}
-                  <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
-                  <AnnotationLayer documentId={documentId} pageIndex={pageIndex} style={{ position: 'absolute', inset: 0 }} />
-                </PagePointerProvider>
-              )}
-            />
-          </Viewport>
+          {/* Ctrl/⌘ + wheel and pinch-to-zoom over the document. */}
+          <ZoomGestureWrapper documentId={documentId} className="cpdf__zoomwrap">
+            <Viewport documentId={documentId} className="cpdf__viewport">
+              <Scroller
+                documentId={documentId}
+                renderPage={({ width, height, pageIndex }) => (
+                  <PagePointerProvider documentId={documentId} pageIndex={pageIndex} className="cpdf__page" style={{ width, height, position: 'relative' }}>
+                    <RenderLayer documentId={documentId} pageIndex={pageIndex} />
+                    <SearchLayer documentId={documentId} pageIndex={pageIndex} />
+                    {/* Text selection/copy in every mode; the interaction-manager
+                        yields the pointer to an annotation tool when one is active. */}
+                    <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
+                    <AnnotationLayer documentId={documentId} pageIndex={pageIndex} style={{ position: 'absolute', inset: 0 }} />
+                  </PagePointerProvider>
+                )}
+              />
+            </Viewport>
+          </ZoomGestureWrapper>
           {editing && <PropertiesPanel documentId={documentId} />}
         </div>
         <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
