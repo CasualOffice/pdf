@@ -61,9 +61,15 @@ const TOOLS: { id: string; icon: IconName; label: string; key: string }[] = [
 const PALETTE = ['#1f2430', '#e8453c', '#f5a623', '#2bb673', '#2d8cff', '#8b5cf6'];
 const STROKE_WIDTHS = [1, 2, 4, 6];
 const OPACITIES = [1, 0.75, 0.5, 0.25];
+const FONT_SIZES = [12, 16, 24, 32];
 const STROKE_TOOLS = new Set(['ink', 'inkHighlighter', 'line', 'lineArrow', 'square', 'circle', 'polygon', 'polyline']);
+const TEXT_TOOLS = new Set(['freeText', 'freeTextCallout']);
 const patchFor = (toolId: string | undefined, color: string) =>
-  toolId && STROKE_TOOLS.has(toolId) ? { strokeColor: color } : { color };
+  toolId && STROKE_TOOLS.has(toolId)
+    ? { strokeColor: color }
+    : toolId && TEXT_TOOLS.has(toolId)
+      ? { fontColor: color }
+      : { color };
 const norm = (c?: string) => (c ?? '').toLowerCase();
 
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
@@ -113,17 +119,28 @@ function LeftRail({
 function PropertiesPanel({ documentId }: { documentId: string }) {
   const { provides: cap } = useAnnotationCapability();
   const { state: anno, provides: scope } = useAnnotation(documentId);
+  // Tool-default changes live in global plugin state (not the per-document state
+  // useAnnotation subscribes to), so bump a tick to re-read them after a change.
+  const [, setTick] = useState(0);
   const activeToolId = anno?.activeToolId ?? null;
   const selected = scope?.getSelectedAnnotations() ?? [];
   const hasContext = activeToolId !== null || selected.length > 0;
 
-  const firstObj = selected[0]?.object as { color?: string; strokeColor?: string; opacity?: number } | undefined;
+  const firstObj = selected[0]?.object as
+    | { color?: string; strokeColor?: string; fontColor?: string; opacity?: number; fontSize?: number }
+    | undefined;
   const toolDefaults = activeToolId ? (cap?.getTool(activeToolId)?.defaults as Record<string, unknown> | undefined) : undefined;
-  const currentColor = norm(firstObj?.strokeColor ?? firstObj?.color ?? (toolDefaults?.strokeColor as string) ?? (toolDefaults?.color as string));
+  const currentColor = norm(
+    firstObj?.fontColor ?? firstObj?.strokeColor ?? firstObj?.color ??
+      (toolDefaults?.fontColor as string) ?? (toolDefaults?.strokeColor as string) ?? (toolDefaults?.color as string),
+  );
   const currentOpacity = firstObj?.opacity ?? (toolDefaults?.opacity as number) ?? 1;
-  const widthRelevant =
-    (activeToolId !== null && STROKE_TOOLS.has(activeToolId)) ||
-    selected.some((a) => STROKE_TOOLS.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
+  const currentFontSize = firstObj?.fontSize ?? (toolDefaults?.fontSize as number) ?? 16;
+  const relevant = (set: Set<string>) =>
+    (activeToolId !== null && set.has(activeToolId)) ||
+    selected.some((a) => set.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
+  const widthRelevant = relevant(STROKE_TOOLS);
+  const fontRelevant = relevant(TEXT_TOOLS);
 
   const apply = (patch: Record<string, unknown>, colorMode = false) => {
     if (selected.length && scope) {
@@ -136,6 +153,7 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
       );
     } else if (activeToolId && cap) {
       cap.setToolDefaults(activeToolId, colorMode ? patchFor(activeToolId, patch.color as string) : patch);
+      setTick((t) => t + 1);
     }
   };
   const deleteSelected = () => {
@@ -173,6 +191,25 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                 {STROKE_WIDTHS.map((w) => (
                   <button key={w} type="button" className="cpdf__wbtn" aria-label={`Stroke width ${w}`} onClick={() => apply({ strokeWidth: w })}>
                     <span style={{ height: w }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {fontRelevant && (
+            <div className="cpdf__field">
+              <span className="cpdf__field-label">Font size</span>
+              <div className="cpdf__widths">
+                {FONT_SIZES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="cpdf__opbtn"
+                    data-active={currentFontSize === s ? 'true' : undefined}
+                    aria-pressed={currentFontSize === s}
+                    onClick={() => apply({ fontSize: s })}
+                  >
+                    {s}
                   </button>
                 ))}
               </div>

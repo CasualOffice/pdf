@@ -29,7 +29,7 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 - [x] Annotations via `@embedpdf/plugin-annotation`: highlight, ink/draw, free-text, note/comment, rectangle, ellipse, arrow — tool palette in the toolbar (Edit/Suggest modes only), plus the **Insert** menu. Direct manipulation (select/resize/rotate) and selection handles come from the plugin. **undo/redo** via `@embedpdf/plugin-history` (toolbar + Edit menu). Each page wraps layers in `PagePointerProvider`; the SDK exposes an imperative `CasualPdfApi` (download/undo/redo/deleteSelection/setTool) on `apiRef` for host menus.
 - [x] Write-side **save** via `@embedpdf/plugin-export` (`download`/`saveAsCopy`) — File → Download now bakes annotations into the PDF bytes.
 - [x] Contextual **property bar** (color swatches + stroke width) — appears when a tool is active or annotation(s) selected; applies via `setToolDefaults` (active tool) / `updateAnnotations` (selection).
-- [x] Property panel: color + stroke width + **opacity**. (Font size, stamp/image, multi-select marquee + snap still to come.)
+- [x] Property panel: color + stroke width + **opacity**. (Font size done. Stamp/image, multi-select marquee + snap still to come.)
 - [x] Editing UX: keyboard shortcuts (V/H/D/T/N/R/O/A, Esc, Delete), crosshair cursor with a tool active, in-place free-text editing, move/resize/rotate handles.
 - [ ] Form fill (AcroForm) + flatten.
 - [ ] Autosave + desktop recovery; define the **Yjs document model** (so Phase 3 collab drops in cleanly).
