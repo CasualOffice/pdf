@@ -235,6 +235,12 @@
 .cpdf__wbtn:hover {
   background: var(--color-hover, rgba(0, 0, 0, 0.08));
 }
+.cpdf__wbtn[data-active='true'] {
+  background: var(--color-accent-soft, rgba(70, 90, 255, 0.14));
+}
+.cpdf__wbtn[data-active='true'] span {
+  background: var(--color-accent, #4658ff);
+}
 .cpdf__wbtn:focus-visible {
   outline: 2px solid var(--color-focus-ring, #4658ff);
   outline-offset: 1px;

@@ -198,7 +198,7 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   if (!hasContext) return null;
 
   const firstObj = selected[0]?.object as
-    | { color?: string; strokeColor?: string; fontColor?: string; opacity?: number; fontSize?: number }
+    | { color?: string; strokeColor?: string; fontColor?: string; opacity?: number; fontSize?: number; strokeWidth?: number }
     | undefined;
   const toolDefaults = activeToolId ? (cap?.getTool(activeToolId)?.defaults as Record<string, unknown> | undefined) : undefined;
   const currentColor = norm(
@@ -207,6 +207,7 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   );
   const currentOpacity = firstObj?.opacity ?? (toolDefaults?.opacity as number) ?? 1;
   const currentFontSize = firstObj?.fontSize ?? (toolDefaults?.fontSize as number) ?? 16;
+  const currentStrokeWidth = firstObj?.strokeWidth ?? (toolDefaults?.strokeWidth as number) ?? 2;
   const relevant = (set: Set<string>) =>
     (activeToolId !== null && set.has(activeToolId)) ||
     selected.some((a) => set.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
@@ -257,7 +258,15 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
               <span className="cpdf__field-label">Stroke width</span>
               <div className="cpdf__widths">
                 {STROKE_WIDTHS.map((w) => (
-                  <button key={w} type="button" className="cpdf__wbtn" aria-label={`Stroke width ${w}`} onClick={() => apply({ strokeWidth: w })}>
+                  <button
+                    key={w}
+                    type="button"
+                    className="cpdf__wbtn"
+                    data-active={currentStrokeWidth === w ? 'true' : undefined}
+                    aria-label={`Stroke width ${w}`}
+                    aria-pressed={currentStrokeWidth === w}
+                    onClick={() => apply({ strokeWidth: w })}
+                  >
                     <span style={{ height: w }} />
                   </button>
                 ))}
