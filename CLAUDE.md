@@ -38,6 +38,9 @@ UI (React 18 + Vite + TS, @schnsrw/design-system)
 6. **Reuse `services/desktop` (Tauri 2).** Adding this app is the documented convention: extend `DocKind` with `Pdf`, mount `/pdf/index.html`, ship a `desk-bridge-bootstrap.ts`, and expose native Rust-core commands via Tauri `invoke`. Don't rebuild file I/O — chunked atomic save + recovery already exist in the shell.
 7. **Standalone repo, built-in to desktop.** `casual_pdf` stays its own repo (like `document`/`sheet`); the desktop shell's `copy-editors.sh` pulls its `dist/` into `public/pdf/`. Mirror the `@casualoffice/sheets` SDK pattern → publish `@casualoffice/pdf` with subpath exports (`/viewer`, `/collab`, `/embed`).
 8. **v1 = Tier 1 full editor.** Annotate, forms, e-sign + certified PKCS#7, redaction (true byte-level removal), page ops, co-editing, public links, rights. **Tier 2** (true body-text editing with reflow) is a later stretch — PDF isn't a reflowable format; it's Adobe's moat. Do **not** market or scope Tier 1 as Tier 2.
+9. **One core × 3 surfaces × 3 modes × collab on/off — same codebase.** Surfaces = desktop / web / SDK. Modes = **View** (read-only) / **Edit** (direct) / **Suggest** (proposals an owner accepts/rejects, Google-Docs-style). Collab **off** = solo with local persistence (`y-indexeddb` / desktop sidecar); collab **on** = co-editing via `services/collab`. Mode and collab are **independent runtime flags on the same `@casualoffice/pdf` core** — never separate builds or per-mode forks. Suggest = Yjs entries tagged `state: suggested` reviewed to `applied`/removed. Rights map to modes and are server-enforced. See `docs/ARCHITECTURE.md` §2b.
+
+**Repo license:** this repository is **Apache-2.0** (`LICENSE` + `NOTICE`). (Separately, decision #4 governs which *dependency* licenses may be bundled: MIT/Apache/BSD only.)
 
 ## Working rules
 

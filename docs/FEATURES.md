@@ -6,6 +6,13 @@ Every required feature mapped to **what we reuse / which OSS provides it / what 
 
 ## Must-haves (from the brief)
 
+### Modes: View / Edit / Suggest (all surfaces, collab optional)
+- **One core, configured.** Every surface (desktop / web / SDK) runs **View** (read-only), **Edit** (direct), and **Suggest** (proposals accepted/rejected by an owner), **with or without** collab. See `ARCHITECTURE.md` §2b.
+- **Build:** a `mode` flag on the SDK; the Yjs overlay tags entries `state: applied | suggested` (Suggest writes `suggested`; Accept → `applied`; Reject → remove); View renders read-only.
+- **Reuse:** `services/collab` for the collab-on path (multiplayer + shared suggestions); `y-indexeddb` / desktop sidecar for collab-off (solo) persistence.
+- **Rights → mode** server-enforced: `viewer→View`, `commenter/suggester→Suggest`, `editor→Edit`, `signer→sign`.
+- **Gates:** UX-S4 (mode can't be escalated client-side), UX-C* (when collab on).
+
 ### Co-editing (real-time collaborative editing)
 - **Reuse:** `services/collab` (Yjs + Hocuspocus + WS) — unchanged.
 - **Build:** bind our `Y.Doc` model (annotations/forms/comments/signing) to `HocuspocusProvider`; awareness for cursors/avatars/selection.

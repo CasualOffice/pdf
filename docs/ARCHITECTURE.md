@@ -25,6 +25,49 @@ We will **not** market Tier 1 as Tier 2. v1 is a best-in-class annotate/forms/si
 
 ---
 
+## 2b. Modes & surfaces (one core, configured)
+
+The product ships across **3 surfaces**, runs in **3 modes**, **with or without** a collab server — but it is **one codebase**. Surface, mode, and collab are independent configuration of the same `@casualoffice/pdf` core, never separate builds or forks.
+
+**Surfaces** (where the core runs):
+- **Desktop** — Tauri 2 shell, offline-first, heavy ops via the *native* Rust core.
+- **Web app** — browser SPA, heavy ops via the *WASM* Rust core in a worker.
+- **Embeddable SDK** — `@casualoffice/pdf` dropped into `drive`, `site`, or third-party hosts.
+
+**Modes** (a runtime capability flag — what the user may do):
+- **View** — read-only: render, scroll, search, print, follow links. No mutation of the overlay.
+- **Edit** — direct manipulation: annotations, forms, page ops, sign — changes apply to the overlay immediately.
+- **Suggest** — *proposals*: every edit is recorded as a **pending suggestion** (author-tagged), surfaced for an owner/editor to **accept** (apply → bake on export) or **reject** (discard). Google-Docs-style "suggesting" / tracked changes, for PDF markup.
+
+**Collab** (orthogonal to mode — single-user vs multiplayer):
+- **Off (solo):** one user, no server. The Yjs doc persists **locally** — web via `y-indexeddb`, desktop via a file sidecar. All three modes still function. Default for the SDK and offline desktop.
+- **On (co-editing):** attach `HocuspocusProvider` → `services/collab`. Adds presence, live cursors, and shared suggestions over the **same** Y.Doc. Nothing else changes.
+
+```
+         View      Edit      Suggest
+Desktop   ✓         ✓         ✓        ← native Rust core, local or collab
+Web app   ✓         ✓         ✓        ← WASM Rust core, local or collab
+SDK       ✓         ✓         ✓        ← host-embedded, local or collab
+                                         × collab {off | on} for every cell
+```
+
+**SDK surface (the single API for all of the above):**
+```ts
+<CasualPdf
+  src={bytes}
+  mode="view" | "edit" | "suggest"
+  collab={{ url, room, token }}   // omit → solo / local persistence
+  identity={{ name, color }}      // for presence + suggestion authorship
+  rights={...}                    // server-enforced when collab is on
+/>
+```
+
+**How "suggest" is modeled (unifies comments + suggestions + tracked changes):** every editable entry in the Yjs overlay carries `state: 'applied' | 'suggested'`, plus `author` and `reviewedBy`. Edit mode writes `applied`; **Suggest mode writes `suggested`**; Accept flips `suggested → applied` (bakes at export); Reject removes it. View mode renders the layer read-only. One mechanism, three behaviors — no separate "track changes" subsystem.
+
+**Rights → mode (server-enforced when collab on, gate UX-S4):** `viewer → View`, `commenter/suggester → Suggest`, `editor → Edit`, `signer → sign`. A view/suggest link gets a **read-only or suggest-scoped** Yjs connection from `services/collab`, so the mode can't be escalated client-side.
+
+---
+
 ## 3. System layers
 
 ```

@@ -1,0 +1,54 @@
+name: Deploy (GitHub Pages)
+
+# Manual-only until Phase 1. After Phase 1, to enable auto-deploy on merge:
+#   1. Repo Settings -> Pages -> Source: GitHub Actions
+#   2. Set repo variable PAGES_CUSTOM_DOMAIN to your domain (writes CNAME below)
+#   3. Point DNS (CNAME -> casualoffice.github.io) and enable Enforce HTTPS
+#   4. Uncomment the `push:` trigger below
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Safe no-op until the web app exists.
+    if: ${{ hashFiles('apps/web/package.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C apps/web run build
+      - name: Apply custom domain (if configured)
+        run: |
+          if [ -n "${{ vars.PAGES_CUSTOM_DOMAIN }}" ]; then
+            echo "${{ vars.PAGES_CUSTOM_DOMAIN }}" > apps/web/dist/CNAME
+            echo "CNAME set to ${{ vars.PAGES_CUSTOM_DOMAIN }}"
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

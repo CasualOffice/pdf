@@ -1,6 +1,12 @@
-# casual_pdf
+# Casual PDF
+
+[![CI](https://github.com/CasualOffice/pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/CasualOffice/pdf/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Status: planning](https://img.shields.io/badge/status-planning-orange.svg)](docs/ROADMAP.md)
 
 Production-grade, high-fidelity **PDF viewer + editor** for the Casual Office suite — web, desktop, and embeddable. Co-editing, e-signing, public share links, granular reading/editing rights, and a clean, polished UX.
+
+**One core, three surfaces, three modes, collab optional:** desktop · web · SDK, each running **View** / **Edit** / **Suggest** (proposals an owner accepts/rejects, Google-Docs-style), **with** a collab server (co-editing) or **without** (solo single-user). Same codebase — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §2b.
 
 This repo currently holds **design & planning docs only**. No code yet — by design. The plan deliberately maximizes reuse of existing internal infrastructure (`collab`, `desktop`, `design-system`) and permissively-licensed (MIT / Apache-2.0 / BSD) open source, rather than building from the ground up.
 
@@ -26,10 +32,20 @@ One engine → identical rendering fidelity everywhere, one set of bugs, one men
 
 ## Docs
 
+- [`docs/OVERVIEW.md`](docs/OVERVIEW.md) — repo map: structure, decisions, CI & deployment.
 - [`docs/RESEARCH.md`](docs/RESEARCH.md) — competitive landscape + OSS building-block survey with a license table.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system design: PDFium-everywhere, the document model, collab layer, desktop integration, Rust/WASM worker, repo layout.
 - [`docs/FEATURES.md`](docs/FEATURES.md) — every must-have feature mapped to its building block (co-editing, signing, public links, rights, redaction, …).
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan from viewer → editor → signing → desktop.
+
+## CI & deployment
+
+- **CI** (`.github/workflows/ci.yml`): markdown lint + link check now; web (lint/typecheck/build/test) and Rust (`fmt`/`clippy`/`test`/wasm) pipelines auto-activate once `apps/web/` and `crates/` land.
+- **Deploy** (`.github/workflows/deploy-pages.yml`): GitHub Pages, **manual until Phase 1**. To go live: enable Pages (Source: GitHub Actions), set repo variable `PAGES_CUSTOM_DOMAIN` (writes `CNAME`), point DNS, and uncomment the `push:` trigger. See [`docs/OVERVIEW.md`](docs/OVERVIEW.md#ci--deployment).
+
+## License
+
+[Apache-2.0](LICENSE). Bundled dependencies are MIT/Apache/BSD only — no (A)GPL (see [`docs/RESEARCH.md`](docs/RESEARCH.md) §6).
 
 ## Status
 
