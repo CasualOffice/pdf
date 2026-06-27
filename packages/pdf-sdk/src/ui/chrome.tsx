@@ -64,6 +64,9 @@ const OPACITIES = [1, 0.75, 0.5, 0.25];
 const FONT_SIZES = [12, 16, 24, 32];
 const STROKE_TOOLS = new Set(['ink', 'inkHighlighter', 'line', 'lineArrow', 'square', 'circle', 'polygon', 'polyline']);
 const TEXT_TOOLS = new Set(['freeText', 'freeTextCallout']);
+// One-shot tools: revert to Select after placing one (so it's immediately
+// selected/adjustable). Ink + text-markup stay active for repeated use.
+const REVERT_AFTER_CREATE = new Set(['square', 'circle', 'line', 'lineArrow', 'polygon', 'polyline', 'freeText', 'freeTextCallout', 'textComment', 'stamp']);
 const patchFor = (toolId: string | undefined, color: string) =>
   toolId && STROKE_TOOLS.has(toolId)
     ? { strokeColor: color }
@@ -480,6 +483,17 @@ export function Viewer({
       if (apiRef) apiRef.current = null;
     };
   }, [apiRef, annoApi, history, exportCap]);
+
+  // After placing a one-shot annotation, revert to Select so it's immediately
+  // adjustable (EmbedPDF auto-selects it). Ink/markup tools stay active.
+  useEffect(() => {
+    if (!annoApi) return;
+    return annoApi.onAnnotationEvent((ev) => {
+      if (ev.type === 'create' && REVERT_AFTER_CREATE.has(annoApi.getActiveTool()?.id ?? '')) {
+        annoApi.setActiveTool(null);
+      }
+    });
+  }, [annoApi]);
 
   // Keyboard: editing shortcuts (ignored while typing in a field).
   useEffect(() => {
