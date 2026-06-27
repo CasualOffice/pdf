@@ -91,8 +91,13 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
         {({ activeDocumentId }) =>
           activeDocumentId ? (
             <DocumentContent documentId={activeDocumentId}>
-              {({ isLoaded }) =>
-                isLoaded ? (
+              {({ isLoaded, isError }) =>
+                isError ? (
+                  <div className="cpdf__status" role="alert">
+                    <strong>Couldn’t open this PDF.</strong>
+                    It may be corrupt, password-protected, or not a PDF.
+                  </div>
+                ) : isLoaded ? (
                   <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} />
                 ) : (
                   <div className="cpdf__status">

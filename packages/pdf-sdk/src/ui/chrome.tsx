@@ -23,7 +23,7 @@ import { useSearch, SearchLayer } from '@embedpdf/plugin-search/react';
 import { SelectionLayer } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
 import { useBookmarkCapability } from '@embedpdf/plugin-bookmark/react';
-import { PagePointerProvider } from '@embedpdf/plugin-interaction-manager/react';
+import { PagePointerProvider, usePointerHandlers } from '@embedpdf/plugin-interaction-manager/react';
 import {
   useAnnotation,
   useAnnotationCapability,
@@ -64,16 +64,48 @@ const OPACITIES = [1, 0.75, 0.5, 0.25];
 const FONT_SIZES = [12, 16, 24, 32];
 const STROKE_TOOLS = new Set(['ink', 'inkHighlighter', 'line', 'lineArrow', 'square', 'circle', 'polygon', 'polyline']);
 const TEXT_TOOLS = new Set(['freeText', 'freeTextCallout']);
+// Text-markup annotations render their color from `strokeColor`, not `color`.
+const MARKUP_TOOLS = new Set(['highlight', 'underline', 'strikeout', 'squiggly']);
 // One-shot tools: revert to Select after placing one (so it's immediately
 // selected/adjustable). Ink + text-markup stay active for repeated use.
 const REVERT_AFTER_CREATE = new Set(['square', 'circle', 'line', 'lineArrow', 'polygon', 'polyline', 'freeText', 'freeTextCallout', 'textComment', 'stamp']);
 const patchFor = (toolId: string | undefined, color: string) =>
-  toolId && STROKE_TOOLS.has(toolId)
+  toolId && (STROKE_TOOLS.has(toolId) || MARKUP_TOOLS.has(toolId))
     ? { strokeColor: color }
     : toolId && TEXT_TOOLS.has(toolId)
       ? { fontColor: color }
       : { color };
 const norm = (c?: string) => (c ?? '').toLowerCase();
+
+/** Deselect when the user clicks empty space (no annotation under the pointer).
+ *  EmbedPDF selects annotations on click but doesn't deselect on background click;
+ *  we hit-test the click against annotation rects so move/select are unaffected.
+ *  Registered for the default 'pointerMode' (Select tool), so drawing is unaffected. */
+function DeselectGuard({ documentId, pageIndex }: { documentId: string; pageIndex: number }) {
+  const { provides: cap } = useAnnotationCapability();
+  const { register } = usePointerHandlers({ modeId: 'pointerMode', pageIndex, documentId });
+  useEffect(() => {
+    return register({
+      onPointerDown: (pos) => {
+        const scope = cap?.forDocument(documentId);
+        if (!scope) return;
+        const here = scope.getAnnotations().filter((a) => a.object.pageIndex === pageIndex);
+        const hit = here.some((a) => {
+          const r = a.object.rect;
+          return (
+            !!r &&
+            pos.x >= r.origin.x &&
+            pos.x <= r.origin.x + r.size.width &&
+            pos.y >= r.origin.y &&
+            pos.y <= r.origin.y + r.size.height
+          );
+        });
+        if (!hit) scope.deselectAnnotation();
+      },
+    });
+  }, [register, cap, documentId, pageIndex]);
+  return null;
+}
 
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
 /** A labelled rail button — icon + caption so the rail reads as a tool palette. */
@@ -542,6 +574,9 @@ export function Viewer({
     if (presenting) annoApi?.setActiveTool(null);
   }, [presenting, annoApi]);
 
+  // (EmbedPDF deselects natively on empty-canvas click now that text selection
+  // is View-mode-only, so no custom background handler is needed.)
+
   // After placing a one-shot annotation, revert to Select so it's immediately
   // adjustable (EmbedPDF auto-selects it). Ink/markup tools stay active.
   useEffect(() => {
@@ -605,10 +640,15 @@ export function Viewer({
                   <PagePointerProvider documentId={documentId} pageIndex={pageIndex} className="cpdf__page" style={{ width, height, position: 'relative' }}>
                     <RenderLayer documentId={documentId} pageIndex={pageIndex} />
                     <SearchLayer documentId={documentId} pageIndex={pageIndex} />
-                    {/* Text selection/copy in every mode; the interaction-manager
-                        yields the pointer to an annotation tool when one is active. */}
-                    <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
+                    {/* Text selection is needed in View mode (read/copy) and when a
+                        text-markup tool is active (highlight/underline/… select text
+                        to mark up). It must be OFF for Select/shape/ink tools, or it
+                        captures drags and breaks annotation move / deselect. */}
+                    {(mode === 'view' || (activeToolId !== null && MARKUP_TOOLS.has(activeToolId))) && (
+                      <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
+                    )}
                     <AnnotationLayer documentId={documentId} pageIndex={pageIndex} style={{ position: 'absolute', inset: 0 }} />
+                    {mode !== 'view' && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
                   </PagePointerProvider>
                 )}
               />
