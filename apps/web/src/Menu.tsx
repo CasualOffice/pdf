@@ -3,7 +3,7 @@
  * hovering switches between open menus. Accessible: each top button is a
  * `aria-haspopup` menu trigger, items are `role="menuitem"`, Escape closes.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface MenuItemDef {
   label?: string;
@@ -15,6 +15,9 @@ export interface MenuItemDef {
 }
 export interface MenuDef {
   label: string;
+  /** Optional icon shown instead of the label text (button keeps `label` as its
+   *  accessible name). */
+  icon?: ReactNode;
   items: MenuItemDef[];
 }
 
@@ -37,14 +40,15 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
         <div className="menubar__menu" key={m.label}>
           <button
             type="button"
-            className="menubar__btn"
+            className={m.icon ? 'menubar__btn menubar__btn--icon' : 'menubar__btn'}
             data-open={open === i ? 'true' : undefined}
             aria-haspopup="menu"
             aria-expanded={open === i}
+            aria-label={m.label}
             onClick={() => setOpen(open === i ? null : i)}
             onMouseEnter={() => open !== null && setOpen(i)}
           >
-            {m.label}
+            {m.icon ?? m.label}
           </button>
           {open === i && (
             <div className="menubar__dropdown" role="menu" aria-label={m.label}>
