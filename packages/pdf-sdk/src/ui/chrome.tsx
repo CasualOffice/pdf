@@ -60,6 +60,7 @@ const TOOLS: { id: string; icon: IconName; label: string; key: string }[] = [
 
 const PALETTE = ['#1f2430', '#e8453c', '#f5a623', '#2bb673', '#2d8cff', '#8b5cf6'];
 const STROKE_WIDTHS = [1, 2, 4, 6];
+const OPACITIES = [1, 0.75, 0.5, 0.25];
 const STROKE_TOOLS = new Set(['ink', 'inkHighlighter', 'line', 'lineArrow', 'square', 'circle', 'polygon', 'polyline']);
 const patchFor = (toolId: string | undefined, color: string) =>
   toolId && STROKE_TOOLS.has(toolId) ? { strokeColor: color } : { color };
@@ -119,6 +120,7 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   const firstObj = selected[0]?.object as { color?: string; strokeColor?: string; opacity?: number } | undefined;
   const toolDefaults = activeToolId ? (cap?.getTool(activeToolId)?.defaults as Record<string, unknown> | undefined) : undefined;
   const currentColor = norm(firstObj?.strokeColor ?? firstObj?.color ?? (toolDefaults?.strokeColor as string) ?? (toolDefaults?.color as string));
+  const currentOpacity = firstObj?.opacity ?? (toolDefaults?.opacity as number) ?? 1;
   const widthRelevant =
     (activeToolId !== null && STROKE_TOOLS.has(activeToolId)) ||
     selected.some((a) => STROKE_TOOLS.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
@@ -176,6 +178,23 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
               </div>
             </div>
           )}
+          <div className="cpdf__field">
+            <span className="cpdf__field-label">Opacity</span>
+            <div className="cpdf__widths">
+              {OPACITIES.map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  className="cpdf__opbtn"
+                  data-active={Math.abs(currentOpacity - o) < 0.01 ? 'true' : undefined}
+                  aria-pressed={Math.abs(currentOpacity - o) < 0.01}
+                  onClick={() => apply({ opacity: o })}
+                >
+                  {Math.round(o * 100)}%
+                </button>
+              ))}
+            </div>
+          </div>
           {selected.length > 0 && (
             <button type="button" className="cpdf__delete" onClick={deleteSelected}>
               <Icon name="trash" size={16} />

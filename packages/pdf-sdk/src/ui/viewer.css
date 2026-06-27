@@ -202,6 +202,29 @@
   border-radius: 3px;
   background: var(--color-text, #111);
 }
+.cpdf__opbtn {
+  flex: 1;
+  height: 30px;
+  border: none;
+  background: var(--color-surface-alt, rgba(0, 0, 0, 0.04));
+  border-radius: var(--radius-sm, 8px);
+  color: var(--color-text-secondary, #555);
+  font: 600 12px/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.cpdf__opbtn:hover {
+  background: var(--color-hover, rgba(0, 0, 0, 0.08));
+  color: var(--color-text, #111);
+}
+.cpdf__opbtn[data-active='true'] {
+  background: var(--color-accent-soft, rgba(70, 90, 255, 0.14));
+  color: var(--color-accent, #4658ff);
+}
+.cpdf__opbtn:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 1px;
+}
 .cpdf__delete {
   display: inline-flex;
   align-items: center;
