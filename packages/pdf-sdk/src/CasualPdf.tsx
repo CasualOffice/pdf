@@ -15,6 +15,7 @@ import { PanPluginPackage } from '@embedpdf/plugin-pan/react';
 import { SearchPluginPackage } from '@embedpdf/plugin-search/react';
 import { SelectionPluginPackage } from '@embedpdf/plugin-selection/react';
 import { ThumbnailPluginPackage } from '@embedpdf/plugin-thumbnail/react';
+import { BookmarkPluginPackage } from '@embedpdf/plugin-bookmark/react';
 import { TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
 import { Viewer } from './ui/chrome';
 import './ui/viewer.css';
@@ -52,6 +53,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, className, style }
       createPluginRegistration(SearchPluginPackage),
       createPluginRegistration(SelectionPluginPackage),
       createPluginRegistration(ThumbnailPluginPackage),
+      createPluginRegistration(BookmarkPluginPackage),
     ],
     [src],
   );

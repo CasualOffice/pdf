@@ -29,7 +29,8 @@ export type IconName =
   | 'pencil'
   | 'suggest'
   | 'chevron-down'
-  | 'check';
+  | 'check'
+  | 'scroll-h';
 
 interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: IconName;
@@ -231,6 +232,14 @@ function paths(name: IconName, filled: boolean) {
       );
     case 'chevron-down':
       return <polyline points="6 9 12 15 18 9" {...OUTLINE} />;
+    case 'scroll-h':
+      // horizontal page layout: two side-by-side sheets with a left-right arrow
+      return (
+        <g {...(filled ? SOLID : OUTLINE)}>
+          <rect x="3" y="6" width="7" height="12" rx="1.5" />
+          <rect x="14" y="6" width="7" height="12" rx="1.5" />
+        </g>
+      );
     case 'check':
       return <polyline points="5 12.5 10 17.5 19 6.5" {...OUTLINE} />;
   }

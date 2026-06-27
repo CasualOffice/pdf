@@ -17,8 +17,9 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 **Goal:** a viewer that beats OSS baselines on polish.
 - [x] Virtualized rendering (EmbedPDF scroll + tiling), fit modes (fit-width/fit-page), zoom, rotate, page nav, two-page spread, pan, fullscreen, thumbnails, text search + highlights, text selection — all wired via EmbedPDF plugins in `packages/pdf-sdk` and driven by a floating toolbar (`src/ui/chrome.tsx`).
 - [x] **Google-Docs-style layout**: top app bar (logo + title + Share + account), left-aligned rounded toolbar, grey canvas with white page cards, and the view/edit/suggest control as a Docs-style **mode dropdown** (Viewing/Suggesting/Editing) at the toolbar's right. Design-system tokens; light/dark; SVG icons (filled = active) + WCAG 2.2 (aria-labels, `aria-pressed`/`menuitemradio`, visible focus, ≥36px targets). Brand **logo + favicon** added (`apps/web/public/`).
-- [ ] Outline/bookmarks panel (plugin registered-ready; `getBookmarks` Task → tree UI still to build).
-- [ ] Continuous vs single-page scroll-mode toggle (scroll strategy/spread refinement).
+- [x] **File / View / Help menu bar** (Google-Docs-style) in the app shell with **Open** (file picker → object URL), **Download**, **Print/open-in-tab**, Open sample, ⌘O/⌘S shortcuts, dark-theme toggle, full screen, and an About dialog. This is the open/save story for the web surface (desktop file I/O comes via Tauri).
+- [x] **Outline/bookmarks panel** (`@embedpdf/plugin-bookmark` → `getBookmarks` → tree; click navigates; verified against a bookmarked fixture). One left panel at a time (thumbnails ↔ outline).
+- [x] Scroll-direction toggle (vertical ↔ horizontal, `setScrollStrategy`). *(Note: EmbedPDF's scroll plugin offers vertical/horizontal, not a single-page snap mode.)*
 - [ ] Desktop integration MVP: add `DocKind::Pdf` to shell, `desk-bridge-bootstrap`, open `.pdf` from disk, native print-to-PDF export. *(Lives in the separate `services/desktop` repo.)*
 **Reuse:** EmbedPDF, design-system, desktop shell.
 **Gates:** UX-P1..P5, UX-I2, UX-I6, UX-F1, UX-F3. *(UX-F1 ✅ kept green; UX-P/I verified by headless drive: 4-page nav, zoom→140%, search 19 matches, thumbnails, light/dark.)*

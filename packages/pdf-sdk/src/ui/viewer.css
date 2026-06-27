@@ -205,6 +205,13 @@
   font: 500 11px/1 var(--font-sans, system-ui, sans-serif);
 }
 
+.cpdf__panel-empty {
+  padding: var(--space-3, 12px);
+  color: var(--color-text-muted, #888);
+  font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  text-align: center;
+}
+
 /* Outline entries */
 .cpdf__outline-item {
   display: block;

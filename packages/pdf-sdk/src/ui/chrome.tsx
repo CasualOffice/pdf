@@ -8,12 +8,12 @@
  * components render *inside* the <EmbedPDF> provider (see CasualPdf.tsx), which
  * is what makes the hooks resolve.
  */
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Viewport } from '@embedpdf/plugin-viewport/react';
 import { Scroller } from '@embedpdf/plugin-scroll/react';
 import { RenderLayer } from '@embedpdf/plugin-render/react';
 import { useZoom, ZoomMode } from '@embedpdf/plugin-zoom/react';
-import { useScroll } from '@embedpdf/plugin-scroll/react';
+import { useScroll, useScrollCapability, ScrollStrategy } from '@embedpdf/plugin-scroll/react';
 import { useRotate } from '@embedpdf/plugin-rotate/react';
 import { useSpread, SpreadMode } from '@embedpdf/plugin-spread/react';
 import { useFullscreen } from '@embedpdf/plugin-fullscreen/react';
@@ -21,12 +21,23 @@ import { usePan } from '@embedpdf/plugin-pan/react';
 import { useSearch, SearchLayer } from '@embedpdf/plugin-search/react';
 import { SelectionLayer } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
+import { useBookmarkCapability } from '@embedpdf/plugin-bookmark/react';
 import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
 import type { Mode } from '../modes';
 import './viewer.css';
 
 const ROOT_ID = 'cpdf-root';
+
+/** Which left-hand panel is open (one at a time, Google-Docs-style). */
+type LeftPanel = 'thumbs' | 'outline' | null;
+
+/** A minimal view of @embedpdf/models' PdfBookmarkObject (avoids a type dep). */
+interface Bookmark {
+  title: string;
+  target?: { type: string; destination?: { pageIndex: number } };
+  children?: Bookmark[];
+}
 
 const MODE_META: Record<Mode, { label: string; icon: IconName; desc: string }> = {
   view: { label: 'Viewing', icon: 'eye', desc: 'Read only' },
@@ -104,26 +115,25 @@ function Toolbar({
   onModeChange,
   searchOpen,
   onToggleSearch,
-  thumbsOpen,
-  onToggleThumbs,
+  leftPanel,
+  onToggleLeft,
 }: {
   documentId: string;
   mode: Mode;
   onModeChange?: (m: Mode) => void;
   searchOpen: boolean;
   onToggleSearch: () => void;
-  thumbsOpen: boolean;
-  onToggleThumbs: () => void;
+  leftPanel: LeftPanel;
+  onToggleLeft: (p: 'thumbs' | 'outline') => void;
 }) {
   const { state: zoom, provides: zoomApi } = useZoom(documentId);
   const { state: scroll, provides: scrollApi } = useScroll(documentId);
+  const { provides: scrollCap } = useScrollCapability();
   const { provides: rotateApi } = useRotate(documentId);
   const { spreadMode, provides: spreadApi } = useSpread(documentId);
   const { state: fs, provides: fsApi } = useFullscreen();
   const { isPanning, provides: panApi } = usePan(documentId);
-  const [dark, setDark] = useState(
-    () => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark',
-  );
+  const [horizontal, setHorizontal] = useState(false);
 
   const page = scroll?.currentPage ?? 1;
   const total = scroll?.totalPages ?? 0;
@@ -133,17 +143,29 @@ function Toolbar({
     if (!scrollApi || Number.isNaN(n)) return;
     scrollApi.scrollToPage({ pageNumber: Math.min(Math.max(1, n), total || 1) });
   };
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.dataset.theme = next ? 'dark' : '';
+  const toggleScrollDir = () => {
+    const next = !horizontal;
+    setHorizontal(next);
+    scrollCap?.setScrollStrategy(next ? ScrollStrategy.Horizontal : ScrollStrategy.Vertical, documentId);
   };
+  // Theme is owned by the app shell's View menu; the toolbar no longer toggles it.
 
   return (
     <div className="cpdf__toolbar" role="toolbar" aria-label="PDF viewer toolbar">
       <div className="cpdf__toolbar-scroll">
       <div className="cpdf__group">
-        <IconButton icon="thumbnails" label="Page thumbnails" active={thumbsOpen} onClick={onToggleThumbs} />
+        <IconButton
+          icon="thumbnails"
+          label="Page thumbnails"
+          active={leftPanel === 'thumbs'}
+          onClick={() => onToggleLeft('thumbs')}
+        />
+        <IconButton
+          icon="outline"
+          label="Document outline"
+          active={leftPanel === 'outline'}
+          onClick={() => onToggleLeft('outline')}
+        />
       </div>
       <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
@@ -199,6 +221,12 @@ function Toolbar({
           onClick={() => spreadApi?.setSpreadMode(spreadMode === SpreadMode.None ? SpreadMode.Odd : SpreadMode.None)}
         />
         <IconButton icon="hand" label="Pan tool" active={isPanning} onClick={() => panApi?.togglePan()} />
+        <IconButton
+          icon="scroll-h"
+          label={horizontal ? 'Vertical scrolling' : 'Horizontal scrolling'}
+          active={horizontal}
+          onClick={toggleScrollDir}
+        />
       </div>
       <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
@@ -208,11 +236,6 @@ function Toolbar({
           label={fs.isFullscreen ? 'Exit full screen' : 'Full screen'}
           active={fs.isFullscreen}
           onClick={() => fsApi?.toggleFullscreen(ROOT_ID)}
-        />
-        <IconButton
-          icon={dark ? 'sun' : 'moon'}
-          label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-          onClick={toggleTheme}
         />
       </div>
       </div>
@@ -291,6 +314,73 @@ function ThumbnailSidebar({ documentId, onClose }: { documentId: string; onClose
   );
 }
 
+/** Document outline / bookmarks. Fetched async via the bookmark plugin. */
+function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: () => void }) {
+  const { provides } = useBookmarkCapability();
+  const { provides: scrollApi } = useScroll(documentId);
+  const [items, setItems] = useState<Bookmark[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const scope = provides?.forDocument(documentId);
+    if (!scope) return;
+    scope
+      .getBookmarks()
+      .toPromise()
+      .then((res) => {
+        if (!cancelled) {
+          setItems((res?.bookmarks ?? []) as Bookmark[]);
+          setLoaded(true);
+        }
+      })
+      .catch(() => !cancelled && setLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [provides, documentId]);
+
+  const go = (bm: Bookmark) => {
+    const t = bm.target;
+    if (t?.type === 'destination' && t.destination) {
+      scrollApi?.scrollToPage({ pageNumber: t.destination.pageIndex + 1 });
+    }
+  };
+
+  const tree = (nodes: Bookmark[], depth = 0): ReactNode =>
+    nodes.map((bm, i) => (
+      <Fragment key={`${depth}-${i}-${bm.title}`}>
+        <button
+          type="button"
+          className="cpdf__outline-item"
+          style={{ paddingLeft: 8 + depth * 14 }}
+          onClick={() => go(bm)}
+        >
+          {bm.title}
+        </button>
+        {bm.children?.length ? tree(bm.children, depth + 1) : null}
+      </Fragment>
+    ));
+
+  return (
+    <aside className="cpdf__panel" aria-label="Document outline">
+      <div className="cpdf__panel-head">
+        <span>Outline</span>
+        <IconButton icon="close" label="Close outline" onClick={onClose} />
+      </div>
+      <div className="cpdf__panel-body">
+        {!loaded ? (
+          <div className="cpdf__panel-empty">Loading…</div>
+        ) : items.length ? (
+          tree(items)
+        ) : (
+          <div className="cpdf__panel-empty">This document has no outline.</div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 /** The stateful viewer: chrome + page layers. Rendered once the doc is loaded. */
 export function Viewer({
   documentId,
@@ -302,7 +392,8 @@ export function Viewer({
   onModeChange?: (m: Mode) => void;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
-  const [thumbsOpen, setThumbsOpen] = useState(false);
+  const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
+  const toggleLeft = (p: 'thumbs' | 'outline') => setLeftPanel((cur) => (cur === p ? null : p));
 
   return (
     <div className="cpdf" id={ROOT_ID}>
@@ -312,11 +403,16 @@ export function Viewer({
         onModeChange={onModeChange}
         searchOpen={searchOpen}
         onToggleSearch={() => setSearchOpen((v) => !v)}
-        thumbsOpen={thumbsOpen}
-        onToggleThumbs={() => setThumbsOpen((v) => !v)}
+        leftPanel={leftPanel}
+        onToggleLeft={toggleLeft}
       />
       <div className="cpdf__body">
-        {thumbsOpen && <ThumbnailSidebar documentId={documentId} onClose={() => setThumbsOpen(false)} />}
+        {leftPanel === 'thumbs' && (
+          <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />
+        )}
+        {leftPanel === 'outline' && (
+          <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />
+        )}
         <Viewport documentId={documentId} className="cpdf__viewport">
           <Scroller
             documentId={documentId}
