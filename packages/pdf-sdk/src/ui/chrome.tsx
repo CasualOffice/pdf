@@ -808,7 +808,17 @@ function BottomBar({
 }
 
 /* ── Find bar (floats top-right of the canvas) ────────────────────────────── */
-function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () => void }) {
+function SearchPanel({
+  documentId,
+  onClose,
+  canRedact,
+  onRedactMatches,
+}: {
+  documentId: string;
+  onClose: () => void;
+  canRedact?: boolean;
+  onRedactMatches?: (results: { pageIndex: number; rects: { origin: { x: number; y: number }; size: { width: number; height: number } }[] }[]) => void;
+}) {
   const { state, provides } = useSearch(documentId);
   const { provides: scrollApi } = useScroll(documentId);
   const [q, setQ] = useState('');
@@ -861,6 +871,17 @@ function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () 
       <span className="cpdf__search-count">{state?.loading ? '…' : `${active}/${total}`}</span>
       <IconButton icon="chevron-left" label="Previous match" disabled={total === 0} onClick={() => provides?.previousResult()} />
       <IconButton icon="chevron-right" label="Next match" disabled={total === 0} onClick={() => provides?.nextResult()} />
+      {canRedact && onRedactMatches && (
+        <>
+          <span className="cpdf__sep" aria-hidden="true" />
+          <IconButton
+            icon="redact"
+            label={`Redact all ${total} match${total === 1 ? '' : 'es'}`}
+            disabled={total === 0}
+            onClick={() => onRedactMatches(state?.results ?? [])}
+          />
+        </>
+      )}
       <IconButton icon="close" label="Close find" onClick={onClose} />
     </div>
   );
@@ -1556,6 +1577,34 @@ export function Viewer({
     }
   };
 
+  // Redact every match of the current search: convert each hit's rects (page
+  // points) into fractional marks, then enter redact mode for review + Apply.
+  const redactSearchMatches = (
+    results: { pageIndex: number; rects: { origin: { x: number; y: number }; size: { width: number; height: number } }[] }[],
+  ) => {
+    if (!docCap) return;
+    const doc = docCap.getDocument(documentId);
+    const marks: RedactRect[] = [];
+    for (const res of results) {
+      const size = doc?.pages?.[res.pageIndex]?.size;
+      if (!size) continue;
+      for (const r of res.rects) {
+        marks.push({
+          pageIndex: res.pageIndex,
+          x: r.origin.x / size.width,
+          y: r.origin.y / size.height,
+          w: r.size.width / size.width,
+          h: r.size.height / size.height,
+        });
+      }
+    }
+    if (marks.length) {
+      setRedactions((prev) => [...prev, ...marks]);
+      setRedacting(true);
+      setSearchOpen(false);
+    }
+  };
+
   // Leaving the editing state (View mode or full-screen presentation) is
   // read-only: drop any active tool (so no crosshair cursor lingers) and clear
   // the selection for a clean read view.
@@ -1783,7 +1832,14 @@ export function Viewer({
           {editing && <PropertiesPanel documentId={documentId} />}
         </div>
         <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
-        {searchOpen && <SearchPanel documentId={documentId} onClose={() => setSearchOpen(false)} />}
+        {searchOpen && (
+          <SearchPanel
+            documentId={documentId}
+            onClose={() => setSearchOpen(false)}
+            canRedact={editing}
+            onRedactMatches={redactSearchMatches}
+          />
+        )}
         {showSelTools && (
           <div className="cpdf__seltools" role="toolbar" aria-label="Selection actions" onMouseDown={(e) => e.preventDefault()}>
             <button type="button" className="cpdf-iconbtn" title="Highlight" aria-label="Highlight" onClick={() => applyMarkup('highlight')}>
