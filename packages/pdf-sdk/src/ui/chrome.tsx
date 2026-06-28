@@ -213,6 +213,11 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
     selected.some((a) => set.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
   const widthRelevant = relevant(STROKE_TOOLS);
   const fontRelevant = relevant(TEXT_TOOLS);
+  // A single selected sticky-note (Comment tool): its text lives in `contents`.
+  const note =
+    selected.length === 1 && scope && scope.findToolForAnnotation(selected[0].object)?.id === 'textComment'
+      ? (selected[0].object as { id: string; pageIndex: number; contents?: string })
+      : null;
 
   const apply = (patch: Record<string, unknown>, colorMode = false) => {
     if (selected.length && scope) {
@@ -234,8 +239,26 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
 
   return (
     <aside className="cpdf__props" aria-label="Properties">
-      <div className="cpdf__props-head">{selected.length > 0 ? 'Selection' : 'Tool style'}</div>
+      <div className="cpdf__props-head">{note ? 'Comment' : selected.length > 0 ? 'Selection' : 'Tool style'}</div>
       <div className="cpdf__props-body">
+          {note && (
+            <div className="cpdf__field">
+              <span className="cpdf__field-label">Comment</span>
+              <textarea
+                key={note.id}
+                className="cpdf__comment-input"
+                defaultValue={note.contents ?? ''}
+                placeholder="Type your comment…"
+                rows={4}
+                autoFocus
+                /* Commit on each change: deselecting unmounts this textarea
+                   before onBlur could fire, so onBlur would lose the edit. */
+                onChange={(e) =>
+                  scope?.updateAnnotations([{ pageIndex: note.pageIndex, id: note.id, patch: { contents: e.target.value } }])
+                }
+              />
+            </div>
+          )}
           <div className="cpdf__field">
             <span className="cpdf__field-label">Color</span>
             <div className="cpdf__swatches">

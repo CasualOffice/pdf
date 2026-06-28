@@ -185,6 +185,24 @@
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
+.cpdf__comment-input {
+  width: 100%;
+  resize: vertical;
+  padding: var(--space-4, 8px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1b1c1f);
+  border: 1px solid var(--color-border, #e6e9ee);
+  border-radius: var(--radius-md, 6px);
+  font: 400 13px/1.5 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__comment-input::placeholder {
+  color: var(--color-text-secondary, #889);
+}
+.cpdf__comment-input:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 0;
+  border-color: transparent;
+}
 .cpdf__swatches {
   display: flex;
   flex-wrap: wrap;
