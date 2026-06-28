@@ -721,10 +721,15 @@ export function Viewer({
     };
   }, [apiRef, annoApi, history, exportCap]);
 
-  // Entering presentation (full screen) drops any active tool — it's read-only.
+  // Leaving the editing state (View mode or full-screen presentation) is
+  // read-only: drop any active tool (so no crosshair cursor lingers) and clear
+  // the selection for a clean read view.
   useEffect(() => {
-    if (presenting) annoApi?.setActiveTool(null);
-  }, [presenting, annoApi]);
+    if (!editing) {
+      annoApi?.setActiveTool(null);
+      annoApi?.deselectAnnotation();
+    }
+  }, [editing, annoApi]);
 
   // View mode (and presentation) is read-only: lock annotations so they can't be
   // moved/resized/deleted. They stay selectable, so clicking a note still opens
