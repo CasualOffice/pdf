@@ -376,6 +376,24 @@
   outline: 2px solid var(--color-focus-ring, #4658ff);
   outline-offset: 1px;
 }
+/* Custom numeric entry sitting after the presets (stroke width / font size). */
+.cpdf__numinput {
+  width: 52px;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border, #d8dce4);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111);
+  font: 600 12px/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.cpdf__numinput:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 1px;
+}
 .cpdf__delete {
   display: inline-flex;
   align-items: center;

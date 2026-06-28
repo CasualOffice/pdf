@@ -416,6 +416,19 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                     <span style={{ height: w }} />
                   </button>
                 ))}
+                <input
+                  type="number"
+                  className="cpdf__numinput"
+                  min={1}
+                  max={72}
+                  step={1}
+                  value={currentStrokeWidth}
+                  aria-label="Custom stroke width"
+                  onChange={(e) => {
+                    const n = parseFloat(e.target.value);
+                    if (!Number.isNaN(n)) apply({ strokeWidth: Math.min(72, Math.max(1, n)) });
+                  }}
+                />
               </div>
             </div>
           )}
@@ -435,6 +448,19 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                     {s}
                   </button>
                 ))}
+                <input
+                  type="number"
+                  className="cpdf__numinput"
+                  min={6}
+                  max={144}
+                  step={1}
+                  value={currentFontSize}
+                  aria-label="Custom font size"
+                  onChange={(e) => {
+                    const n = parseFloat(e.target.value);
+                    if (!Number.isNaN(n)) apply({ fontSize: Math.min(144, Math.max(6, n)) });
+                  }}
+                />
               </div>
             </div>
           )}
