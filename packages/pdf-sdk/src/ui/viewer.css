@@ -974,10 +974,16 @@
 .cpdf__sigpad {
   width: 100%;
   height: 180px;
-  background: var(--color-surface, #fbfcfe);
+  /* Always a light "paper" surface so dark ink stays visible in dark mode (the
+     signature is drawn onto white paper anyway). */
+  background: #fbfcfe;
   border: 1px dashed var(--color-border, #c9cfda);
   border-radius: var(--radius-md, 8px);
   touch-action: none;
+}
+.cpdf__sigpad input,
+.cpdf__sigpad textarea {
+  color: #1b1c1f;
 }
 .cpdf__sigpad canvas,
 .cpdf__sigpad input,
