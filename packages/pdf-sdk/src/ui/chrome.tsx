@@ -70,6 +70,18 @@ const PALETTE = ['#1f2430', '#e8453c', '#f5a623', '#2bb673', '#2d8cff', '#8b5cf6
 const STROKE_WIDTHS = [1, 2, 4, 6];
 const OPACITIES = [1, 0.75, 0.5, 0.25];
 const FONT_SIZES = [12, 16, 24, 32];
+// PdfStandardFont enum values: Helvetica=4, Times_Roman=8, Courier=0.
+const FONT_FAMILIES: { label: string; value: number }[] = [
+  { label: 'Sans', value: 4 },
+  { label: 'Serif', value: 8 },
+  { label: 'Mono', value: 0 },
+];
+// PdfTextAlignment: Left=0, Center=1, Right=2.
+const TEXT_ALIGNS: { icon: IconName; value: number; label: string }[] = [
+  { icon: 'align-left', value: 0, label: 'Align left' },
+  { icon: 'align-center', value: 1, label: 'Align center' },
+  { icon: 'align-right', value: 2, label: 'Align right' },
+];
 const STROKE_TOOLS = new Set(['ink', 'inkHighlighter', 'line', 'lineArrow', 'square', 'circle', 'polygon', 'polyline']);
 const TEXT_TOOLS = new Set(['freeText', 'freeTextCallout']);
 // Text-markup annotations render their color from `strokeColor`, not `color`.
@@ -206,7 +218,7 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   if (!hasContext) return null;
 
   const firstObj = selected[0]?.object as
-    | { color?: string; strokeColor?: string; fontColor?: string; opacity?: number; fontSize?: number; strokeWidth?: number }
+    | { color?: string; strokeColor?: string; fontColor?: string; opacity?: number; fontSize?: number; strokeWidth?: number; fontFamily?: number; textAlign?: number }
     | undefined;
   const toolDefaults = activeToolId ? (cap?.getTool(activeToolId)?.defaults as Record<string, unknown> | undefined) : undefined;
   const currentColor = norm(
@@ -216,6 +228,8 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
   const currentOpacity = firstObj?.opacity ?? (toolDefaults?.opacity as number) ?? 1;
   const currentFontSize = firstObj?.fontSize ?? (toolDefaults?.fontSize as number) ?? 16;
   const currentStrokeWidth = firstObj?.strokeWidth ?? (toolDefaults?.strokeWidth as number) ?? 2;
+  const currentFontFamily = firstObj?.fontFamily ?? (toolDefaults?.fontFamily as number) ?? 4; // Helvetica
+  const currentAlign = firstObj?.textAlign ?? (toolDefaults?.textAlign as number) ?? 0; // Left
   const relevant = (set: Set<string>) =>
     (activeToolId !== null && set.has(activeToolId)) ||
     selected.some((a) => set.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
@@ -316,6 +330,45 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                     onClick={() => apply({ fontSize: s })}
                   >
                     {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {fontRelevant && (
+            <div className="cpdf__field">
+              <span className="cpdf__field-label">Font</span>
+              <div className="cpdf__widths">
+                {FONT_FAMILIES.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className="cpdf__opbtn"
+                    data-active={currentFontFamily === f.value ? 'true' : undefined}
+                    aria-pressed={currentFontFamily === f.value}
+                    onClick={() => apply({ fontFamily: f.value })}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {fontRelevant && (
+            <div className="cpdf__field">
+              <span className="cpdf__field-label">Alignment</span>
+              <div className="cpdf__widths">
+                {TEXT_ALIGNS.map((al) => (
+                  <button
+                    key={al.value}
+                    type="button"
+                    className="cpdf__wbtn"
+                    data-active={currentAlign === al.value ? 'true' : undefined}
+                    aria-label={al.label}
+                    aria-pressed={currentAlign === al.value}
+                    onClick={() => apply({ textAlign: al.value })}
+                  >
+                    <Icon name={al.icon} size={18} />
                   </button>
                 ))}
               </div>

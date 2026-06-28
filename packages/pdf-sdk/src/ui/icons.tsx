@@ -60,6 +60,9 @@ import {
   MdStrikethroughS,
   MdWaves,
   MdTitle,
+  MdFormatAlignLeft,
+  MdFormatAlignCenter,
+  MdFormatAlignRight,
   MdStickyNote2,
   MdOutlineStickyNote2,
   MdComment,
@@ -114,6 +117,9 @@ export type IconName =
   | 'squiggly'
   | 'ink'
   | 'text-tool'
+  | 'align-left'
+  | 'align-center'
+  | 'align-right'
   | 'note'
   | 'comments'
   | 'square'
@@ -161,6 +167,9 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   squiggly: { filled: MdWaves },
   ink: { filled: MdBrush, outline: MdOutlineBrush },
   'text-tool': { filled: MdTitle },
+  'align-left': { filled: MdFormatAlignLeft },
+  'align-center': { filled: MdFormatAlignCenter },
+  'align-right': { filled: MdFormatAlignRight },
   note: { filled: MdStickyNote2, outline: MdOutlineStickyNote2 },
   comments: { filled: MdComment, outline: MdOutlineComment },
   square: { filled: MdCropSquare },
