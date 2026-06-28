@@ -518,6 +518,19 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                   {Math.round(o * 100)}%
                 </button>
               ))}
+              <input
+                type="number"
+                className="cpdf__numinput"
+                min={5}
+                max={100}
+                step={5}
+                value={Math.round(currentOpacity * 100)}
+                aria-label="Custom opacity percent"
+                onChange={(e) => {
+                  const n = parseFloat(e.target.value);
+                  if (!Number.isNaN(n)) apply({ opacity: Math.min(1, Math.max(0.05, n / 100)) });
+                }}
+              />
             </div>
           </div>
           {selected.length > 0 && (
@@ -1145,6 +1158,24 @@ function SignatureModal({ documentId, onClose }: { documentId: string; onClose: 
                   onClick={() => setColor(c)}
                 />
               ))}
+              {(() => {
+                const isCustom = !SIG_INK_COLORS.includes(color);
+                return (
+                  <label
+                    className="cpdf__swatch cpdf__swatch--custom"
+                    data-active={isCustom ? 'true' : undefined}
+                    title="Custom ink color"
+                    style={isCustom ? { background: color } : undefined}
+                  >
+                    <input
+                      type="color"
+                      aria-label="Custom ink color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : SIG_INK_COLORS[0]}
+                      onChange={(e) => setColor(e.target.value)}
+                    />
+                  </label>
+                );
+              })()}
             </div>
           </div>
           {tab === 'type' && (
