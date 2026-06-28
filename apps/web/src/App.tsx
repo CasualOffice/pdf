@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CasualPdf, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
+import { useEffect, useRef, useState } from 'react';
+import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { MenuBar, type MenuDef } from './Menu';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
@@ -13,23 +13,10 @@ function initialSrc(): string {
   }
 }
 
-// Inline SVGs (no icon font / emoji) for the app-shell chrome.
-const svg = (children: ReactNode) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {children}
-  </svg>
-);
-const HamburgerIcon = () => svg(<><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></>);
-const EyeIcon = () => svg(<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>);
-const SuggestIcon = () => svg(<><path d="M13.5 6.2 17.8 10.5 7 21.3H2.7V17z" /><path d="M15 4.7 17 2.7l4.3 4.3-2 2" /></>);
-const PencilIcon = () => svg(<><path d="M14.5 5.2 18.8 9.5 8 20.3H3.7V16z" /><path d="M16 3.7 18 1.7l4.3 4.3-2 2" /></>);
-const SunIcon = () => svg(<><circle cx="12" cy="12" r="4" /><line x1="12" y1="2.5" x2="12" y2="5" /><line x1="12" y1="19" x2="12" y2="21.5" /><line x1="2.5" y1="12" x2="5" y2="12" /><line x1="19" y1="12" x2="21.5" y2="12" /><line x1="5.2" y1="5.2" x2="7" y2="7" /><line x1="17" y1="17" x2="18.8" y2="18.8" /><line x1="5.2" y1="18.8" x2="7" y2="17" /><line x1="17" y1="7" x2="18.8" y2="5.2" /></>);
-const MoonIcon = () => svg(<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />);
-
-const MODES: { id: Mode; label: string; Icon: () => ReactNode }[] = [
-  { id: 'view', label: 'View', Icon: EyeIcon },
-  { id: 'suggest', label: 'Suggest', Icon: SuggestIcon },
-  { id: 'edit', label: 'Edit', Icon: PencilIcon },
+const MODES: { id: Mode; label: string; icon: 'eye' | 'suggest' | 'pencil' }[] = [
+  { id: 'view', label: 'View', icon: 'eye' },
+  { id: 'suggest', label: 'Suggest', icon: 'suggest' },
+  { id: 'edit', label: 'Edit', icon: 'pencil' },
 ];
 
 /**
@@ -110,7 +97,7 @@ export function App() {
   const menus: MenuDef[] = [
     {
       label: 'Menu',
-      icon: <HamburgerIcon />,
+      icon: <Icon name="menu" size={18} />,
       items: [
         { label: 'Open…', shortcut: '⌘O', onSelect: () => fileRef.current?.click() },
         { label: 'Open sample', onSelect: () => { setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); } },
@@ -152,7 +139,7 @@ export function App() {
         </div>
         <div className="appbar__actions">
           <div className="modeseg" role="tablist" aria-label="Editing mode">
-            {MODES.map(({ id, label, Icon }) => (
+            {MODES.map(({ id, label, icon }) => (
               <button
                 key={id}
                 type="button"
@@ -164,7 +151,7 @@ export function App() {
                 data-active={mode === id ? 'true' : undefined}
                 onClick={() => setMode(id)}
               >
-                <Icon />
+                <Icon name={icon} filled={mode === id} size={16} />
                 <span>{label}</span>
               </button>
             ))}
@@ -176,7 +163,7 @@ export function App() {
             aria-pressed={dark}
             onClick={() => setDark((v) => !v)}
           >
-            {dark ? <SunIcon /> : <MoonIcon />}
+            <Icon name={dark ? 'sun' : 'moon'} size={18} />
           </button>
           <div className="appbar__avatar" aria-hidden="true">S</div>
         </div>

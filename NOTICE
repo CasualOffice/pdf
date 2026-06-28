@@ -8,3 +8,8 @@ It builds on third-party open source under permissive licenses, including
 pdfium-render (Apache-2.0/MIT), lopdf (MIT), @signpdf/signpdf (MIT),
 node-forge (BSD-3), Yjs (MIT), and Hocuspocus (MIT). See docs/RESEARCH.md
 for the full dependency/license inventory. No (A)GPL components are included.
+
+UI icons are from Font Awesome Free (https://fontawesome.com) — icons under
+CC BY 4.0, fonts under SIL OFL 1.1, code under MIT. (CC BY 4.0 sits outside
+the otherwise MIT/Apache/BSD-only policy; included by explicit project
+direction, attribution provided here as the license requires.)

@@ -111,6 +111,18 @@ importers:
       '@embedpdf/plugin-zoom':
         specifier: ^2.14.4
         version: 2.14.4(c16cb8ddcae1dd72b76a9951838c49f4)
+      '@fortawesome/fontawesome-svg-core':
+        specifier: ^7.3.0
+        version: 7.3.0
+      '@fortawesome/free-regular-svg-icons':
+        specifier: ^7.3.0
+        version: 7.3.0
+      '@fortawesome/free-solid-svg-icons':
+        specifier: ^7.3.0
+        version: 7.3.0
+      '@fortawesome/react-fontawesome':
+        specifier: ^3.3.1
+        version: 3.3.1(@fortawesome/fontawesome-svg-core@7.3.0)(react@18.3.1)
       '@hocuspocus/provider':
         specifier: ^2.15.2
         version: 2.15.3(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
@@ -622,6 +634,29 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fortawesome/fontawesome-common-types@7.3.0':
+    resolution: {integrity: sha512-X/vND0Y1l9fVJ9O79UgtZnXSpz4aNF3bXlDxiJAEAm6kgeSftp9wjjBPgqzazJV8YlmxfRoeXNfSCJ48sf/Hhw==}
+    engines: {node: '>=6'}
+
+  '@fortawesome/fontawesome-svg-core@7.3.0':
+    resolution: {integrity: sha512-MFbTNLDWkLJwbozDvHOZ7hwyDjQcBMBattlcOQ6ZmV5YD9bBrqdl1rNtmVjQ/lzqveXXX3sMz2Ew6fAgXoxmkw==}
+    engines: {node: '>=6'}
+
+  '@fortawesome/free-regular-svg-icons@7.3.0':
+    resolution: {integrity: sha512-4675NiHzJJs0dLStFpp5G1JNfMYxqFSxZ2iCaiMfHptjlc8McLG9oqcd5pFEiPiqfiV2YG25cJ9EYWIEhUvp+A==}
+    engines: {node: '>=6'}
+
+  '@fortawesome/free-solid-svg-icons@7.3.0':
+    resolution: {integrity: sha512-YxI/CuwWeI3nPIoYU//vkDS+3ige/67DPZ6XwMATpYEFESzO9L8zfJOKllGRgIlpT/uebrZCcvAzp3peD7GmTw==}
+    engines: {node: '>=6'}
+
+  '@fortawesome/react-fontawesome@3.3.1':
+    resolution: {integrity: sha512-wGnAPhfzivDwBWYmEG8MSrEXPruoiMMo48NnsRkj1NZkoaawgOijPNAiSHKMYEoCsqTBSgLTzL6EqTTWGaUR4w==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@fortawesome/fontawesome-svg-core': ~6 || ~7
+      react: ^18.0.0 || ^19.0.0
 
   '@hocuspocus/common@2.15.3':
     resolution: {integrity: sha512-Rzh1HF0a2o/tf90A3w2XNdXd9Ym3aQzMDfD3lAUONCX9B9QOdqdyiORrj6M25QEaJrEIbXFy8LtAFcL0wRdWzA==}
@@ -1590,6 +1625,25 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.12':
     optional: true
+
+  '@fortawesome/fontawesome-common-types@7.3.0': {}
+
+  '@fortawesome/fontawesome-svg-core@7.3.0':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.0
+
+  '@fortawesome/free-regular-svg-icons@7.3.0':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.0
+
+  '@fortawesome/free-solid-svg-icons@7.3.0':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.0
+
+  '@fortawesome/react-fontawesome@3.3.1(@fortawesome/fontawesome-svg-core@7.3.0)(react@18.3.1)':
+    dependencies:
+      '@fortawesome/fontawesome-svg-core': 7.3.0
+      react: 18.3.1
 
   '@hocuspocus/common@2.15.3':
     dependencies:

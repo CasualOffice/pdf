@@ -1,4 +1,6 @@
 export { CasualPdf } from './CasualPdf';
+export { Icon } from './ui/icons';
+export type { IconName } from './ui/icons';
 export { attachCollab } from './collab';
 export type { CollabHandle } from './collab';
 export { roleToMode } from './modes';
