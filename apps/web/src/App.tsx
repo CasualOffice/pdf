@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { MenuBar, type MenuDef } from './Menu';
+import { SignDialog } from './SignDialog';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
 
@@ -33,6 +34,7 @@ export function App() {
   const [title, setTitle] = useState('Untitled document');
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
+  const [signing, setSigning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
@@ -116,6 +118,8 @@ export function App() {
         { label: 'Download', shortcut: '⌘S', onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
         { divider: true },
+        { label: 'Digitally sign…', onSelect: () => setSigning(true) },
+        { divider: true },
         { label: 'About Casual PDF', onSelect: () => setAbout(true) },
       ],
     },
@@ -196,6 +200,8 @@ export function App() {
       <main className="canvas">
         <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} className="viewer" />
       </main>
+
+      {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}
 
       {about && (
         <div className="dialog__scrim" role="presentation" onClick={() => setAbout(false)}>

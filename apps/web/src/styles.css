@@ -289,3 +289,119 @@ body {
   outline: 2px solid var(--color-focus-ring, #4658ff);
   outline-offset: 2px;
 }
+
+/* ── Digitally-sign dialog (form variant) ───────────────────────────────── */
+.dialog--form {
+  width: 420px;
+  padding: 22px 22px 18px;
+  text-align: left;
+}
+.signdlg__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--color-accent, #4658ff);
+}
+.signdlg__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary, #555);
+}
+.signdlg__field input,
+.signdlg__cert input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border, #d8dce4);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111);
+  font: 400 14px/1 var(--font-sans, system-ui, sans-serif);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.signdlg__field input:focus-visible,
+.signdlg__cert input:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 1px;
+}
+.signdlg__identity {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider, #e6e9ee);
+  border-radius: var(--radius-md, 10px);
+}
+.signdlg__identity legend {
+  padding: 0 6px;
+  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary, #555);
+}
+.signdlg__radio {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.signdlg__radio input {
+  margin-top: 3px;
+  accent-color: var(--color-accent, #4658ff);
+}
+.signdlg__radio span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font: 600 13px/1.3 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1b1c1f);
+}
+.signdlg__radio em {
+  font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  font-style: normal;
+  color: var(--color-text-secondary, #667);
+}
+.signdlg__cert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 2px;
+  padding-left: 24px;
+}
+.signdlg__error {
+  margin: 0 0 10px;
+  color: var(--color-danger, #e5484d);
+  font: 500 13px/1.4 var(--font-sans, system-ui, sans-serif);
+}
+.signdlg__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.signdlg__btn {
+  height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--color-border, #d8dce4);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-raised, #fff);
+  color: var(--color-text, #1b1c1f);
+  font: 600 14px/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+}
+.signdlg__btn:hover:not(:disabled) {
+  background: var(--color-hover, rgba(0, 0, 0, 0.05));
+}
+.signdlg__btn--primary {
+  border-color: transparent;
+  background: var(--color-accent, #4658ff);
+  color: var(--color-text-on-accent, #fff);
+}
+.signdlg__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

@@ -6,7 +6,7 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 It builds on third-party open source under permissive licenses, including
 (non-exhaustive): PDFium (Apache-2.0/BSD-3), EmbedPDF (MIT), pdf-lib (MIT),
 pdfium-render (Apache-2.0/MIT), lopdf (MIT), @signpdf/signpdf (MIT),
-node-forge (BSD-3), Yjs (MIT), and Hocuspocus (MIT). See docs/RESEARCH.md
+node-forge (BSD-3), buffer (MIT), Yjs (MIT), and Hocuspocus (MIT). See docs/RESEARCH.md
 for the full dependency/license inventory. No (A)GPL components are included.
 
 UI icons are Material Icons (Google), licensed under Apache-2.0 (in-policy),

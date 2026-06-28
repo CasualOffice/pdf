@@ -1193,6 +1193,11 @@ export function Viewer({
         if (annoApi && sel.length) annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
       },
       setTool: (id) => annoApi?.setActiveTool(id),
+      getBytes: async () => {
+        if (!exportCap) return null;
+        const ab = await exportCap.saveAsCopy().toPromise();
+        return ab ? new Uint8Array(ab) : null;
+      },
     };
     return () => {
       if (apiRef) apiRef.current = null;

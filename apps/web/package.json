@@ -13,7 +13,8 @@
     "@casualoffice/pdf": "workspace:*",
     "@schnsrw/design-system": "^0.1.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

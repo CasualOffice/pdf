@@ -3,6 +3,10 @@
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+// Certified PDF signing (@signpdf + node-forge, via @casualoffice/pdf) operates
+// on Node Buffers; expose a Buffer global before anything imports the SDK.
+import { Buffer } from 'buffer';
+if (!(globalThis as { Buffer?: unknown }).Buffer) (globalThis as { Buffer?: unknown }).Buffer = Buffer;
 import './desk-bridge-bootstrap';
 // Design-system tokens (CSS custom properties + Material Symbols font) must load
 // once, before app styles, so component vars resolve. There is no ThemeProvider;

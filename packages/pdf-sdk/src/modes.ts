@@ -57,6 +57,10 @@ export interface CasualPdfApi {
   deleteSelection(): void;
   /** Activate an annotation tool by id, or null to return to select. */
   setTool(toolId: string | null): void;
+  /** Current document bytes (annotations/signatures baked in) for the host to
+   *  post-process — e.g. apply a certified digital signature. Null if export
+   *  isn't ready. */
+  getBytes(): Promise<Uint8Array | null>;
 }
 
 export interface CasualPdfProps {
