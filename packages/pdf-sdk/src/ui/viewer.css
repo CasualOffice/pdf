@@ -281,6 +281,44 @@
   outline: 2px solid var(--color-focus-ring, #4658ff);
   outline-offset: 2px;
 }
+/* Custom-color chip: a rainbow wheel that opens the native picker. When a
+   non-preset color is active, an inline `background` style overrides the wheel
+   to show the chosen color. */
+.cpdf__swatch--custom {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    from 0deg,
+    #f5453c,
+    #f5a623,
+    #f5d90a,
+    #2bb673,
+    #2d8cff,
+    #8b5cf6,
+    #f5453c
+  );
+}
+.cpdf__swatch--custom input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+.cpdf__swatch--custom:hover {
+  transform: scale(1.12);
+}
+.cpdf__swatch--custom:focus-within {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 2px;
+}
 .cpdf__widths {
   display: flex;
   gap: 6px;

@@ -375,6 +375,28 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                   onClick={() => apply({ color: c }, true)}
                 />
               ))}
+              {/* Custom color — a rainbow chip that opens the native picker for
+                  any color beyond the presets. Shows the picked color when the
+                  current color isn't one of the swatches. */}
+              {(() => {
+                const isCustom = !!currentColor && !PALETTE.some((c) => norm(c) === currentColor);
+                const hex = /^#[0-9a-f]{6}$/.test(currentColor) ? currentColor : PALETTE[0];
+                return (
+                  <label
+                    className="cpdf__swatch cpdf__swatch--custom"
+                    data-active={isCustom ? 'true' : undefined}
+                    title="Custom color"
+                    style={isCustom ? { background: currentColor } : undefined}
+                  >
+                    <input
+                      type="color"
+                      aria-label="Custom color"
+                      value={hex}
+                      onChange={(e) => apply({ color: e.target.value }, true)}
+                    />
+                  </label>
+                );
+              })()}
             </div>
           </div>
           {widthRelevant && (
