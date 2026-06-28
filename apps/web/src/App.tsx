@@ -46,10 +46,37 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : '';
   }, [dark]);
+
+  // About dialog: ARIA modal behavior — move focus in on open, Escape to
+  // close, trap Tab (the dialog has a single focusable), restore focus on close.
+  useEffect(() => {
+    if (!about) return;
+    const opener = document.activeElement as HTMLElement | null;
+    closeBtnRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setAbout(false);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        closeBtnRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      const restore =
+        opener && opener !== document.body && opener.isConnected
+          ? opener
+          : document.querySelector<HTMLElement>('[aria-label="Menu"]');
+      restore?.focus();
+    };
+  }, [about]);
   useEffect(() => () => {
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
   }, []);
@@ -183,7 +210,7 @@ export function App() {
             <p className="dialog__shortcuts">
               <strong>Shortcuts</strong> — Open ⌘O · Save ⌘S · Undo ⌘Z · Redo ⌘⇧Z · Nudge ←↑↓→ (⇧ = bigger) · Find (top-right) · Tools: V H D T N R O A
             </p>
-            <button type="button" className="dialog__close" onClick={() => setAbout(false)}>
+            <button ref={closeBtnRef} type="button" className="dialog__close" onClick={() => setAbout(false)}>
               Close
             </button>
           </div>
