@@ -1526,6 +1526,36 @@ export function Viewer({
     }
   };
 
+  // Redact the current text selection: convert each selected line's rect (page
+  // points) into a fractional redaction mark, then enter redact mode so the user
+  // can review + Apply. Per-line `segmentRects` give tight boxes over wrapped
+  // text rather than one loose bounding box.
+  const redactSelection = () => {
+    if (!selectionCap || !docCap) return;
+    const doc = docCap.getDocument(documentId);
+    const sel = selectionCap.getFormattedSelection(documentId) ?? [];
+    const marks: RedactRect[] = [];
+    for (const s of sel) {
+      const size = doc?.pages?.[s.pageIndex]?.size;
+      if (!size) continue;
+      const rects = s.segmentRects?.length ? s.segmentRects : [s.rect];
+      for (const r of rects) {
+        marks.push({
+          pageIndex: s.pageIndex,
+          x: r.origin.x / size.width,
+          y: r.origin.y / size.height,
+          w: r.size.width / size.width,
+          h: r.size.height / size.height,
+        });
+      }
+    }
+    selectionCap.clear(documentId);
+    if (marks.length) {
+      setRedactions((prev) => [...prev, ...marks]);
+      setRedacting(true);
+    }
+  };
+
   // Leaving the editing state (View mode or full-screen presentation) is
   // read-only: drop any active tool (so no crosshair cursor lingers) and clear
   // the selection for a clean read view.
@@ -1768,6 +1798,9 @@ export function Viewer({
             <span className="cpdf__sep" aria-hidden="true" />
             <button type="button" className="cpdf-iconbtn" title="Copy" aria-label="Copy" onClick={copySelection}>
               <Icon name="copy" size={18} />
+            </button>
+            <button type="button" className="cpdf-iconbtn" title="Redact selected text" aria-label="Redact selected text" onClick={redactSelection}>
+              <Icon name="redact" size={18} />
             </button>
           </div>
         )}
