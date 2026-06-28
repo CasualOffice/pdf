@@ -147,16 +147,16 @@
 }
 
 /* ── Right properties panel ─────────────────────────────────────────────── */
+/* Docked (matches the left rail): flush to the right edge, full height, flat
+   with a left divider. Negative margins cancel cpdf__main's padding. */
 .cpdf__props {
   display: flex;
   flex-direction: column;
   flex: none;
   width: 260px;
+  margin: calc(-1 * var(--space-4, 8px)) calc(-1 * var(--space-4, 8px)) calc(-1 * var(--space-4, 8px)) 0;
   background: var(--color-surface-raised, #fff);
-  border-radius: var(--radius-lg, 14px);
-  box-shadow:
-    0 0 0 1px var(--color-border, #e6e9ee),
-    var(--shadow-1, 0 1px 4px rgba(0, 0, 0, 0.08));
+  border-left: 1px solid var(--color-border, #e6e9ee);
   overflow: hidden;
 }
 .cpdf__props-head {
