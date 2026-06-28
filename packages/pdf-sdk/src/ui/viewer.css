@@ -561,6 +561,47 @@
   font: 400 12px/1.5 var(--font-sans, system-ui, sans-serif);
   text-align: center;
 }
+/* Comments / review panel rows. */
+.cpdf__comment-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  width: 100%;
+  padding: var(--space-3, 6px) var(--space-4, 8px);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md, 6px);
+  color: var(--color-text, #1b1c1f);
+  font: 400 13px/1.4 var(--font-sans, system-ui, sans-serif);
+  text-align: left;
+  cursor: pointer;
+}
+.cpdf__comment-row:hover {
+  background: var(--color-hover, rgba(0, 0, 0, 0.05));
+}
+.cpdf__comment-row:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: -2px;
+}
+.cpdf__comment-row-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-text-secondary, #667);
+}
+.cpdf__comment-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cpdf__comment-row-page {
+  flex: none;
+  color: var(--color-text-secondary, #889);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Polished empty state (panels): centered icon + title + hint. */
 .cpdf__empty {
   display: flex;

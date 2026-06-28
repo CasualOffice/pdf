@@ -44,7 +44,7 @@ import './viewer.css';
 
 const ROOT_ID = 'cpdf-root';
 
-type LeftPanel = 'thumbs' | 'outline' | null;
+type LeftPanel = 'thumbs' | 'outline' | 'comments' | null;
 
 interface Bookmark {
   title: string;
@@ -157,7 +157,7 @@ function LeftRail({
   documentId: string;
   mode: Mode;
   leftPanel: LeftPanel;
-  onToggleLeft: (p: 'thumbs' | 'outline') => void;
+  onToggleLeft: (p: 'thumbs' | 'outline' | 'comments') => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -168,6 +168,7 @@ function LeftRail({
     <div className="cpdf__rail" role="toolbar" aria-orientation="vertical" aria-label="Tools">
       <RailBtn icon="thumbnails" label="Pages" title="Page thumbnails" active={leftPanel === 'thumbs'} onClick={() => onToggleLeft('thumbs')} />
       <RailBtn icon="outline" label="Outline" title="Document outline" active={leftPanel === 'outline'} onClick={() => onToggleLeft('outline')} />
+      <RailBtn icon="comments" label="Comments" title="Comments & annotations" active={leftPanel === 'comments'} onClick={() => onToggleLeft('comments')} />
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
@@ -671,6 +672,72 @@ function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: 
   );
 }
 
+/* ── Comments / annotations review panel: every annotation in the document,
+   click to scroll to + select it. ─────────────────────────────────────────── */
+function CommentsSidebar({ documentId, onClose }: { documentId: string; onClose: () => void }) {
+  const { state: anno, provides: scope } = useAnnotation(documentId);
+  const { provides: scrollApi } = useScroll(documentId);
+  // Re-read on any annotation state change (anno) so the list stays live.
+  void anno;
+  const items = (scope?.getAnnotations() ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        a.object.pageIndex - b.object.pageIndex ||
+        (a.object.rect?.origin.y ?? 0) - (b.object.rect?.origin.y ?? 0),
+    );
+  const meta = (obj: { contents?: string }, toolId?: string): { icon: IconName; label: string } => {
+    if (toolId === 'textComment') {
+      const text = (obj.contents ?? '').trim();
+      return { icon: 'note', label: text || 'Empty comment' };
+    }
+    const t = TOOLS.find((x) => x.id === toolId);
+    const note = (obj.contents ?? '').trim();
+    return { icon: t?.icon ?? 'note', label: note || t?.label?.replace(' box', '') || 'Annotation' };
+  };
+  const go = (pageIndex: number, id: string) => {
+    scrollApi?.scrollToPage({ pageNumber: pageIndex + 1 });
+    scope?.selectAnnotation(pageIndex, id);
+  };
+  return (
+    <aside className="cpdf__panel" aria-label="Comments">
+      <div className="cpdf__panel-head">
+        <span>Comments</span>
+        <IconButton icon="close" label="Close comments" onClick={onClose} />
+      </div>
+      <div className="cpdf__panel-body">
+        {items.length ? (
+          items.map((a) => {
+            const m = meta(a.object, scope?.findToolForAnnotation(a.object)?.id);
+            return (
+              <button
+                key={a.object.id}
+                type="button"
+                className="cpdf__comment-row"
+                onClick={() => go(a.object.pageIndex, a.object.id)}
+              >
+                <span className="cpdf__comment-row-icon">
+                  <Icon name={m.icon} size={16} />
+                </span>
+                <span className="cpdf__comment-row-text">{m.label}</span>
+                <span className="cpdf__comment-row-page">p.{a.object.pageIndex + 1}</span>
+              </button>
+            );
+          })
+        ) : (
+          <div className="cpdf__empty">
+            <span className="cpdf__empty-icon">
+              <Icon name="comments" size={28} />
+            </span>
+            <span className="cpdf__empty-title">No comments yet</span>
+            <span className="cpdf__empty-hint">Annotations and comments you add will appear here.</span>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 /* ── Read-only sticky-note popup shown on the page when a comment is selected
    (used in View mode for reading). Editing happens in the properties panel —
    EmbedPDF's selection-menu container can't host a focusable textarea. ────── */
@@ -703,7 +770,7 @@ export function Viewer({
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
-  const toggleLeft = (p: 'thumbs' | 'outline') => setLeftPanel((cur) => (cur === p ? null : p));
+  const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
@@ -901,6 +968,7 @@ export function Viewer({
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
+          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {/* Ctrl/⌘ + wheel and pinch-to-zoom over the document. */}
           <ZoomGestureWrapper documentId={documentId} className="cpdf__zoomwrap">
             <Viewport documentId={documentId} className="cpdf__viewport">

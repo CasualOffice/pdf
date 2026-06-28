@@ -62,6 +62,8 @@ import {
   MdTitle,
   MdStickyNote2,
   MdOutlineStickyNote2,
+  MdComment,
+  MdOutlineComment,
   MdCropSquare,
   MdCircle,
   MdRadioButtonUnchecked,
@@ -113,6 +115,7 @@ export type IconName =
   | 'ink'
   | 'text-tool'
   | 'note'
+  | 'comments'
   | 'square'
   | 'circle'
   | 'arrow'
@@ -159,6 +162,7 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   ink: { filled: MdBrush, outline: MdOutlineBrush },
   'text-tool': { filled: MdTitle },
   note: { filled: MdStickyNote2, outline: MdOutlineStickyNote2 },
+  comments: { filled: MdComment, outline: MdOutlineComment },
   square: { filled: MdCropSquare },
   circle: { filled: MdCircle, outline: MdRadioButtonUnchecked },
   arrow: { filled: MdArrowRightAlt },
