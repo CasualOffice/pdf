@@ -36,6 +36,7 @@ import {
   AnnotationRendererProvider,
 } from '@embedpdf/plugin-annotation/react';
 import { LockModeType } from '@embedpdf/plugin-annotation';
+import { FormRendererRegistration, formRenderers } from '@embedpdf/plugin-form/react';
 import { useHistoryCapability } from '@embedpdf/plugin-history/react';
 import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { IconButton } from './IconButton';
@@ -1140,6 +1141,9 @@ export function Viewer({
 
   return (
     <AnnotationRendererProvider>
+      {/* Registers interactive form-field renderers once (consumed by the
+          AnnotationLayer's annotationRenderers). */}
+      <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} />}
@@ -1166,6 +1170,7 @@ export function Viewer({
                       documentId={documentId}
                       pageIndex={pageIndex}
                       style={{ position: 'absolute', inset: 0 }}
+                      annotationRenderers={formRenderers}
                       selectionMenu={({ context, menuWrapperProps }) => {
                         // Read-only sticky for viewing a comment on the page (View
                         // mode). In Edit/Suggest the editable field lives in the

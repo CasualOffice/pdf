@@ -20,6 +20,7 @@ import { SelectionPluginPackage } from '@embedpdf/plugin-selection/react';
 import { ThumbnailPluginPackage } from '@embedpdf/plugin-thumbnail/react';
 import { BookmarkPluginPackage } from '@embedpdf/plugin-bookmark/react';
 import { AnnotationPluginPackage } from '@embedpdf/plugin-annotation/react';
+import { FormPluginPackage } from '@embedpdf/plugin-form/react';
 import { HistoryPluginPackage } from '@embedpdf/plugin-history/react';
 import { ExportPluginPackage } from '@embedpdf/plugin-export/react';
 import { TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
@@ -65,6 +66,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
       createPluginRegistration(BookmarkPluginPackage),
       createPluginRegistration(HistoryPluginPackage),
       createPluginRegistration(AnnotationPluginPackage),
+      createPluginRegistration(FormPluginPackage),
       createPluginRegistration(ExportPluginPackage),
     ],
     [src],
