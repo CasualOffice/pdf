@@ -1,68 +1,77 @@
 /**
- * Icon set for the viewer chrome, backed by Font Awesome (free).
+ * Icon set for the viewer chrome, backed by Material Icons (Google) via
+ * react-icons/md.
  *
- * Design language: the SOLID style signals an active/selected toggle (filled),
- * the REGULAR style the inactive state (unfilled). Icons that have no free
- * regular variant fall back to solid for both states. Icons inherit
- * `currentColor` so the button controls color. Default render size is 20px
- * (the desktop-toolbar standard); set `size` for dense/inline contexts.
+ * Design language: the FILLED style signals an active/selected toggle, the
+ * OUTLINE style the inactive state. Icons without a distinct outline variant
+ * use the same glyph for both (the active background already cues state).
+ * Icons inherit `currentColor`, so the button controls color. Default render
+ * size is 20px (the desktop-toolbar standard); set `size` for dense/inline use.
  *
- * License: Font Awesome Free — icons CC BY 4.0, fonts SIL OFL 1.1, code MIT.
- * Attribution recorded in NOTICE.
+ * License: Material Icons are Apache-2.0 (in-policy); react-icons is MIT.
  */
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import type { IconType } from 'react-icons';
 import {
-  faChevronLeft,
-  faChevronRight,
-  faChevronDown,
-  faMagnifyingGlassPlus,
-  faMagnifyingGlassMinus,
-  faMagnifyingGlass,
-  faArrowsLeftRightToLine,
-  faArrowsLeftRight,
-  faExpand,
-  faCompress,
-  faRotate,
-  faRotateLeft,
-  faRotateRight,
-  faTableCellsLarge,
-  faListUl,
-  faHand as faHandSolid,
-  faBookOpen,
-  faSun as faSunSolid,
-  faMoon as faMoonSolid,
-  faXmark,
-  faEye as faEyeSolid,
-  faPen,
-  faPenToSquare as faPenToSquareSolid,
-  faCheck,
-  faArrowPointer,
-  faHighlighter,
-  faPenNib,
-  faFont,
-  faNoteSticky as faNoteStickySolid,
-  faSquare as faSquareSolid,
-  faCircle as faCircleSolid,
-  faArrowRightLong,
-  faTrashCan as faTrashCanSolid,
-  faBars,
-  faDownload,
-  faPrint,
-  faFolderOpen,
-  faCircleInfo,
-} from '@fortawesome/free-solid-svg-icons';
-import {
-  faHand as faHandReg,
-  faSun as faSunReg,
-  faMoon as faMoonReg,
-  faEye as faEyeReg,
-  faPenToSquare as faPenToSquareReg,
-  faNoteSticky as faNoteStickyReg,
-  faSquare as faSquareReg,
-  faCircle as faCircleReg,
-  faTrashCan as faTrashCanReg,
-} from '@fortawesome/free-regular-svg-icons';
+  MdChevronLeft,
+  MdChevronRight,
+  MdKeyboardArrowDown,
+  MdZoomIn,
+  MdOutlineZoomIn,
+  MdZoomOut,
+  MdFitScreen,
+  MdOutlineFitScreen,
+  MdSwapHoriz,
+  MdRotateRight,
+  MdOutlineRotateRight,
+  MdSearch,
+  MdOutlineSearch,
+  MdGridView,
+  MdOutlineGridView,
+  MdFormatListBulleted,
+  MdPanTool,
+  MdOutlinePanTool,
+  MdFullscreen,
+  MdFullscreenExit,
+  MdMenuBook,
+  MdOutlineMenuBook,
+  MdLightMode,
+  MdOutlineLightMode,
+  MdDarkMode,
+  MdOutlineDarkMode,
+  MdClose,
+  MdVisibility,
+  MdOutlineVisibility,
+  MdEdit,
+  MdOutlineEdit,
+  MdRateReview,
+  MdOutlineRateReview,
+  MdCheck,
+  MdViewColumn,
+  MdNearMe,
+  MdOutlineNearMe,
+  MdBrush,
+  MdOutlineBrush,
+  MdHighlight,
+  MdOutlineHighlight,
+  MdTitle,
+  MdStickyNote2,
+  MdOutlineStickyNote2,
+  MdCropSquare,
+  MdCircle,
+  MdRadioButtonUnchecked,
+  MdArrowRightAlt,
+  MdUndo,
+  MdRedo,
+  MdDelete,
+  MdOutlineDelete,
+  MdMenu,
+  MdDownload,
+  MdPrint,
+  MdFolderOpen,
+  MdOutlineFolderOpen,
+  MdInfo,
+  MdInfoOutline,
+} from 'react-icons/md';
 
 export type IconName =
   | 'chevron-left'
@@ -105,52 +114,52 @@ export type IconName =
   | 'open'
   | 'info';
 
-/** Each icon maps to a solid (filled) and, where a free regular exists, an outline. */
-const MAP: Record<IconName, { solid: IconDefinition; regular?: IconDefinition }> = {
-  'chevron-left': { solid: faChevronLeft },
-  'chevron-right': { solid: faChevronRight },
-  'chevron-down': { solid: faChevronDown },
-  'zoom-in': { solid: faMagnifyingGlassPlus },
-  'zoom-out': { solid: faMagnifyingGlassMinus },
-  'fit-width': { solid: faArrowsLeftRightToLine },
-  'fit-page': { solid: faExpand },
-  rotate: { solid: faRotate },
-  search: { solid: faMagnifyingGlass },
-  thumbnails: { solid: faTableCellsLarge },
-  outline: { solid: faListUl },
-  hand: { solid: faHandSolid, regular: faHandReg },
-  'fullscreen-enter': { solid: faExpand },
-  'fullscreen-exit': { solid: faCompress },
-  spread: { solid: faBookOpen },
-  sun: { solid: faSunSolid, regular: faSunReg },
-  moon: { solid: faMoonSolid, regular: faMoonReg },
-  close: { solid: faXmark },
-  eye: { solid: faEyeSolid, regular: faEyeReg },
-  pencil: { solid: faPen },
-  suggest: { solid: faPenToSquareSolid, regular: faPenToSquareReg },
-  check: { solid: faCheck },
-  'scroll-h': { solid: faArrowsLeftRight },
-  cursor: { solid: faArrowPointer },
-  marker: { solid: faHighlighter },
-  ink: { solid: faPenNib },
-  'text-tool': { solid: faFont },
-  note: { solid: faNoteStickySolid, regular: faNoteStickyReg },
-  square: { solid: faSquareSolid, regular: faSquareReg },
-  circle: { solid: faCircleSolid, regular: faCircleReg },
-  arrow: { solid: faArrowRightLong },
-  undo: { solid: faRotateLeft },
-  redo: { solid: faRotateRight },
-  trash: { solid: faTrashCanSolid, regular: faTrashCanReg },
-  menu: { solid: faBars },
-  download: { solid: faDownload },
-  print: { solid: faPrint },
-  open: { solid: faFolderOpen },
-  info: { solid: faCircleInfo },
+/** filled (active) + optional outline (inactive) glyph per icon. */
+const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
+  'chevron-left': { filled: MdChevronLeft },
+  'chevron-right': { filled: MdChevronRight },
+  'chevron-down': { filled: MdKeyboardArrowDown },
+  'zoom-in': { filled: MdZoomIn, outline: MdOutlineZoomIn },
+  'zoom-out': { filled: MdZoomOut },
+  'fit-width': { filled: MdSwapHoriz },
+  'fit-page': { filled: MdFitScreen, outline: MdOutlineFitScreen },
+  rotate: { filled: MdRotateRight, outline: MdOutlineRotateRight },
+  search: { filled: MdSearch, outline: MdOutlineSearch },
+  thumbnails: { filled: MdGridView, outline: MdOutlineGridView },
+  outline: { filled: MdFormatListBulleted },
+  hand: { filled: MdPanTool, outline: MdOutlinePanTool },
+  'fullscreen-enter': { filled: MdFullscreen },
+  'fullscreen-exit': { filled: MdFullscreenExit },
+  spread: { filled: MdMenuBook, outline: MdOutlineMenuBook },
+  sun: { filled: MdLightMode, outline: MdOutlineLightMode },
+  moon: { filled: MdDarkMode, outline: MdOutlineDarkMode },
+  close: { filled: MdClose },
+  eye: { filled: MdVisibility, outline: MdOutlineVisibility },
+  pencil: { filled: MdEdit, outline: MdOutlineEdit },
+  suggest: { filled: MdRateReview, outline: MdOutlineRateReview },
+  check: { filled: MdCheck },
+  'scroll-h': { filled: MdViewColumn },
+  cursor: { filled: MdNearMe, outline: MdOutlineNearMe },
+  marker: { filled: MdHighlight, outline: MdOutlineHighlight },
+  ink: { filled: MdBrush, outline: MdOutlineBrush },
+  'text-tool': { filled: MdTitle },
+  note: { filled: MdStickyNote2, outline: MdOutlineStickyNote2 },
+  square: { filled: MdCropSquare },
+  circle: { filled: MdCircle, outline: MdRadioButtonUnchecked },
+  arrow: { filled: MdArrowRightAlt },
+  undo: { filled: MdUndo },
+  redo: { filled: MdRedo },
+  trash: { filled: MdDelete, outline: MdOutlineDelete },
+  menu: { filled: MdMenu },
+  download: { filled: MdDownload },
+  print: { filled: MdPrint },
+  open: { filled: MdFolderOpen, outline: MdOutlineFolderOpen },
+  info: { filled: MdInfo, outline: MdInfoOutline },
 };
 
 interface IconProps {
   name: IconName;
-  /** Solid variant when true (active toggle); regular/outline otherwise. */
+  /** Filled variant when true (active toggle); outline otherwise. */
   filled?: boolean;
   /** Rendered glyph size in px. Default 20 (desktop-toolbar standard). */
   size?: number;
@@ -159,6 +168,6 @@ interface IconProps {
 
 export function Icon({ name, filled, size = 20, className }: IconProps) {
   const entry = MAP[name];
-  const def = !filled && entry.regular ? entry.regular : entry.solid;
-  return <FontAwesomeIcon icon={def} className={className} style={{ fontSize: `${size}px` }} aria-hidden />;
+  const Glyph = !filled && entry.outline ? entry.outline : entry.filled;
+  return <Glyph size={size} className={className} aria-hidden />;
 }
