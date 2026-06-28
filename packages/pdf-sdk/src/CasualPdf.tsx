@@ -21,6 +21,7 @@ import { ThumbnailPluginPackage } from '@embedpdf/plugin-thumbnail/react';
 import { BookmarkPluginPackage } from '@embedpdf/plugin-bookmark/react';
 import { AnnotationPluginPackage } from '@embedpdf/plugin-annotation/react';
 import { FormPluginPackage } from '@embedpdf/plugin-form/react';
+import { SignaturePluginPackage, SignatureMode } from '@embedpdf/plugin-signature/react';
 import { HistoryPluginPackage } from '@embedpdf/plugin-history/react';
 import { ExportPluginPackage } from '@embedpdf/plugin-export/react';
 import { TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
@@ -67,6 +68,10 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
       createPluginRegistration(HistoryPluginPackage),
       createPluginRegistration(AnnotationPluginPackage),
       createPluginRegistration(FormPluginPackage),
+      // E-signature: draw/type a signature, then place it as a stamp/ink
+      // annotation (the plugin registers signatureStamp/signatureInk tools into
+      // the annotation plugin, so placements render via the AnnotationLayer).
+      createPluginRegistration(SignaturePluginPackage, { mode: SignatureMode.SignatureOnly }),
       createPluginRegistration(ExportPluginPackage),
     ],
     [src],

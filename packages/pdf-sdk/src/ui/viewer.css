@@ -854,3 +854,114 @@
     animation-duration: 2s;
   }
 }
+
+/* ── E-signature modal + placement banner ───────────────────────────────── */
+.cpdf__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6, 16px);
+  background: rgba(15, 18, 28, 0.45);
+}
+.cpdf__sigmodal {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 12px);
+  padding: var(--space-6, 16px);
+  background: var(--color-surface-raised, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-3, 0 18px 48px rgba(0, 0, 0, 0.28));
+}
+.cpdf__sigmodal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cpdf__sigmodal-title {
+  color: var(--color-text, #1b1c1f);
+  font: 700 16px/1 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__sigtabs {
+  display: flex;
+  gap: var(--space-2, 4px);
+  padding: var(--space-2, 4px);
+  background: var(--color-surface, #f3f5f8);
+  border-radius: var(--radius-md, 8px);
+}
+.cpdf__sigtab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 4px);
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-secondary, #555);
+  font: 600 13px/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+}
+.cpdf__sigtab[data-active='true'] {
+  background: var(--color-surface-raised, #fff);
+  color: var(--color-text, #111);
+  box-shadow: var(--shadow-1, 0 1px 4px rgba(0, 0, 0, 0.12));
+}
+.cpdf__sigbody {
+  display: flex;
+}
+/* The pad fills the body; a dashed frame reads as a "sign here" area. */
+.cpdf__sigpad {
+  width: 100%;
+  height: 180px;
+  background: var(--color-surface, #fbfcfe);
+  border: 1px dashed var(--color-border, #c9cfda);
+  border-radius: var(--radius-md, 8px);
+  touch-action: none;
+}
+.cpdf__sigpad canvas,
+.cpdf__sigpad input,
+.cpdf__sigpad textarea {
+  width: 100%;
+  height: 100%;
+}
+.cpdf__sigopts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6, 16px);
+}
+.cpdf__sigfoot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+}
+.cpdf__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 4px);
+}
+/* Placement banner: floats top-center while a signature is armed for placing. */
+.cpdf__placebanner {
+  position: absolute;
+  top: var(--space-5, 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 8px);
+  padding: var(--space-3, 6px) var(--space-3, 6px) var(--space-3, 6px) var(--space-5, 12px);
+  background: var(--color-accent, #4658ff);
+  color: var(--color-text-on-accent, #fff);
+  border-radius: var(--radius-pill, 999px);
+  box-shadow: var(--shadow-2, 0 6px 20px rgba(0, 0, 0, 0.22));
+  font: 600 13px/1 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__placebanner .cpdf__btn {
+  height: 28px;
+  padding: 0 12px;
+}

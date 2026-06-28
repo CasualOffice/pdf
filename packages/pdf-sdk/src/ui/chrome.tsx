@@ -37,6 +37,16 @@ import {
 } from '@embedpdf/plugin-annotation/react';
 import { LockModeType } from '@embedpdf/plugin-annotation';
 import { FormRendererRegistration, formRenderers } from '@embedpdf/plugin-form/react';
+import {
+  SignatureDrawPad,
+  SignatureTypePad,
+  useSignatureCapability,
+  useActivePlacement,
+  type SignatureDrawPadHandle,
+  type SignatureTypePadHandle,
+  type SignatureInkFieldDefinition,
+  type SignatureStampFieldDefinition,
+} from '@embedpdf/plugin-signature/react';
 import { useHistoryCapability } from '@embedpdf/plugin-history/react';
 import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { IconButton } from './IconButton';
@@ -174,12 +184,14 @@ function LeftRail({
   leftPanel,
   onToggleLeft,
   onOrganize,
+  onSign,
 }: {
   documentId: string;
   mode: Mode;
   leftPanel: LeftPanel;
   onToggleLeft: (p: 'thumbs' | 'outline' | 'comments') => void;
   onOrganize: () => void;
+  onSign: () => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -194,6 +206,7 @@ function LeftRail({
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
+          <RailBtn icon="sign" label="Sign" title="Add a signature" onClick={onSign} />
           <RailBtn icon="organize" label="Organize" title="Organize pages (reorder / delete)" onClick={onOrganize} />
           <span className="cpdf__rail-sep" aria-hidden="true" />
           <RailBtn icon="cursor" label="Select" title="Select (V)" active={activeToolId === null} onClick={() => annoApi?.setActiveTool(null)} />
@@ -900,6 +913,194 @@ function OrganizeOverlay({
   );
 }
 
+/* ── E-signature: draw or type a signature, then place it on the page ─────────
+   The pads emit a field definition (ink for draw, image-stamp for type) via
+   onResult; "Add signature" stores it (addEntry) and activates placement — the
+   signature plugin turns that into the signatureStamp/signatureInk annotation
+   tool, so the next click/drag on a page drops a real annotation that renders
+   through the AnnotationLayer (and bakes into the PDF on Download/export). */
+const SIG_INK_COLORS = ['#1a3b8c', '#1f2430', '#0a6b3b'];
+const SIG_FONTS = [
+  { label: 'Signature', family: '"Brush Script MT","Segoe Script",cursive' },
+  { label: 'Formal', family: 'Georgia,"Times New Roman",serif' },
+  { label: 'Print', family: '"Helvetica Neue",Arial,sans-serif' },
+];
+function SignatureModal({ documentId, onClose }: { documentId: string; onClose: () => void }) {
+  const { provides: cap } = useSignatureCapability();
+  const [tab, setTab] = useState<'draw' | 'type'>('draw');
+  const [draw, setDraw] = useState<SignatureInkFieldDefinition | null>(null);
+  const [typed, setTyped] = useState<SignatureStampFieldDefinition | null>(null);
+  const [color, setColor] = useState(SIG_INK_COLORS[0]);
+  const [font, setFont] = useState(SIG_FONTS[0].family);
+  const drawPadRef = useRef<SignatureDrawPadHandle | null>(null);
+  const typePadRef = useRef<SignatureTypePadHandle | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const result = tab === 'draw' ? draw : typed;
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const clear = () => {
+    if (tab === 'draw') {
+      drawPadRef.current?.clear();
+      setDraw(null);
+    } else {
+      typePadRef.current?.clear();
+      setTyped(null);
+    }
+  };
+  const place = () => {
+    if (!cap || !result) return;
+    const entryId = cap.addEntry({ signature: result });
+    cap.forDocument(documentId).activateSignaturePlacement(entryId);
+    onClose();
+  };
+
+  return (
+    <div className="cpdf__scrim" role="presentation" onClick={onClose}>
+      <div
+        className="cpdf__sigmodal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add a signature"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="cpdf__sigmodal-head">
+          <span className="cpdf__sigmodal-title">Add your signature</span>
+          <IconButton icon="close" label="Close" onClick={onClose} />
+        </div>
+        <div className="cpdf__sigtabs" role="tablist" aria-label="Signature type">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'draw'}
+            className="cpdf__sigtab"
+            data-active={tab === 'draw' ? 'true' : undefined}
+            onClick={() => setTab('draw')}
+          >
+            <Icon name="draw" size={18} />
+            Draw
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'type'}
+            className="cpdf__sigtab"
+            data-active={tab === 'type' ? 'true' : undefined}
+            onClick={() => setTab('type')}
+          >
+            <Icon name="keyboard" size={18} />
+            Type
+          </button>
+        </div>
+
+        <div className="cpdf__sigbody">
+          {tab === 'draw' ? (
+            <SignatureDrawPad
+              padRef={(h) => (drawPadRef.current = h)}
+              onResult={setDraw}
+              strokeColor={color}
+              strokeWidth={3}
+              className="cpdf__sigpad"
+            />
+          ) : (
+            <SignatureTypePad
+              padRef={(h) => (typePadRef.current = h)}
+              onResult={setTyped}
+              fontFamily={font}
+              fontSize={48}
+              color={color}
+              placeholder="Type your name"
+              className="cpdf__sigpad"
+            />
+          )}
+        </div>
+
+        <div className="cpdf__sigopts">
+          <div className="cpdf__field">
+            <span className="cpdf__field-label">Color</span>
+            <div className="cpdf__swatches">
+              {SIG_INK_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="cpdf__swatch"
+                  data-active={c === color ? 'true' : undefined}
+                  style={{ background: c }}
+                  aria-label={`Ink color ${c}`}
+                  aria-pressed={c === color}
+                  onClick={() => setColor(c)}
+                />
+              ))}
+            </div>
+          </div>
+          {tab === 'type' && (
+            <div className="cpdf__field">
+              <span className="cpdf__field-label">Style</span>
+              <div className="cpdf__widths">
+                {SIG_FONTS.map((f) => (
+                  <button
+                    key={f.label}
+                    type="button"
+                    className="cpdf__opbtn"
+                    data-active={f.family === font ? 'true' : undefined}
+                    aria-pressed={f.family === font}
+                    style={{ fontFamily: f.family }}
+                    onClick={() => setFont(f.family)}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="cpdf__sigfoot">
+          <button type="button" className="cpdf__btn" onClick={clear}>
+            <Icon name="refresh" size={16} />
+            Clear
+          </button>
+          <span style={{ flex: 1 }} />
+          <button ref={closeRef} type="button" className="cpdf__btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="cpdf__btn cpdf__btn--primary" disabled={!result} onClick={place}>
+            Add signature
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** When a signature placement is armed, a banner tells the user to click a page
+ *  to drop it (and offers a cancel). Driven by the signature plugin's active
+ *  placement for this document. */
+function PlacementBanner({ documentId }: { documentId: string }) {
+  const placement = useActivePlacement(documentId);
+  const { provides: cap } = useSignatureCapability();
+  if (!placement) return null;
+  return (
+    <div className="cpdf__placebanner" role="status">
+      <Icon name="sign" size={18} />
+      <span>Click on a page to place your signature</span>
+      <button type="button" className="cpdf__btn" onClick={() => cap?.forDocument(documentId).deactivatePlacement()}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 /* ── The viewer ───────────────────────────────────────────────────────────── */
 export function Viewer({
   documentId,
@@ -917,6 +1118,7 @@ export function Viewer({
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [organizing, setOrganizing] = useState(false);
+  const [signing, setSigning] = useState(false);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
@@ -1146,7 +1348,7 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -1216,6 +1418,8 @@ export function Viewer({
         {organizing && (
           <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} />
         )}
+        {signing && <SignatureModal documentId={documentId} onClose={() => setSigning(false)} />}
+        <PlacementBanner documentId={documentId} />
       </div>
     </AnnotationRendererProvider>
   );

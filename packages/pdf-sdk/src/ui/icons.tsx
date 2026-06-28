@@ -86,6 +86,10 @@ import {
   MdInfoOutline,
   MdError,
   MdErrorOutline,
+  MdHistoryEdu,
+  MdGesture,
+  MdKeyboard,
+  MdRefresh,
 } from 'react-icons/md';
 
 export type IconName =
@@ -137,7 +141,11 @@ export type IconName =
   | 'print'
   | 'open'
   | 'info'
-  | 'warning';
+  | 'warning'
+  | 'sign'
+  | 'draw'
+  | 'keyboard'
+  | 'refresh';
 
 /** filled (active) + optional outline (inactive) glyph per icon. */
 const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
@@ -190,6 +198,10 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   open: { filled: MdFolderOpen, outline: MdOutlineFolderOpen },
   info: { filled: MdInfo, outline: MdInfoOutline },
   warning: { filled: MdError, outline: MdErrorOutline },
+  sign: { filled: MdHistoryEdu },
+  draw: { filled: MdGesture },
+  keyboard: { filled: MdKeyboard },
+  refresh: { filled: MdRefresh },
 };
 
 interface IconProps {
