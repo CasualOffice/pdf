@@ -185,6 +185,39 @@
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
+/* Sticky-note comment popup (anchored to the note on the page). */
+.cpdf__sticky {
+  width: 220px;
+  padding: var(--space-4, 8px);
+  background: #fff8c4;
+  border-radius: var(--radius-md, 6px);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.18));
+}
+.cpdf__sticky-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 4px);
+  margin-bottom: var(--space-3, 6px);
+  color: #8a6d00;
+  font: 700 11px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cpdf__sticky-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+  color: #2a2400;
+  font: 400 13px/1.5 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__sticky-body[data-empty='true'] {
+  color: #8a6d00;
+  font-style: italic;
+  opacity: 0.7;
+}
 .cpdf__comment-input {
   width: 100%;
   resize: vertical;

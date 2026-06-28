@@ -633,6 +633,25 @@ function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: 
   );
 }
 
+/* ── Read-only sticky-note popup shown on the page when a comment is selected
+   (used in View mode for reading). Editing happens in the properties panel —
+   EmbedPDF's selection-menu container can't host a focusable textarea. ────── */
+type NoteObj = { id: string; pageIndex: number; contents?: string };
+function StickyComment({ note }: { note: NoteObj }) {
+  const text = (note.contents ?? '').trim();
+  return (
+    <div className="cpdf__sticky" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="cpdf__sticky-head">
+        <Icon name="note" size={14} />
+        Comment
+      </div>
+      <div className="cpdf__sticky-body" data-empty={text ? undefined : 'true'}>
+        {text || 'No comment'}
+      </div>
+    </div>
+  );
+}
+
 /* ── The viewer ───────────────────────────────────────────────────────────── */
 export function Viewer({
   documentId,
@@ -842,7 +861,23 @@ export function Viewer({
                         to mark up). It must be OFF for Select/shape/ink tools, or it
                         captures drags and breaks annotation move / deselect. */}
                     {textSelectable && <SelectionLayer documentId={documentId} pageIndex={pageIndex} />}
-                    <AnnotationLayer documentId={documentId} pageIndex={pageIndex} style={{ position: 'absolute', inset: 0 }} />
+                    <AnnotationLayer
+                      documentId={documentId}
+                      pageIndex={pageIndex}
+                      style={{ position: 'absolute', inset: 0 }}
+                      selectionMenu={({ context, menuWrapperProps }) => {
+                        // Read-only sticky for viewing a comment on the page. In
+                        // Edit/Suggest the editable field lives in the panel.
+                        if (mode !== 'view') return null;
+                        const obj = context.annotation.object;
+                        if (annoApi?.findToolForAnnotation(obj)?.id !== 'textComment') return null;
+                        return (
+                          <div ref={menuWrapperProps.ref} style={{ ...menuWrapperProps.style, zIndex: 50 }}>
+                            <StickyComment note={obj} />
+                          </div>
+                        );
+                      }}
+                    />
                     {mode !== 'view' && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
                   </PagePointerProvider>
                 )}
