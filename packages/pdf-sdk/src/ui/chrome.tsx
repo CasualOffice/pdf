@@ -1262,6 +1262,20 @@ export function Viewer({
     };
   }, [apiRef, annoApi, history, exportCap]);
 
+  // Text tools default to the placeholder contents "Insert text", and editing
+  // appends to it (so a new box reads "Insert textyour words"). Clear the
+  // default so text boxes/callouts start empty and the user just types.
+  useEffect(() => {
+    if (!annoCap) return;
+    for (const id of ['freeText', 'freeTextCallout', 'textComment']) {
+      try {
+        annoCap.setToolDefaults(id, { contents: '' });
+      } catch {
+        /* tool may not be registered in this build */
+      }
+    }
+  }, [annoCap]);
+
   // Insert image: pick a PNG/JPEG, read its bytes + natural aspect, then arm
   // placement (the next page click drops it as an image STAMP annotation).
   const onImageFile = async (file: File) => {
