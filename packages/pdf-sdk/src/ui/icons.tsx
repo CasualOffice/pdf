@@ -56,6 +56,9 @@ import {
   MdOutlineBrush,
   MdHighlight,
   MdOutlineHighlight,
+  MdFormatUnderlined,
+  MdStrikethroughS,
+  MdWaves,
   MdTitle,
   MdStickyNote2,
   MdOutlineStickyNote2,
@@ -104,6 +107,9 @@ export type IconName =
   | 'scroll-h'
   | 'cursor'
   | 'marker'
+  | 'underline'
+  | 'strikeout'
+  | 'squiggly'
   | 'ink'
   | 'text-tool'
   | 'note'
@@ -147,6 +153,9 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   'scroll-h': { filled: MdViewColumn },
   cursor: { filled: MdNearMe, outline: MdOutlineNearMe },
   marker: { filled: MdHighlight, outline: MdOutlineHighlight },
+  underline: { filled: MdFormatUnderlined },
+  strikeout: { filled: MdStrikethroughS },
+  squiggly: { filled: MdWaves },
   ink: { filled: MdBrush, outline: MdOutlineBrush },
   'text-tool': { filled: MdTitle },
   note: { filled: MdStickyNote2, outline: MdOutlineStickyNote2 },

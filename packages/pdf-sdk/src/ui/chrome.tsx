@@ -55,6 +55,9 @@ interface Bookmark {
 /** Annotation tools (EmbedPDF tool ids) + a one-key shortcut. */
 const TOOLS: { id: string; icon: IconName; label: string; key: string }[] = [
   { id: 'highlight', icon: 'marker', label: 'Highlight', key: 'h' },
+  { id: 'underline', icon: 'underline', label: 'Underline', key: 'u' },
+  { id: 'strikeout', icon: 'strikeout', label: 'Strikethrough', key: 'k' },
+  { id: 'squiggly', icon: 'squiggly', label: 'Squiggly', key: 'g' },
   { id: 'ink', icon: 'ink', label: 'Draw', key: 'd' },
   { id: 'freeText', icon: 'text-tool', label: 'Text box', key: 't' },
   { id: 'textComment', icon: 'note', label: 'Comment', key: 'n' },
