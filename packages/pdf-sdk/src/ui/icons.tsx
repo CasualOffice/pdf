@@ -90,6 +90,8 @@ import {
   MdGesture,
   MdKeyboard,
   MdRefresh,
+  MdImage,
+  MdOutlineImage,
 } from 'react-icons/md';
 
 export type IconName =
@@ -145,7 +147,8 @@ export type IconName =
   | 'sign'
   | 'draw'
   | 'keyboard'
-  | 'refresh';
+  | 'refresh'
+  | 'image';
 
 /** filled (active) + optional outline (inactive) glyph per icon. */
 const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
@@ -202,6 +205,7 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   draw: { filled: MdGesture },
   keyboard: { filled: MdKeyboard },
   refresh: { filled: MdRefresh },
+  image: { filled: MdImage, outline: MdOutlineImage },
 };
 
 interface IconProps {

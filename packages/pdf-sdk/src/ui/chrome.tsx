@@ -145,6 +145,59 @@ function DeselectGuard({ documentId, pageIndex }: { documentId: string; pageInde
   return null;
 }
 
+/** A picked image awaiting placement: raw bytes + mime + natural aspect. */
+interface PendingImage {
+  data: ArrayBuffer;
+  mimeType: 'image/png' | 'image/jpeg';
+  w: number;
+  h: number;
+}
+
+/** While an image is pending, the next click on a page drops it as a STAMP
+ *  annotation (image baked into the appearance stream → persists on Download).
+ *  Registered on the default Select mode so a plain click places it. */
+function ImagePlacer({
+  documentId,
+  pageIndex,
+  image,
+  onPlaced,
+}: {
+  documentId: string;
+  pageIndex: number;
+  image: PendingImage;
+  onPlaced: () => void;
+}) {
+  const { provides: annoApi } = useAnnotation(documentId);
+  const { register } = usePointerHandlers({ modeId: 'pointerMode', pageIndex, documentId });
+  useEffect(() => {
+    return register({
+      onPointerDown: (pos) => {
+        if (!annoApi) return;
+        // Default display width ~220pt, height by the image's natural aspect.
+        const width = 220;
+        const height = Math.max(24, Math.round(width * (image.h / image.w)));
+        const stamp = {
+          type: 13, // PdfAnnotationSubtype.STAMP
+          id: genId(),
+          pageIndex,
+          rect: { origin: { x: pos.x, y: pos.y }, size: { width, height } },
+        };
+        // The stamp ctx ({ data, mimeType }) resolves to `undefined` on the base
+        // annotation union (the plugin's own type carries it only on the stamp
+        // member), so call through a loosened signature — same pattern the SDK
+        // uses elsewhere for these union-typed plugin calls.
+        (annoApi.createAnnotation as unknown as (p: number, a: unknown, c: unknown) => void)(
+          pageIndex,
+          stamp,
+          { data: image.data, mimeType: image.mimeType },
+        );
+        onPlaced();
+      },
+    });
+  }, [register, annoApi, pageIndex, image, onPlaced]);
+  return null;
+}
+
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
 /** A labelled rail button — icon + caption so the rail reads as a tool palette. */
 function RailBtn({
@@ -185,6 +238,7 @@ function LeftRail({
   onToggleLeft,
   onOrganize,
   onSign,
+  onInsertImage,
 }: {
   documentId: string;
   mode: Mode;
@@ -192,6 +246,7 @@ function LeftRail({
   onToggleLeft: (p: 'thumbs' | 'outline' | 'comments') => void;
   onOrganize: () => void;
   onSign: () => void;
+  onInsertImage: () => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -206,6 +261,7 @@ function LeftRail({
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
+          <RailBtn icon="image" label="Image" title="Insert an image" onClick={onInsertImage} />
           <RailBtn icon="sign" label="Sign" title="Add a signature" onClick={onSign} />
           <RailBtn icon="organize" label="Organize" title="Organize pages (reorder / delete)" onClick={onOrganize} />
           <span className="cpdf__rail-sep" aria-hidden="true" />
@@ -1119,6 +1175,8 @@ export function Viewer({
   const [hasSelection, setHasSelection] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
@@ -1204,6 +1262,27 @@ export function Viewer({
     };
   }, [apiRef, annoApi, history, exportCap]);
 
+  // Insert image: pick a PNG/JPEG, read its bytes + natural aspect, then arm
+  // placement (the next page click drops it as an image STAMP annotation).
+  const onImageFile = async (file: File) => {
+    const mimeType = file.type === 'image/png' ? 'image/png' : file.type === 'image/jpeg' ? 'image/jpeg' : null;
+    if (!mimeType) return;
+    const data = await file.arrayBuffer();
+    let w = 1;
+    let h = 1;
+    try {
+      const bmp = await createImageBitmap(file);
+      w = bmp.width;
+      h = bmp.height;
+      bmp.close();
+    } catch {
+      /* aspect falls back to 1:1 if the bitmap can't be decoded */
+    }
+    annoApi?.setActiveTool(null); // select mode → the placer's pointer handler is live
+    annoApi?.deselectAnnotation();
+    setPendingImage({ data, mimeType, w, h });
+  };
+
   // Leaving the editing state (View mode or full-screen presentation) is
   // read-only: drop any active tool (so no crosshair cursor lingers) and clear
   // the selection for a clean read view.
@@ -1211,8 +1290,19 @@ export function Viewer({
     if (!editing) {
       annoApi?.setActiveTool(null);
       annoApi?.deselectAnnotation();
+      setPendingImage(null);
     }
   }, [editing, annoApi]);
+
+  // Escape cancels a pending image placement.
+  useEffect(() => {
+    if (!pendingImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingImage(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pendingImage]);
 
   // View mode (and presentation) is read-only: lock annotations so they can't be
   // moved/resized/deleted. They stay selectable, so clicking a note still opens
@@ -1359,7 +1449,7 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -1399,7 +1489,10 @@ export function Viewer({
                         );
                       }}
                     />
-                    {mode !== 'view' && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
+                    {mode !== 'view' && !pendingImage && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
+                    {editing && pendingImage && (
+                      <ImagePlacer documentId={documentId} pageIndex={pageIndex} image={pendingImage} onPlaced={() => setPendingImage(null)} />
+                    )}
                   </PagePointerProvider>
                 )}
               />
@@ -1431,6 +1524,26 @@ export function Viewer({
         )}
         {signing && <SignatureModal documentId={documentId} onClose={() => setSigning(false)} />}
         <PlacementBanner documentId={documentId} />
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onImageFile(f);
+            e.target.value = '';
+          }}
+        />
+        {pendingImage && (
+          <div className="cpdf__placebanner" role="status">
+            <Icon name="image" size={18} />
+            <span>Click on a page to place the image</span>
+            <button type="button" className="cpdf__btn" onClick={() => setPendingImage(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </AnnotationRendererProvider>
   );
