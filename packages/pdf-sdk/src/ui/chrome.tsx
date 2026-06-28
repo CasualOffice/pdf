@@ -659,6 +659,13 @@ export function Viewer({
   // Presentation mode: full screen is a clean reading view — hide editing chrome.
   const presenting = fs.isFullscreen;
   const editing = mode !== 'view' && !presenting;
+  // Text is selectable whenever no drawing tool is active — i.e. View mode and
+  // the Select tool in Edit/Suggest (activeToolId === null) — plus while a
+  // text-markup tool is active (highlight/underline/…). It's only OFF for the
+  // shape/ink/text/note tools that own the drag to draw. The AnnotationLayer
+  // sits on top and still captures clicks on existing annotations, so selecting
+  // text (over glyphs) and selecting/moving annotations coexist.
+  const textSelectable = activeToolId === null || MARKUP_TOOLS.has(activeToolId);
 
   // Imperative API for host menus.
   useEffect(() => {
@@ -834,9 +841,7 @@ export function Viewer({
                         text-markup tool is active (highlight/underline/… select text
                         to mark up). It must be OFF for Select/shape/ink tools, or it
                         captures drags and breaks annotation move / deselect. */}
-                    {(mode === 'view' || (activeToolId !== null && MARKUP_TOOLS.has(activeToolId))) && (
-                      <SelectionLayer documentId={documentId} pageIndex={pageIndex} />
-                    )}
+                    {textSelectable && <SelectionLayer documentId={documentId} pageIndex={pageIndex} />}
                     <AnnotationLayer documentId={documentId} pageIndex={pageIndex} style={{ position: 'absolute', inset: 0 }} />
                     {mode !== 'view' && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
                   </PagePointerProvider>
