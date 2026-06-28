@@ -712,6 +712,15 @@ export function Viewer({
         }
         return;
       }
+      // Select all annotations (⌘/Ctrl+A) — enables bulk move/style/delete.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        const all = annoApi?.getAnnotations() ?? [];
+        if (annoApi && all.length) {
+          e.preventDefault();
+          annoApi.setSelection(all.map((a) => a.object.id));
+        }
+        return;
+      }
       // Undo / redo (⌘/Ctrl+Z, ⇧ for redo; Ctrl+Y also redoes).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
