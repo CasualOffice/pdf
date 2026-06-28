@@ -28,11 +28,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1, 2px);
   flex: none;
-  padding: 6px;
+  padding: var(--space-4, 8px);
   background: var(--color-surface-raised, #fff);
-  border-radius: var(--radius-lg, 14px);
+  border-radius: var(--radius-lg, 10px);
   box-shadow:
     0 0 0 1px var(--color-border, #e6e9ee),
     var(--shadow-1, 0 1px 4px rgba(0, 0, 0, 0.08));
@@ -43,9 +43,9 @@
   display: none;
 }
 .cpdf__rail-sep {
-  width: 44px;
+  width: 40px;
   height: 1px;
-  margin: 6px 0;
+  margin: var(--space-2, 4px) 0;
   background: var(--color-divider, rgba(0, 0, 0, 0.08));
 }
 /* Labelled rail buttons — icon + caption, so the rail reads as a tool palette. */
@@ -53,20 +53,20 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  width: 64px;
-  padding: 8px 4px;
+  gap: var(--space-2, 4px);
+  width: 60px;
+  padding: var(--space-3, 6px) var(--space-2, 4px);
   border: none;
   background: transparent;
   color: var(--color-text-secondary, #555);
-  border-radius: var(--radius-md, 10px);
+  border-radius: var(--radius-md, 6px);
   cursor: pointer;
   transition:
     background var(--motion-fast, 120ms) var(--ease-out, ease),
     color var(--motion-fast, 120ms) var(--ease-out, ease);
 }
 .cpdf__railbtn-label {
-  font: 600 10px/1 var(--font-sans, system-ui, sans-serif);
+  font: 500 11px/1 var(--font-sans, system-ui, sans-serif);
   letter-spacing: 0.01em;
 }
 .cpdf__railbtn:hover:not(:disabled) {

@@ -136,7 +136,7 @@ function RailBtn({
       disabled={disabled}
       onClick={onClick}
     >
-      <Icon name={icon} filled={!!active} size={22} />
+      <Icon name={icon} filled={!!active} size={20} />
       <span className="cpdf__railbtn-label">{label}</span>
     </button>
   );
