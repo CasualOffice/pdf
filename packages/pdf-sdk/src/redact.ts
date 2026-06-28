@@ -26,29 +26,34 @@ export interface FlattenedPage {
   pageIndex: number;
   /** PNG bytes of the rendered page with black boxes already painted. */
   png: Uint8Array;
+  /** Output page size in PDF points (derived from the rendered image so it is
+   *  correct even when the source page has an intrinsic `/Rotate`). */
+  widthPt: number;
+  heightPt: number;
 }
 
 /**
  * Build the redacted PDF: redacted pages are replaced by their flattened image;
  * every other page is copied unchanged from `srcBytes` (keeping its real text).
- * Page order and sizes are preserved.
+ * Page order is preserved. Redacted pages are sized to the rendered image's
+ * dimensions (not the source MediaBox) so a page with an intrinsic `/Rotate`
+ * isn't distorted.
  */
 export async function buildRedactedPdf(srcBytes: Uint8Array, flattened: FlattenedPage[]): Promise<Uint8Array> {
   const src = await PDFDocument.load(srcBytes);
   const out = await PDFDocument.create();
-  const byIndex = new Map(flattened.map((f) => [f.pageIndex, f.png]));
+  const byIndex = new Map(flattened.map((f) => [f.pageIndex, f]));
   const total = src.getPageCount();
 
   for (let i = 0; i < total; i++) {
-    const png = byIndex.get(i);
-    if (png) {
-      // Flatten: a fresh page of the same size, filled by the black-boxed image.
-      const { width, height } = src.getPage(i).getSize();
-      const page = out.addPage([width, height]);
-      const img = await out.embedPng(png);
-      page.drawImage(img, { x: 0, y: 0, width, height });
+    const f = byIndex.get(i);
+    if (f) {
+      // Flatten: a fresh page sized to the rendered image, filled by it.
+      const page = out.addPage([f.widthPt, f.heightPt]);
+      const img = await out.embedPng(f.png);
+      page.drawImage(img, { x: 0, y: 0, width: f.widthPt, height: f.heightPt });
     } else {
-      // Untouched page: copy verbatim so its text/vectors are preserved.
+      // Untouched page: copy verbatim so its text/vectors (and /Rotate) survive.
       const [copied] = await out.copyPages(src, [i]);
       out.addPage(copied);
     }

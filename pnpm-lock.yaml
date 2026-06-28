@@ -60,6 +60,9 @@ importers:
       '@embedpdf/engines':
         specifier: ^2.14.4
         version: 2.14.4(preact@10.29.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(svelte@5.56.4)(vue@3.5.39(typescript@5.9.3))
+      '@embedpdf/models':
+        specifier: ^2.14.4
+        version: 2.14.4
       '@embedpdf/plugin-annotation':
         specifier: ^2.14.4
         version: 2.14.4(3d4e8787e016c973c52f8a13ed1b8046)

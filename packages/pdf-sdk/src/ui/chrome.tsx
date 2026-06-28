@@ -36,6 +36,7 @@ import {
   AnnotationRendererProvider,
 } from '@embedpdf/plugin-annotation/react';
 import { LockModeType } from '@embedpdf/plugin-annotation';
+import { Rotation } from '@embedpdf/models';
 import { FormRendererRegistration, formRenderers } from '@embedpdf/plugin-form/react';
 import {
   SignatureDrawPad,
@@ -276,21 +277,37 @@ function RedactionLayer({
 }
 
 /** Render a page Blob to a canvas, paint opaque black over the fractional
- *  redaction rects, and return PNG bytes — the flattened, redacted page image. */
-async function flattenPage(blob: Blob, rects: RedactRect[]): Promise<Uint8Array> {
+ *  redaction rects, and return PNG bytes + the page size in points (canvas px /
+ *  scaleFactor). Throws if the bitmap can't be decoded or the canvas can't
+ *  encode — callers must treat that as a hard failure (never silently skip a
+ *  page on a redaction). */
+async function flattenPage(
+  blob: Blob,
+  rects: RedactRect[],
+  scaleFactor: number,
+): Promise<{ png: Uint8Array; widthPt: number; heightPt: number }> {
   const img = await createImageBitmap(blob);
   const canvas = document.createElement('canvas');
   canvas.width = img.width;
   canvas.height = img.height;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    img.close();
+    throw new Error('redaction: no 2D canvas context');
+  }
   ctx.drawImage(img, 0, 0);
   img.close();
   ctx.fillStyle = '#000';
   for (const r of rects) {
     ctx.fillRect(r.x * canvas.width, r.y * canvas.height, r.w * canvas.width, r.h * canvas.height);
   }
-  const out: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), 'image/png'));
-  return new Uint8Array(await out.arrayBuffer());
+  const out: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
+  if (!out) throw new Error('redaction: canvas encode failed (page too large?)');
+  return {
+    png: new Uint8Array(await out.arrayBuffer()),
+    widthPt: canvas.width / scaleFactor,
+    heightPt: canvas.height / scaleFactor,
+  };
 }
 
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
@@ -1380,6 +1397,8 @@ export function Viewer({
   const [redacting, setRedacting] = useState(false);
   const [redactions, setRedactions] = useState<RedactRect[]>([]);
   const [redactBusy, setRedactBusy] = useState(false);
+  const [redactError, setRedactError] = useState<string | null>(null);
+  const [confirmRedact, setConfirmRedact] = useState(false);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
@@ -1391,6 +1410,8 @@ export function Viewer({
   const { provides: exportCap } = useExportCapability();
   const { provides: renderCap } = useRenderCapability();
   const { provides: docCap } = useDocumentManagerCapability();
+  const { provides: sigCap } = useSignatureCapability();
+  const { rotation: viewRotation, provides: rotateApi } = useRotate(documentId);
   const { state: fs } = useFullscreen();
   // Internal clipboard for copy/paste of annotations (stores annotation objects).
   const clipboardRef = useRef<Parameters<NonNullable<typeof annoApi>['createAnnotation']>[1][]>([]);
@@ -1512,26 +1533,35 @@ export function Viewer({
         annoApi?.setActiveTool(null);
         annoApi?.deselectAnnotation();
         setPendingImage(null);
+        setRedactError(null);
+        // Redaction works in the page's native orientation so captured marks and
+        // the rendered bitmap share one coordinate space. Reset any view rotation.
+        rotateApi?.setRotation(Rotation.Degree0);
       }
       return next;
     });
   };
+  const SCALE = 2; // render scale for flattened pages (2× for crisp output)
   const applyRedactions = async () => {
+    setConfirmRedact(false);
     if (!renderCap || !docCap || !exportCap || !redactions.length) return;
     setRedactBusy(true);
+    setRedactError(null);
     try {
       const ab = await exportCap.saveAsCopy().toPromise();
-      if (!ab) throw new Error('no document bytes');
+      if (!ab) throw new Error('Could not read the document.');
       const srcBytes = new Uint8Array(ab);
       const scope = renderCap.forDocument(documentId);
       const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
-      const flattened: { pageIndex: number; png: Uint8Array }[] = [];
+      const flattened: { pageIndex: number; png: Uint8Array; widthPt: number; heightPt: number }[] = [];
       for (const pi of pageIndices) {
         // Render at 2× with annotations baked so flattened pages keep markups.
-        const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: 2, withAnnotations: true } }).toPromise();
-        if (!blob) continue;
-        const png = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi));
-        flattened.push({ pageIndex: pi, png });
+        const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
+        // A failed render must NOT be skipped — that would leave the page's
+        // content un-redacted in the output. Fail the whole operation instead.
+        if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
+        const f = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi), SCALE);
+        flattened.push({ pageIndex: pi, ...f });
       }
       // Lazy-load the pdf-lib assembly (~90 KB gz) only when applying.
       const { buildRedactedPdf } = await import('../redact');
@@ -1540,8 +1570,10 @@ export function Viewer({
       await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
       setRedactions([]);
       setRedacting(false);
-    } catch {
-      // Keep the marks so the user can retry.
+    } catch (e) {
+      // Keep the marks so the user can retry, and surface the failure — never
+      // silently no-op on a trust feature.
+      setRedactError(e instanceof Error ? e.message : 'Redaction failed. Nothing was changed.');
     } finally {
       setRedactBusy(false);
     }
@@ -1605,20 +1637,42 @@ export function Viewer({
     }
   };
 
-  // Leaving the editing state (View mode or full-screen presentation) is
-  // read-only: drop any active tool (so no crosshair cursor lingers) and clear
-  // the selection for a clean read view.
+  // Entering a read-only view (View mode OR full-screen presentation): drop any
+  // active tool + selection so no crosshair/handles linger. This is the *gentle*
+  // cleanup — it must NOT discard in-progress edits (pending image, redaction
+  // marks), so a quick full-screen peek doesn't wipe your work.
   useEffect(() => {
     if (!editing) {
       annoApi?.setActiveTool(null);
       annoApi?.deselectAnnotation();
-      setPendingImage(null);
-      setRedacting(false);
-      setRedactions([]);
     }
   }, [editing, annoApi]);
 
-  // Escape cancels a pending image placement.
+  // Truly leaving edit (mode → View): tear down every editing surface so none
+  // persists in read-only mode — pending placements, redaction marks, the
+  // organize / signature modals, and any armed signature placement.
+  useEffect(() => {
+    if (mode === 'view') {
+      setPendingImage(null);
+      setRedacting(false);
+      setRedactions([]);
+      setRedactError(null);
+      setConfirmRedact(false);
+      setOrganizing(false);
+      setSigning(false);
+      sigCap?.forDocument(documentId).deactivatePlacement();
+    }
+  }, [mode, sigCap, documentId]);
+
+  // While redacting, keep the page in its native orientation so marks stay
+  // aligned with the rendered bitmap (snap back if the view gets rotated).
+  useEffect(() => {
+    if (redacting && viewRotation !== Rotation.Degree0) {
+      rotateApi?.setRotation(Rotation.Degree0);
+    }
+  }, [redacting, viewRotation, rotateApi]);
+
+  // Escape cancels a pending image placement (and the redaction confirm).
   useEffect(() => {
     if (!pendingImage) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1627,6 +1681,16 @@ export function Viewer({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pendingImage]);
+
+  // Escape dismisses the redaction confirm dialog (unless mid-apply).
+  useEffect(() => {
+    if (!confirmRedact) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !redactBusy) setConfirmRedact(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmRedact, redactBusy]);
 
   // View mode (and presentation) is read-only: lock annotations so they can't be
   // moved/resized/deleted. They stay selectable, so clicking a note still opens
@@ -1674,7 +1738,10 @@ export function Viewer({
         const sel = annoApi?.getSelectedAnnotations() ?? [];
         if (sel.length) {
           e.preventDefault();
-          clipboardRef.current = sel.map((a) => a.object);
+          // Image stamps (incl. signatures, subtype STAMP=13) carry their bitmap
+          // in a separate creation ctx that a plain clone can't reproduce, so
+          // copying them would paste a blank box — exclude them.
+          clipboardRef.current = sel.map((a) => a.object).filter((o) => (o as { type?: number }).type !== 13);
         }
         return;
       }
@@ -1710,7 +1777,7 @@ export function Viewer({
       }
       // Duplicate selection (⌘/Ctrl+D) — offset copy with a fresh id.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-        const sel = annoApi?.getSelectedAnnotations() ?? [];
+        const sel = (annoApi?.getSelectedAnnotations() ?? []).filter((a) => (a.object as { type?: number }).type !== 13);
         if (annoApi && sel.length) {
           e.preventDefault();
           sel.forEach((a) => {
@@ -1876,7 +1943,7 @@ export function Viewer({
             e.target.value = '';
           }}
         />
-        {pendingImage && (
+        {pendingImage && !presenting && (
           <div className="cpdf__placebanner" role="status">
             <Icon name="image" size={18} />
             <span>Click on a page to place the image</span>
@@ -1885,16 +1952,18 @@ export function Viewer({
             </button>
           </div>
         )}
-        {redacting && (
+        {redacting && !presenting && (
           <div className="cpdf__placebanner cpdf__placebanner--redact" role="status">
             <Icon name="redact" size={18} />
             <span>
-              {redactions.length
-                ? `${redactions.length} region${redactions.length === 1 ? '' : 's'} marked — drag to mark more`
-                : 'Drag on a page to mark regions to permanently remove'}
+              {redactError
+                ? redactError
+                : redactions.length
+                  ? `${redactions.length} region${redactions.length === 1 ? '' : 's'} marked — drag to mark more`
+                  : 'Drag on a page to mark regions to permanently remove'}
             </span>
             {redactions.length > 0 && (
-              <button type="button" className="cpdf__btn" disabled={redactBusy} onClick={() => setRedactions([])}>
+              <button type="button" className="cpdf__btn" disabled={redactBusy} onClick={() => { setRedactions([]); setRedactError(null); }}>
                 Clear
               </button>
             )}
@@ -1902,10 +1971,42 @@ export function Viewer({
               type="button"
               className="cpdf__btn cpdf__btn--danger"
               disabled={redactBusy || !redactions.length}
-              onClick={applyRedactions}
+              onClick={() => setConfirmRedact(true)}
             >
               {redactBusy ? 'Applying…' : 'Apply redactions'}
             </button>
+          </div>
+        )}
+        {confirmRedact && (
+          <div className="cpdf__scrim" role="presentation" onClick={() => !redactBusy && setConfirmRedact(false)}>
+            <div
+              className="cpdf__confirm"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Apply redactions"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="cpdf__confirm-head">
+                <span className="cpdf__confirm-icon"><Icon name="redact" size={22} /></span>
+                <h2 className="cpdf__confirm-title">Apply redactions?</h2>
+              </div>
+              <p className="cpdf__confirm-body">
+                This permanently removes the content under {redactions.length} marked region
+                {redactions.length === 1 ? '' : 's'} — it <strong>can’t be undone</strong>. The{' '}
+                {new Set(redactions.map((r) => r.pageIndex)).size} affected page
+                {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} will be flattened to an image, so
+                text on {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? 'it' : 'them'} will no longer be
+                selectable or searchable. Download the result to keep the redacted copy.
+              </p>
+              <div className="cpdf__confirm-acts">
+                <button type="button" className="cpdf__btn" onClick={() => setConfirmRedact(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="cpdf__btn cpdf__btn--danger" onClick={applyRedactions}>
+                  Redact &amp; remove
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -1054,3 +1054,37 @@
 .cpdf__btn--danger:hover:not(:disabled) {
   background: #971c12;
 }
+
+/* ── Redaction confirm dialog (destructive, irreversible) ───────────────── */
+.cpdf__confirm {
+  width: min(440px, 100%);
+  padding: var(--space-6, 16px);
+  background: var(--color-surface-raised, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-3, 0 18px 48px rgba(0, 0, 0, 0.28));
+}
+.cpdf__confirm-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 8px);
+  margin-bottom: var(--space-4, 8px);
+}
+.cpdf__confirm-icon {
+  display: inline-flex;
+  color: var(--color-danger, #e5484d);
+}
+.cpdf__confirm-title {
+  margin: 0;
+  color: var(--color-text, #1b1c1f);
+  font: 700 16px/1.2 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__confirm-body {
+  margin: 0 0 var(--space-6, 16px);
+  color: var(--color-text-secondary, #555);
+  font: 400 13px/1.6 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__confirm-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3, 6px);
+}
