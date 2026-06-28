@@ -34,6 +34,7 @@ import {
   AnnotationLayer,
   AnnotationRendererProvider,
 } from '@embedpdf/plugin-annotation/react';
+import { LockModeType } from '@embedpdf/plugin-annotation';
 import { useHistoryCapability } from '@embedpdf/plugin-history/react';
 import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { IconButton } from './IconButton';
@@ -724,6 +725,13 @@ export function Viewer({
   useEffect(() => {
     if (presenting) annoApi?.setActiveTool(null);
   }, [presenting, annoApi]);
+
+  // View mode (and presentation) is read-only: lock annotations so they can't be
+  // moved/resized/deleted. They stay selectable, so clicking a note still opens
+  // its comment. Edit/Suggest unlock full interaction.
+  useEffect(() => {
+    annoApi?.setLocked({ type: mode === 'view' || presenting ? LockModeType.All : LockModeType.None });
+  }, [annoApi, mode, presenting]);
 
   // (EmbedPDF deselects natively on empty-canvas click now that text selection
   // is View-mode-only, so no custom background handler is needed.)
