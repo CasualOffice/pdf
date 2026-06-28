@@ -753,6 +753,9 @@ function BottomBar({
   const { state: fs, provides: fsApi } = useFullscreen();
   const { isPanning, provides: panApi } = usePan(documentId);
   const [horizontal, setHorizontal] = useState(false);
+  // A document swap (organize / redaction rebuild → new id) resets scrolling to
+  // the default vertical strategy; keep the toggle's state in sync.
+  useEffect(() => setHorizontal(false), [documentId]);
   // Page-number field: a draft while the user types (null = show current page).
   const [pageDraft, setPageDraft] = useState<string | null>(null);
 
@@ -1207,18 +1210,47 @@ function SignatureModal({ documentId, onClose }: { documentId: string; onClose: 
   const drawPadRef = useRef<SignatureDrawPadHandle | null>(null);
   const typePadRef = useRef<SignatureTypePadHandle | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const result = tab === 'draw' ? draw : typed;
 
+  // Modal a11y: focus in, Escape to close, trap Tab within the dialog, restore
+  // focus to the opener on close.
   useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement as HTMLElement;
+        if (!dialogRef.current.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (opener && opener.isConnected && opener !== document.body) opener.focus();
+    };
   }, [onClose]);
 
   const clear = () => {
@@ -1240,6 +1272,7 @@ function SignatureModal({ documentId, onClose }: { documentId: string; onClose: 
   return (
     <div className="cpdf__scrim" role="presentation" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="cpdf__sigmodal"
         role="dialog"
         aria-modal="true"
