@@ -571,10 +571,10 @@ function ThumbnailSidebar({ documentId, onClose }: { documentId: string; onClose
               data-current={current === m.pageIndex + 1 ? 'true' : undefined}
               aria-label={`Go to page ${m.pageIndex + 1}`}
               aria-current={current === m.pageIndex + 1 ? 'page' : undefined}
-              style={{ position: 'absolute', top: m.top, left: 6, right: 6 }}
+              style={{ position: 'absolute', top: m.top, left: 0, right: 0, height: m.wrapperHeight }}
               onClick={() => provides?.scrollToPage({ pageNumber: m.pageIndex + 1 })}
             >
-              <ThumbImg documentId={documentId} meta={m} />
+              <ThumbImg documentId={documentId} meta={m} style={{ width: m.width, height: m.height }} />
               <span className="cpdf__thumb-n">{m.pageIndex + 1}</span>
             </button>
           )}
