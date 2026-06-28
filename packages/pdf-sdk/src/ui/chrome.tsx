@@ -1168,11 +1168,17 @@ export function Viewer({
     selectionCap?.copyToClipboard(documentId);
     selectionCap?.clear(documentId);
   };
-  // Track whether text is selected, to show the selection mini-toolbar.
+  // Track whether text is selected, to show the selection mini-toolbar. Gate on
+  // the *formatted* selection (rects for actually-spanned glyphs) rather than the
+  // raw range — a plain click yields a collapsed range (start === end) with no
+  // rects, which would otherwise float the toolbar over an empty selection (e.g.
+  // right after placing a signature, when the SelectionLayer remounts).
   useEffect(() => {
     if (!selectionCap) return;
-    return selectionCap.onSelectionChange((sel) => setHasSelection(!!sel));
-  }, [selectionCap]);
+    return selectionCap.onSelectionChange(() =>
+      setHasSelection((selectionCap.getFormattedSelection(documentId)?.length ?? 0) > 0),
+    );
+  }, [selectionCap, documentId]);
   const showSelTools = editing && activeToolId === null && hasSelection;
 
   // Imperative API for host menus.
