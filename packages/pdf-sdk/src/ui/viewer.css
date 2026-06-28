@@ -148,7 +148,7 @@
   display: flex;
   flex-direction: column;
   flex: none;
-  width: 232px;
+  width: 260px;
   background: var(--color-surface-raised, #fff);
   border-radius: var(--radius-lg, 14px);
   box-shadow:
@@ -481,7 +481,7 @@
   display: flex;
   flex-direction: column;
   flex: none;
-  width: 196px;
+  width: 248px;
   background: var(--color-surface-raised, #fff);
   border-radius: var(--radius-lg, 14px);
   box-shadow: var(--shadow-1, 0 1px 4px rgba(0, 0, 0, 0.08));
