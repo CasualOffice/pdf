@@ -196,8 +196,8 @@
   gap: 8px;
 }
 .cpdf__swatch {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -229,7 +229,7 @@
   height: 32px;
   border: none;
   background: var(--color-surface-alt, rgba(0, 0, 0, 0.04));
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-md, 6px);
   cursor: pointer;
 }
 .cpdf__wbtn:hover {
@@ -253,10 +253,10 @@
 }
 .cpdf__opbtn {
   flex: 1;
-  height: 30px;
+  height: 32px;
   border: none;
   background: var(--color-surface-alt, rgba(0, 0, 0, 0.04));
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-md, 6px);
   color: var(--color-text-secondary, #555);
   font: 600 12px/1 var(--font-sans, system-ui, sans-serif);
   font-variant-numeric: tabular-nums;
