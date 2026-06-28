@@ -136,8 +136,7 @@ function RailBtn({
       disabled={disabled}
       onClick={onClick}
     >
-      <Icon name={icon} filled={!!active} size={20} />
-      <span className="cpdf__railbtn-label">{label}</span>
+      <Icon name={icon} filled={!!active} size={22} />
     </button>
   );
 }
@@ -549,7 +548,7 @@ function ThumbnailSidebar({ documentId, onClose }: { documentId: string; onClose
               data-current={current === m.pageIndex + 1 ? 'true' : undefined}
               aria-label={`Go to page ${m.pageIndex + 1}`}
               aria-current={current === m.pageIndex + 1 ? 'page' : undefined}
-              style={{ position: 'absolute', top: m.top, left: 0, right: 0 }}
+              style={{ position: 'absolute', top: m.top, left: 6, right: 6 }}
               onClick={() => provides?.scrollToPage({ pageNumber: m.pageIndex + 1 })}
             >
               <ThumbImg documentId={documentId} meta={m} />
