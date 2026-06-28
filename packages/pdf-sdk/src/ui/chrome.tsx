@@ -27,6 +27,7 @@ import { useSearch, SearchLayer } from '@embedpdf/plugin-search/react';
 import { SelectionLayer, useSelectionCapability } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
 import { useBookmarkCapability } from '@embedpdf/plugin-bookmark/react';
+import { useDocumentManagerCapability } from '@embedpdf/plugin-document-manager/react';
 import { PagePointerProvider, usePointerHandlers } from '@embedpdf/plugin-interaction-manager/react';
 import {
   useAnnotation,
@@ -171,11 +172,13 @@ function LeftRail({
   mode,
   leftPanel,
   onToggleLeft,
+  onOrganize,
 }: {
   documentId: string;
   mode: Mode;
   leftPanel: LeftPanel;
   onToggleLeft: (p: 'thumbs' | 'outline' | 'comments') => void;
+  onOrganize: () => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -189,6 +192,8 @@ function LeftRail({
       <RailBtn icon="comments" label="Comments" title="Comments & annotations" active={leftPanel === 'comments'} onClick={() => onToggleLeft('comments')} />
       {editing && (
         <>
+          <span className="cpdf__rail-sep" aria-hidden="true" />
+          <RailBtn icon="organize" label="Organize" title="Organize pages (reorder / delete)" onClick={onOrganize} />
           <span className="cpdf__rail-sep" aria-hidden="true" />
           <RailBtn icon="cursor" label="Select" title="Select (V)" active={activeToolId === null} onClick={() => annoApi?.setActiveTool(null)} />
           {TOOLS.map((t) => (
@@ -816,21 +821,104 @@ function StickyComment({ note }: { note: NoteObj }) {
   );
 }
 
+/* ── Organize Pages: reorder/delete pages, then rebuild the doc (engine
+   mergePages) and reload it (openDocumentBuffer). ─────────────────────────── */
+type MergeEngine = {
+  mergePages: (configs: { docId: string; pageIndices: number[] }[]) => { toPromise: () => Promise<{ content: ArrayBuffer }> };
+} | null | undefined;
+function OrganizeOverlay({
+  documentId,
+  engine,
+  totalPages,
+  onClose,
+}: {
+  documentId: string;
+  engine: MergeEngine;
+  totalPages: number;
+  onClose: () => void;
+}) {
+  const { provides: docCap } = useDocumentManagerCapability();
+  const [order, setOrder] = useState<number[]>(() => Array.from({ length: totalPages }, (_, i) => i));
+  const [busy, setBusy] = useState(false);
+  const move = (i: number, dir: -1 | 1) =>
+    setOrder((o) => {
+      const j = i + dir;
+      if (j < 0 || j >= o.length) return o;
+      const n = [...o];
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+  const del = (i: number) => setOrder((o) => (o.length > 1 ? o.filter((_, k) => k !== i) : o));
+  const apply = async () => {
+    if (!engine || !docCap || !order.length) return;
+    setBusy(true);
+    try {
+      const file = await engine.mergePages([{ docId: documentId, pageIndices: order }]).toPromise();
+      await docCap.openDocumentBuffer({ buffer: file.content, name: 'organized.pdf', autoActivate: true }).toPromise();
+      onClose();
+    } catch {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="cpdf__organize" role="dialog" aria-modal="true" aria-label="Organize pages">
+      <div className="cpdf__organize-bar">
+        <span className="cpdf__organize-title">Organize pages</span>
+        <span className="cpdf__organize-hint">{order.length} page{order.length === 1 ? '' : 's'}</span>
+        <div className="cpdf__organize-acts">
+          <button type="button" className="cpdf__btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="cpdf__btn cpdf__btn--primary" onClick={apply} disabled={busy || !order.length}>
+            {busy ? 'Applying…' : 'Apply'}
+          </button>
+        </div>
+      </div>
+      <div className="cpdf__organize-grid">
+        {order.map((pageIndex, i) => (
+          <div key={pageIndex} className="cpdf__organize-cell">
+            <div className="cpdf__organize-thumb">
+              <RenderLayer documentId={documentId} pageIndex={pageIndex} scale={0.22} aria-label={`Page ${pageIndex + 1}`} />
+            </div>
+            <div className="cpdf__organize-cellbar">
+              <button type="button" className="cpdf-iconbtn" title="Move left" aria-label="Move left" disabled={i === 0} onClick={() => move(i, -1)}>
+                <Icon name="chevron-left" size={16} />
+              </button>
+              <span className="cpdf__organize-num">{i + 1}</span>
+              <button type="button" className="cpdf-iconbtn" title="Move right" aria-label="Move right" disabled={i === order.length - 1} onClick={() => move(i, 1)}>
+                <Icon name="chevron-right" size={16} />
+              </button>
+              <button type="button" className="cpdf-iconbtn" title="Delete page" aria-label="Delete page" onClick={() => del(i)}>
+                <Icon name="trash" size={16} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── The viewer ───────────────────────────────────────────────────────────── */
 export function Viewer({
   documentId,
   mode,
   apiRef,
+  engine,
 }: {
   documentId: string;
   mode: Mode;
   onModeChange?: (m: Mode) => void;
   apiRef?: MutableRefObject<CasualPdfApi | null>;
+  engine?: MergeEngine;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
   const [hasSelection, setHasSelection] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
+  const { state: docScroll } = useScroll(documentId);
+  const totalPages = docScroll?.totalPages ?? 0;
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
@@ -1054,7 +1142,7 @@ export function Viewer({
     <AnnotationRendererProvider>
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -1119,6 +1207,9 @@ export function Viewer({
               <Icon name="copy" size={18} />
             </button>
           </div>
+        )}
+        {organizing && (
+          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} />
         )}
       </div>
     </AnnotationRendererProvider>

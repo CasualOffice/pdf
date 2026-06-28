@@ -111,7 +111,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
                     <span className="cpdf__status-sub">It may be corrupt, password-protected, or not a PDF.</span>
                   </div>
                 ) : isLoaded ? (
-                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} />
+                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} engine={engine} />
                 ) : (
                   <div className="cpdf__status">
                     <span className="cpdf__spinner" aria-hidden="true" />

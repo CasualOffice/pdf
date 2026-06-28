@@ -68,6 +68,7 @@ import {
   MdComment,
   MdOutlineComment,
   MdContentCopy,
+  MdDashboardCustomize,
   MdCropSquare,
   MdCircle,
   MdRadioButtonUnchecked,
@@ -124,6 +125,7 @@ export type IconName =
   | 'note'
   | 'comments'
   | 'copy'
+  | 'organize'
   | 'square'
   | 'circle'
   | 'arrow'
@@ -175,6 +177,7 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   note: { filled: MdStickyNote2, outline: MdOutlineStickyNote2 },
   comments: { filled: MdComment, outline: MdOutlineComment },
   copy: { filled: MdContentCopy },
+  organize: { filled: MdDashboardCustomize },
   square: { filled: MdCropSquare },
   circle: { filled: MdCircle, outline: MdRadioButtonUnchecked },
   arrow: { filled: MdArrowRightAlt },
