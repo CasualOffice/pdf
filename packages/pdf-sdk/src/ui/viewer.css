@@ -561,6 +561,25 @@
   font: 400 12px/1.5 var(--font-sans, system-ui, sans-serif);
   text-align: center;
 }
+/* Text-selection mini-toolbar (markup-on-select) — floats top-center of the
+   canvas; rendered in our own DOM so its buttons are reliably clickable. */
+.cpdf__seltools {
+  position: absolute;
+  top: var(--space-5, 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 2px);
+  padding: var(--space-1, 3px);
+  background: var(--color-surface-raised, #fff);
+  border-radius: var(--radius-pill, 999px);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong, #cdd3db),
+    var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.18));
+}
+
 /* Comments / review panel rows. */
 .cpdf__comment-row {
   display: flex;

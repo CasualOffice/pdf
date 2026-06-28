@@ -24,7 +24,7 @@ import { useSpread, SpreadMode } from '@embedpdf/plugin-spread/react';
 import { useFullscreen } from '@embedpdf/plugin-fullscreen/react';
 import { usePan } from '@embedpdf/plugin-pan/react';
 import { useSearch, SearchLayer } from '@embedpdf/plugin-search/react';
-import { SelectionLayer } from '@embedpdf/plugin-selection/react';
+import { SelectionLayer, useSelectionCapability } from '@embedpdf/plugin-selection/react';
 import { ThumbnailsPane, ThumbImg } from '@embedpdf/plugin-thumbnail/react';
 import { useBookmarkCapability } from '@embedpdf/plugin-bookmark/react';
 import { PagePointerProvider, usePointerHandlers } from '@embedpdf/plugin-interaction-manager/react';
@@ -96,6 +96,12 @@ const patchFor = (toolId: string | undefined, color: string) =>
       ? { fontColor: color }
       : { color };
 const norm = (c?: string) => (c ?? '').toLowerCase();
+const genId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `cpdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+// PdfAnnotationSubtype values for text markups (HIGHLIGHT=9, UNDERLINE=10, SQUIGGLY=11, STRIKEOUT=12).
+const MARKUP_SUBTYPE: Record<string, number> = { highlight: 9, underline: 10, squiggly: 11, strikeout: 12 };
 
 /** Deselect when the user clicks empty space (no annotation under the pointer).
  *  EmbedPDF selects annotations on click but doesn't deselect on background click;
@@ -823,10 +829,12 @@ export function Viewer({
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
+  const [hasSelection, setHasSelection] = useState(false);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
+  const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
   const { state: fs } = useFullscreen();
@@ -843,6 +851,38 @@ export function Viewer({
   // sits on top and still captures clicks on existing annotations, so selecting
   // text (over glyphs) and selecting/moving annotations coexist.
   const textSelectable = activeToolId === null || MARKUP_TOOLS.has(activeToolId);
+
+  // Selection mini-toolbar: turn the current text selection into a markup
+  // annotation (one per page the selection spans), using the selection's
+  // formatted rects, then clear the selection.
+  const applyMarkup = (toolId: 'highlight' | 'underline' | 'strikeout') => {
+    if (!annoApi || !selectionCap) return;
+    const subtype = MARKUP_SUBTYPE[toolId];
+    const isHighlight = toolId === 'highlight';
+    const color = isHighlight ? '#f5d90a' : '#e8453c';
+    for (const s of selectionCap.getFormattedSelection(documentId) ?? []) {
+      annoApi.createAnnotation(s.pageIndex, {
+        type: subtype,
+        id: genId(),
+        pageIndex: s.pageIndex,
+        rect: s.rect,
+        segmentRects: s.segmentRects,
+        strokeColor: color,
+        opacity: isHighlight ? 0.4 : 1,
+      } as Parameters<NonNullable<typeof annoApi>['createAnnotation']>[1]);
+    }
+    selectionCap.clear(documentId);
+  };
+  const copySelection = () => {
+    selectionCap?.copyToClipboard(documentId);
+    selectionCap?.clear(documentId);
+  };
+  // Track whether text is selected, to show the selection mini-toolbar.
+  useEffect(() => {
+    if (!selectionCap) return;
+    return selectionCap.onSelectionChange((sel) => setHasSelection(!!sel));
+  }, [selectionCap]);
+  const showSelTools = editing && activeToolId === null && hasSelection;
 
   // Imperative API for host menus.
   useEffect(() => {
@@ -901,10 +941,6 @@ export function Viewer({
     // command → individually undoable (importAnnotations folds into the prior
     // history entry, which made undo remove the original too). transformAnnotation
     // builds a type-correct patch (rect + vertices/inkList) just like nudging.
-    const genId = () =>
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `cpdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const cloneAnnotation = (obj: Parameters<NonNullable<typeof annoCap>['transformAnnotation']>[0], dx: number, dy: number) => {
       const r = obj.rect;
       if (!r) return { ...obj, id: genId() } as typeof obj; // no geometry to offset
@@ -1067,6 +1103,23 @@ export function Viewer({
         </div>
         <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
         {searchOpen && <SearchPanel documentId={documentId} onClose={() => setSearchOpen(false)} />}
+        {showSelTools && (
+          <div className="cpdf__seltools" role="toolbar" aria-label="Selection actions" onMouseDown={(e) => e.preventDefault()}>
+            <button type="button" className="cpdf-iconbtn" title="Highlight" aria-label="Highlight" onClick={() => applyMarkup('highlight')}>
+              <Icon name="marker" size={18} />
+            </button>
+            <button type="button" className="cpdf-iconbtn" title="Underline" aria-label="Underline" onClick={() => applyMarkup('underline')}>
+              <Icon name="underline" size={18} />
+            </button>
+            <button type="button" className="cpdf-iconbtn" title="Strikethrough" aria-label="Strikethrough" onClick={() => applyMarkup('strikeout')}>
+              <Icon name="strikeout" size={18} />
+            </button>
+            <span className="cpdf__sep" aria-hidden="true" />
+            <button type="button" className="cpdf-iconbtn" title="Copy" aria-label="Copy" onClick={copySelection}>
+              <Icon name="copy" size={18} />
+            </button>
+          </div>
+        )}
       </div>
     </AnnotationRendererProvider>
   );
