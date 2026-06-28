@@ -631,6 +631,8 @@ export function Viewer({
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
   const { state: fs } = useFullscreen();
+  // Internal clipboard for copy/paste of annotations (stores annotation objects).
+  const clipboardRef = useRef<Parameters<NonNullable<typeof annoApi>['createAnnotation']>[1][]>([]);
   const activeToolId = anno?.activeToolId ?? null;
   // Presentation mode: full screen is a clean reading view — hide editing chrome.
   const presenting = fs.isFullscreen;
@@ -676,9 +678,40 @@ export function Viewer({
   // Keyboard: editing shortcuts (ignored while typing in a field).
   useEffect(() => {
     if (!editing) return;
+    // Clone an annotation shifted by (dx,dy) with a fresh id, so pasted/dup'd
+    // copies are visible (not stacked) and each is its own createAnnotation
+    // command → individually undoable (importAnnotations folds into the prior
+    // history entry, which made undo remove the original too). transformAnnotation
+    // builds a type-correct patch (rect + vertices/inkList) just like nudging.
+    const cloneAnnotation = (obj: Parameters<NonNullable<typeof annoCap>['transformAnnotation']>[0], dx: number, dy: number) => {
+      const r = obj.rect;
+      const rect = { origin: { x: r.origin.x + dx, y: r.origin.y + dy }, size: r.size };
+      const patch = annoCap?.transformAnnotation(obj, { type: 'move', changes: { rect } }) ?? {};
+      // Spreading the discriminated union widens its `type` discriminant; the
+      // merged object is the same annotation kind as obj, so assert that back.
+      return { ...obj, ...patch, id: crypto.randomUUID() } as typeof obj;
+    };
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      // Copy / paste selection (⌘/Ctrl+C / ⌘/Ctrl+V). Paste cascades by offset.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        const sel = annoApi?.getSelectedAnnotations() ?? [];
+        if (sel.length) {
+          e.preventDefault();
+          clipboardRef.current = sel.map((a) => a.object);
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
+        if (annoApi && clipboardRef.current.length) {
+          e.preventDefault();
+          const clones = clipboardRef.current.map((o) => cloneAnnotation(o, 16, 16));
+          clones.forEach((c) => annoApi.createAnnotation(c.pageIndex, c));
+          clipboardRef.current = clones; // next paste cascades from here
+        }
+        return;
+      }
       // Undo / redo (⌘/Ctrl+Z, ⇧ for redo; Ctrl+Y also redoes).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -691,12 +724,15 @@ export function Viewer({
         history?.redo();
         return;
       }
-      // Duplicate selection (⌘/Ctrl+D) — imported copies are re-id'd by the plugin.
+      // Duplicate selection (⌘/Ctrl+D) — offset copy with a fresh id.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         const sel = annoApi?.getSelectedAnnotations() ?? [];
         if (annoApi && sel.length) {
           e.preventDefault();
-          annoApi.importAnnotations(sel.map((a) => ({ annotation: a.object })));
+          sel.forEach((a) => {
+            const c = cloneAnnotation(a.object, 12, 12);
+            annoApi.createAnnotation(c.pageIndex, c);
+          });
         }
         return;
       }
