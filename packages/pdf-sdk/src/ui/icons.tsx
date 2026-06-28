@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Icon set for the viewer chrome, backed by Material Icons (Google) via
  * react-icons/md.

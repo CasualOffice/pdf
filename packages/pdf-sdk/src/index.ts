@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 export { CasualPdf } from './CasualPdf';
 export { Icon } from './ui/icons';
 export type { IconName } from './ui/icons';

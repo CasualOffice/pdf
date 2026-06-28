@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 import type * as Y from 'yjs';
 import type { CollabConfig, Identity } from './modes';
 

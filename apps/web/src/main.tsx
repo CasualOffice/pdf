@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './desk-bridge-bootstrap';

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { MenuBar, type MenuDef } from './Menu';

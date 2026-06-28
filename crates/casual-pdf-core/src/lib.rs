@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 //! casual-pdf-core — the shared, heavy-duty PDF engine for Casual PDF.
 //!
 //! One crate, two targets:

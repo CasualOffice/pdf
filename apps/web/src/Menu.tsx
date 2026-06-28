@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * A Google-Docs-style menu bar (File / View / Help …). One menu open at a time;
  * hovering switches between open menus. Accessible: each top button is a

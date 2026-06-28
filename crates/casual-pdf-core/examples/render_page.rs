@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 //! Render page 1 of a PDF to a PNG via native PDFium — the *native* half of the
 //! UX-F1 render-parity harness (the web half is EmbedPDF's PDFium-WASM; see
 //! tools/render-parity). Same engine on both sides → pixel-equivalent output.

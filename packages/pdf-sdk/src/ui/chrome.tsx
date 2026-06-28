@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Casual Office
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Viewer chrome — a professional PDF-editor layout (Acrobat/Nutrient-style):
  *   • left tool rail (navigation toggles + annotation tools + undo/redo)
@@ -625,7 +628,22 @@ function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: 
         <IconButton icon="close" label="Close outline" onClick={onClose} />
       </div>
       <div className="cpdf__panel-body">
-        {!loaded ? <div className="cpdf__panel-empty">Loading…</div> : items.length ? tree(items) : <div className="cpdf__panel-empty">This document has no outline.</div>}
+        {!loaded ? (
+          <div className="cpdf__empty">
+            <span className="cpdf__spinner" aria-hidden="true" />
+            <span className="cpdf__empty-title">Loading outline…</span>
+          </div>
+        ) : items.length ? (
+          tree(items)
+        ) : (
+          <div className="cpdf__empty">
+            <span className="cpdf__empty-icon">
+              <Icon name="outline" size={28} />
+            </span>
+            <span className="cpdf__empty-title">No outline</span>
+            <span className="cpdf__empty-hint">This document has no bookmarks or table of contents.</span>
+          </div>
+        )}
       </div>
     </aside>
   );
