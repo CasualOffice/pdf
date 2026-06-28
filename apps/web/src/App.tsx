@@ -67,12 +67,16 @@ export function App() {
       restore?.focus();
     };
   }, [about]);
-  useEffect(() => () => {
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-  }, []);
+  const revokeObjectUrl = () => {
+    if (objectUrl.current) {
+      URL.revokeObjectURL(objectUrl.current);
+      objectUrl.current = null;
+    }
+  };
+  useEffect(() => revokeObjectUrl, []);
 
   const openFromFile = (file: File) => {
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    revokeObjectUrl();
     const url = URL.createObjectURL(file);
     objectUrl.current = url;
     setSrc(url);
@@ -90,8 +94,12 @@ export function App() {
       const a = document.createElement('a');
       a.href = url;
       a.download = /\.pdf$/i.test(title) ? title : `${title}.pdf`;
+      // Append to the DOM (Firefox requires it) and revoke after the click is
+      // dispatched, not synchronously (which can cancel the download).
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch {
       window.open(src, '_blank');
     }
@@ -103,7 +111,7 @@ export function App() {
       icon: <Icon name="menu" size={18} />,
       items: [
         { label: 'Open…', shortcut: '⌘O', onSelect: () => fileRef.current?.click() },
-        { label: 'Open sample', onSelect: () => { setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); } },
+        { label: 'Open sample', onSelect: () => { revokeObjectUrl(); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); } },
         { divider: true },
         { label: 'Download', shortcut: '⌘S', onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
@@ -119,6 +127,7 @@ export function App() {
       const k = e.key.toLowerCase();
       if (k === 'o') { e.preventDefault(); fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
+      else if (k === 'p') { e.preventDefault(); window.open(src, '_blank'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -437,6 +437,8 @@ function BottomBar({
   const { state: fs, provides: fsApi } = useFullscreen();
   const { isPanning, provides: panApi } = usePan(documentId);
   const [horizontal, setHorizontal] = useState(false);
+  // Page-number field: a draft while the user types (null = show current page).
+  const [pageDraft, setPageDraft] = useState<string | null>(null);
 
   const page = scroll?.currentPage ?? 1;
   const total = scroll?.totalPages ?? 0;
@@ -455,11 +457,23 @@ function BottomBar({
             className="cpdf__pageinput"
             aria-label="Page number"
             inputMode="numeric"
-            value={page}
-            onChange={(e) => {
-              const n = parseInt(e.target.value, 10);
-              if (scrollApi && !Number.isNaN(n)) scrollApi.scrollToPage({ pageNumber: Math.min(Math.max(1, n), total || 1) });
+            value={pageDraft ?? String(page)}
+            onChange={(e) => setPageDraft(e.target.value.replace(/[^0-9]/g, ''))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              else if (e.key === 'Escape') {
+                setPageDraft(null);
+                (e.target as HTMLInputElement).blur();
+              }
             }}
+            onBlur={() => {
+              if (pageDraft != null && pageDraft !== '') {
+                const n = parseInt(pageDraft, 10);
+                if (scrollApi && !Number.isNaN(n)) scrollApi.scrollToPage({ pageNumber: Math.min(Math.max(1, n), total || 1) });
+              }
+              setPageDraft(null);
+            }}
+            onFocus={(e) => e.currentTarget.select()}
           />
           <span className="cpdf__pagetotal">/ {total}</span>
         </span>
@@ -594,7 +608,11 @@ function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: 
   useEffect(() => {
     let cancelled = false;
     const scope = provides?.forDocument(documentId);
-    if (!scope) return;
+    if (!scope) {
+      // No bookmark capability yet — don't spin forever; show the empty state.
+      setLoaded(true);
+      return;
+    }
     scope
       .getBookmarks()
       .toPromise()
@@ -760,13 +778,18 @@ export function Viewer({
     // command → individually undoable (importAnnotations folds into the prior
     // history entry, which made undo remove the original too). transformAnnotation
     // builds a type-correct patch (rect + vertices/inkList) just like nudging.
+    const genId = () =>
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `cpdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const cloneAnnotation = (obj: Parameters<NonNullable<typeof annoCap>['transformAnnotation']>[0], dx: number, dy: number) => {
       const r = obj.rect;
+      if (!r) return { ...obj, id: genId() } as typeof obj; // no geometry to offset
       const rect = { origin: { x: r.origin.x + dx, y: r.origin.y + dy }, size: r.size };
       const patch = annoCap?.transformAnnotation(obj, { type: 'move', changes: { rect } }) ?? {};
       // Spreading the discriminated union widens its `type` discriminant; the
       // merged object is the same annotation kind as obj, so assert that back.
-      return { ...obj, ...patch, id: crypto.randomUUID() } as typeof obj;
+      return { ...obj, ...patch, id: genId() } as typeof obj;
     };
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
@@ -835,7 +858,8 @@ export function Viewer({
       } else if (e.key.startsWith('Arrow')) {
         // Nudge the selection: arrows move by 1pt, Shift+arrow by 10pt.
         // transformAnnotation builds a type-correct patch (rect + vertices/ink).
-        const sel = annoApi?.getSelectedAnnotations() ?? [];
+        // Only annotations with a rect can be nudged (skip rect-less ones).
+        const sel = (annoApi?.getSelectedAnnotations() ?? []).filter((a) => a.object.rect);
         const delta: Record<string, [number, number]> = {
           ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
         };
