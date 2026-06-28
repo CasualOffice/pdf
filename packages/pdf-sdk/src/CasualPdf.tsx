@@ -21,6 +21,7 @@ import { HistoryPluginPackage } from '@embedpdf/plugin-history/react';
 import { ExportPluginPackage } from '@embedpdf/plugin-export/react';
 import { TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
 import { Viewer } from './ui/chrome';
+import { Icon } from './ui/icons';
 import './ui/viewer.css';
 import type { CasualPdfProps } from './modes';
 
@@ -68,7 +69,11 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
     return (
       <div className={className} style={style} data-casual-pdf-mode={mode}>
         <div className="cpdf__status" role="alert">
-          Could not load the PDF engine.
+          <span className="cpdf__status-icon cpdf__status-icon--error">
+            <Icon name="warning" size={40} />
+          </span>
+          <span className="cpdf__status-title">Couldn’t load the PDF engine</span>
+          <span className="cpdf__status-sub">Check your connection and reload the page.</span>
         </div>
       </div>
     );
@@ -79,7 +84,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
       <div className={className} style={style} data-casual-pdf-mode={mode}>
         <div className="cpdf__status">
           <span className="cpdf__spinner" aria-hidden="true" />
-          Loading PDF engine…
+          <span className="cpdf__status-title">Loading PDF engine…</span>
         </div>
       </div>
     );
@@ -94,15 +99,18 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, className,
               {({ isLoaded, isError }) =>
                 isError ? (
                   <div className="cpdf__status" role="alert">
-                    <strong>Couldn’t open this PDF.</strong>
-                    It may be corrupt, password-protected, or not a PDF.
+                    <span className="cpdf__status-icon cpdf__status-icon--error">
+                      <Icon name="warning" size={40} />
+                    </span>
+                    <span className="cpdf__status-title">Couldn’t open this PDF</span>
+                    <span className="cpdf__status-sub">It may be corrupt, password-protected, or not a PDF.</span>
                   </div>
                 ) : isLoaded ? (
                   <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} />
                 ) : (
                   <div className="cpdf__status">
                     <span className="cpdf__spinner" aria-hidden="true" />
-                    Loading document…
+                    <span className="cpdf__status-title">Loading document…</span>
                   </div>
                 )
               }

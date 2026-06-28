@@ -71,6 +71,8 @@ import {
   MdOutlineFolderOpen,
   MdInfo,
   MdInfoOutline,
+  MdError,
+  MdErrorOutline,
 } from 'react-icons/md';
 
 export type IconName =
@@ -112,7 +114,8 @@ export type IconName =
   | 'download'
   | 'print'
   | 'open'
-  | 'info';
+  | 'info'
+  | 'warning';
 
 /** filled (active) + optional outline (inactive) glyph per icon. */
 const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
@@ -155,6 +158,7 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   print: { filled: MdPrint },
   open: { filled: MdFolderOpen, outline: MdOutlineFolderOpen },
   info: { filled: MdInfo, outline: MdInfoOutline },
+  warning: { filled: MdError, outline: MdErrorOutline },
 };
 
 interface IconProps {

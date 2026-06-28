@@ -548,11 +548,30 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--space-3, 12px);
+  gap: var(--space-4, 8px);
   align-items: center;
   justify-content: center;
+  padding: var(--space-6, 16px);
+  text-align: center;
   color: var(--color-text-secondary, #555);
   font: 500 14px/1 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__status-icon {
+  display: inline-flex;
+  margin-bottom: var(--space-2, 4px);
+  color: var(--color-text-secondary, #889);
+}
+.cpdf__status-icon--error {
+  color: var(--color-danger, #e5484d);
+}
+.cpdf__status-title {
+  color: var(--color-text, #1b1c1f);
+  font: 600 15px/1.3 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__status-sub {
+  max-width: 320px;
+  color: var(--color-text-secondary, #667);
+  font: 400 13px/1.5 var(--font-sans, system-ui, sans-serif);
 }
 .cpdf__spinner {
   width: 30px;
