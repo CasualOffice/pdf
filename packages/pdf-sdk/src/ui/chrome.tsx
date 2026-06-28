@@ -1100,15 +1100,29 @@ function OrganizeOverlay({
   engine,
   totalPages,
   onClose,
+  onApplied,
 }: {
   documentId: string;
   engine: MergeEngine;
   totalPages: number;
   onClose: () => void;
+  onApplied?: () => void;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const [order, setOrder] = useState<number[]>(() => Array.from({ length: totalPages }, (_, i) => i));
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Escape closes the overlay (unless mid-apply).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
   const move = (i: number, dir: -1 | 1) =>
     setOrder((o) => {
       const j = i + dir;
@@ -1121,11 +1135,14 @@ function OrganizeOverlay({
   const apply = async () => {
     if (!engine || !docCap || !order.length) return;
     setBusy(true);
+    setError(null);
     try {
       const file = await engine.mergePages([{ docId: documentId, pageIndices: order }]).toPromise();
       await docCap.openDocumentBuffer({ buffer: file.content, name: 'organized.pdf', autoActivate: true }).toPromise();
+      onApplied?.();
       onClose();
     } catch {
+      setError('Couldn’t apply the page changes. Try again.');
       setBusy(false);
     }
   };
@@ -1133,7 +1150,7 @@ function OrganizeOverlay({
     <div className="cpdf__organize" role="dialog" aria-modal="true" aria-label="Organize pages">
       <div className="cpdf__organize-bar">
         <span className="cpdf__organize-title">Organize pages</span>
-        <span className="cpdf__organize-hint">{order.length} page{order.length === 1 ? '' : 's'}</span>
+        <span className="cpdf__organize-hint">{error ? error : `${order.length} page${order.length === 1 ? '' : 's'}`}</span>
         <div className="cpdf__organize-acts">
           <button type="button" className="cpdf__btn" onClick={onClose} disabled={busy}>
             Cancel
@@ -1379,12 +1396,14 @@ export function Viewer({
   documentId,
   mode,
   apiRef,
+  onEdited,
   engine,
 }: {
   documentId: string;
   mode: Mode;
   onModeChange?: (m: Mode) => void;
   apiRef?: MutableRefObject<CasualPdfApi | null>;
+  onEdited?: () => void;
   engine?: MergeEngine;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1568,6 +1587,7 @@ export function Viewer({
       const out = await buildRedactedPdf(srcBytes, flattened);
       const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
       await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      onEdited?.();
       setRedactions([]);
       setRedacting(false);
     } catch (e) {
@@ -1712,6 +1732,15 @@ export function Viewer({
       }
     });
   }, [annoApi]);
+
+  // Mark the document dirty (for host unsaved-changes warnings) on any
+  // annotation create/update/delete.
+  useEffect(() => {
+    if (!annoApi || !onEdited) return;
+    return annoApi.onAnnotationEvent((ev) => {
+      if (ev.type === 'create' || ev.type === 'update' || ev.type === 'delete') onEdited();
+    });
+  }, [annoApi, onEdited]);
 
   // Keyboard: editing shortcuts (ignored while typing in a field).
   useEffect(() => {
@@ -1928,7 +1957,7 @@ export function Viewer({
           </div>
         )}
         {organizing && (
-          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} />
+          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} onApplied={onEdited} />
         )}
         {signing && <SignatureModal documentId={documentId} onClose={() => setSigning(false)} />}
         <PlacementBanner documentId={documentId} />

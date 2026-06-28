@@ -77,6 +77,10 @@ export interface CasualPdfProps {
   identity?: Identity;
   /** Receives an imperative API once the document is ready (for host menus). */
   apiRef?: MutableRefObject<CasualPdfApi | null>;
+  /** Fired the first time the document is edited (annotation added/changed,
+   *  pages organized, redaction applied). Lets the host warn before discarding
+   *  unsaved work (e.g. on Open or tab close). */
+  onEdited?: () => void;
   className?: string;
   style?: CSSProperties;
 }

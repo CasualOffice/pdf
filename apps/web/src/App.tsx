@@ -35,6 +35,7 @@ export function App() {
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
@@ -77,16 +78,32 @@ export function App() {
   };
   useEffect(() => revokeObjectUrl, []);
 
+  // Warn before discarding unsaved edits (Open, Open-sample, tab close).
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+  const confirmDiscard = () =>
+    !dirty ||
+    window.confirm('You have unsaved changes that will be lost. Download first to keep them.\n\nDiscard changes and continue?');
+
   const openFromFile = (file: File) => {
     revokeObjectUrl();
     const url = URL.createObjectURL(file);
     objectUrl.current = url;
     setSrc(url);
     setTitle(file.name.replace(/\.pdf$/i, ''));
+    setDirty(false);
   };
   const download = async () => {
     if (api.current) {
       api.current.download();
+      setDirty(false);
       return;
     }
     try {
@@ -112,8 +129,8 @@ export function App() {
       label: 'Menu',
       icon: <Icon name="menu" size={18} />,
       items: [
-        { label: 'Open…', shortcut: '⌘O', onSelect: () => fileRef.current?.click() },
-        { label: 'Open sample', onSelect: () => { revokeObjectUrl(); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); } },
+        { label: 'Open…', shortcut: '⌘O', onSelect: () => { if (confirmDiscard()) fileRef.current?.click(); } },
+        { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); } } },
         { divider: true },
         { label: 'Download', shortcut: '⌘S', onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
@@ -129,14 +146,14 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
-      if (k === 'o') { e.preventDefault(); fileRef.current?.click(); }
+      if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
       else if (k === 'p') { e.preventDefault(); window.open(src, '_blank'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, title]);
+  }, [src, title, dirty]);
 
   return (
     <div className="app">
@@ -198,7 +215,7 @@ export function App() {
       />
 
       <main className="canvas">
-        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} className="viewer" />
+        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} onEdited={() => setDirty(true)} className="viewer" />
       </main>
 
       {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}
