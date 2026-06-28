@@ -205,6 +205,21 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.cpdf__sticky-text {
+  width: 100%;
+  resize: vertical;
+  padding: var(--space-3, 6px);
+  background: rgba(255, 255, 255, 0.8);
+  color: #2a2400;
+  border: 1px solid rgba(138, 109, 0, 0.3);
+  border-radius: var(--radius-sm, 4px);
+  font: 400 13px/1.5 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__sticky-text:focus-visible {
+  outline: 2px solid #d6a600;
+  outline-offset: 0;
+  border-color: transparent;
+}
 .cpdf__sticky-body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

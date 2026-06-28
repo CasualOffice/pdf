@@ -213,7 +213,7 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
     selected.some((a) => set.has(scope?.findToolForAnnotation(a.object)?.id ?? ''));
   const widthRelevant = relevant(STROKE_TOOLS);
   const fontRelevant = relevant(TEXT_TOOLS);
-  // A single selected sticky-note (Comment tool): its text lives in `contents`.
+  // A single selected comment note: its text lives in `contents` (edited here).
   const note =
     selected.length === 1 && scope && scope.findToolForAnnotation(selected[0].object)?.id === 'textComment'
       ? (selected[0].object as { id: string; pageIndex: number; contents?: string })
@@ -251,8 +251,6 @@ function PropertiesPanel({ documentId }: { documentId: string }) {
                 placeholder="Type your comment…"
                 rows={4}
                 autoFocus
-                /* Commit on each change: deselecting unmounts this textarea
-                   before onBlur could fire, so onBlur would lose the edit. */
                 onChange={(e) =>
                   scope?.updateAnnotations([{ pageIndex: note.pageIndex, id: note.id, patch: { contents: e.target.value } }])
                 }
@@ -646,7 +644,7 @@ function StickyComment({ note }: { note: NoteObj }) {
         Comment
       </div>
       <div className="cpdf__sticky-body" data-empty={text ? undefined : 'true'}>
-        {text || 'No comment'}
+        {text || 'No comment yet'}
       </div>
     </div>
   );
@@ -866,8 +864,10 @@ export function Viewer({
                       pageIndex={pageIndex}
                       style={{ position: 'absolute', inset: 0 }}
                       selectionMenu={({ context, menuWrapperProps }) => {
-                        // Read-only sticky for viewing a comment on the page. In
-                        // Edit/Suggest the editable field lives in the panel.
+                        // Read-only sticky for viewing a comment on the page (View
+                        // mode). In Edit/Suggest the editable field lives in the
+                        // panel — EmbedPDF's selection-menu container can't reliably
+                        // host a focusable textarea.
                         if (mode !== 'view') return null;
                         const obj = context.annotation.object;
                         if (annoApi?.findToolForAnnotation(obj)?.id !== 'textComment') return null;
