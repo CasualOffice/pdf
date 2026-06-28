@@ -1021,3 +1021,36 @@
   height: 28px;
   padding: 0 12px;
 }
+
+/* ── Redaction marking ──────────────────────────────────────────────────── */
+/* Full-page capture overlay while the Redact tool is active. */
+.cpdf__redactlayer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  cursor: crosshair;
+  touch-action: none;
+}
+/* A marked (or in-progress) region: a translucent red box with a solid edge so
+   it reads as "will be removed" without hiding what's underneath while editing. */
+.cpdf__redactrect {
+  position: absolute;
+  background: rgba(229, 72, 77, 0.32);
+  box-shadow: inset 0 0 0 1.5px var(--color-danger, #e5484d);
+  pointer-events: none;
+}
+.cpdf__redactrect--draft {
+  background: rgba(229, 72, 77, 0.2);
+  box-shadow: inset 0 0 0 1.5px var(--color-danger, #e5484d);
+}
+.cpdf__placebanner--redact {
+  background: var(--color-danger, #e5484d);
+}
+.cpdf__btn--danger {
+  border-color: transparent;
+  background: #b42318;
+  color: #fff;
+}
+.cpdf__btn--danger:hover:not(:disabled) {
+  background: #971c12;
+}

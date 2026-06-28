@@ -49,6 +49,7 @@ import {
 } from '@embedpdf/plugin-signature/react';
 import { useHistoryCapability } from '@embedpdf/plugin-history/react';
 import { useExportCapability } from '@embedpdf/plugin-export/react';
+import { useRenderCapability } from '@embedpdf/plugin-render/react';
 import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
 import type { Mode, CasualPdfApi } from '../modes';
@@ -198,6 +199,100 @@ function ImagePlacer({
   return null;
 }
 
+/** A marked redaction region in fractional page coordinates (0..1, top-left
+ *  origin) — zoom-independent, so the same mark maps cleanly to the rendered
+ *  image at any scale. */
+interface RedactRect {
+  pageIndex: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const pctStyle = (r: { x: number; y: number; w: number; h: number }) => ({
+  left: `${r.x * 100}%`,
+  top: `${r.y * 100}%`,
+  width: `${r.w * 100}%`,
+  height: `${r.h * 100}%`,
+});
+
+/** Drag-to-mark redaction regions on a page. Captures fractional rects from its
+ *  own bounding box (independent of EmbedPDF's pointer/coord system) and draws
+ *  the committed + in-progress marks as red boxes. Applying the marks rasterizes
+ *  + flattens the page (see redact.ts). */
+function RedactionLayer({
+  pageIndex,
+  redactions,
+  onAdd,
+}: {
+  pageIndex: number;
+  redactions: RedactRect[];
+  onAdd: (r: RedactRect) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const frac = (clientX: number, clientY: number) => {
+    const b = ref.current!.getBoundingClientRect();
+    return { x: clamp01((clientX - b.left) / b.width), y: clamp01((clientY - b.top) / b.height) };
+  };
+  const rectFrom = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(a.x - b.x),
+    h: Math.abs(a.y - b.y),
+  });
+  const mine = redactions.filter((r) => r.pageIndex === pageIndex);
+  return (
+    <div
+      ref={ref}
+      className="cpdf__redactlayer"
+      onPointerDown={(e) => {
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        start.current = frac(e.clientX, e.clientY);
+        setDraft({ ...start.current, w: 0, h: 0 });
+      }}
+      onPointerMove={(e) => {
+        if (!start.current) return;
+        setDraft(rectFrom(start.current, frac(e.clientX, e.clientY)));
+      }}
+      onPointerUp={(e) => {
+        if (start.current) {
+          const r = rectFrom(start.current, frac(e.clientX, e.clientY));
+          // Ignore stray clicks (require a minimum marked area).
+          if (r.w > 0.005 && r.h > 0.005) onAdd({ pageIndex, ...r });
+        }
+        start.current = null;
+        setDraft(null);
+      }}
+    >
+      {mine.map((r, i) => (
+        <div key={i} className="cpdf__redactrect" style={pctStyle(r)} />
+      ))}
+      {draft && <div className="cpdf__redactrect cpdf__redactrect--draft" style={pctStyle(draft)} />}
+    </div>
+  );
+}
+
+/** Render a page Blob to a canvas, paint opaque black over the fractional
+ *  redaction rects, and return PNG bytes — the flattened, redacted page image. */
+async function flattenPage(blob: Blob, rects: RedactRect[]): Promise<Uint8Array> {
+  const img = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  img.close();
+  ctx.fillStyle = '#000';
+  for (const r of rects) {
+    ctx.fillRect(r.x * canvas.width, r.y * canvas.height, r.w * canvas.width, r.h * canvas.height);
+  }
+  const out: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), 'image/png'));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
 /** A labelled rail button — icon + caption so the rail reads as a tool palette. */
 function RailBtn({
@@ -239,6 +334,8 @@ function LeftRail({
   onOrganize,
   onSign,
   onInsertImage,
+  redacting,
+  onToggleRedact,
 }: {
   documentId: string;
   mode: Mode;
@@ -247,6 +344,8 @@ function LeftRail({
   onOrganize: () => void;
   onSign: () => void;
   onInsertImage: () => void;
+  redacting: boolean;
+  onToggleRedact: () => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -262,6 +361,7 @@ function LeftRail({
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
           <RailBtn icon="image" label="Image" title="Insert an image" onClick={onInsertImage} />
+          <RailBtn icon="redact" label="Redact" title="Redact (permanently remove regions)" active={redacting} onClick={onToggleRedact} />
           <RailBtn icon="sign" label="Sign" title="Add a signature" onClick={onSign} />
           <RailBtn icon="organize" label="Organize" title="Organize pages (reorder / delete)" onClick={onOrganize} />
           <span className="cpdf__rail-sep" aria-hidden="true" />
@@ -1256,6 +1356,9 @@ export function Viewer({
   const [signing, setSigning] = useState(false);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const [redacting, setRedacting] = useState(false);
+  const [redactions, setRedactions] = useState<RedactRect[]>([]);
+  const [redactBusy, setRedactBusy] = useState(false);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
@@ -1265,6 +1368,8 @@ export function Viewer({
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
+  const { provides: renderCap } = useRenderCapability();
+  const { provides: docCap } = useDocumentManagerCapability();
   const { state: fs } = useFullscreen();
   // Internal clipboard for copy/paste of annotations (stores annotation objects).
   const clipboardRef = useRef<Parameters<NonNullable<typeof annoApi>['createAnnotation']>[1][]>([]);
@@ -1278,7 +1383,7 @@ export function Viewer({
   // shape/ink/text/note tools that own the drag to draw. The AnnotationLayer
   // sits on top and still captures clicks on existing annotations, so selecting
   // text (over glyphs) and selecting/moving annotations coexist.
-  const textSelectable = activeToolId === null || MARKUP_TOOLS.has(activeToolId);
+  const textSelectable = (activeToolId === null || MARKUP_TOOLS.has(activeToolId)) && !redacting;
 
   // Selection mini-toolbar: turn the current text selection into a markup
   // annotation (one per page the selection spans), using the selection's
@@ -1373,7 +1478,52 @@ export function Viewer({
     }
     annoApi?.setActiveTool(null); // select mode → the placer's pointer handler is live
     annoApi?.deselectAnnotation();
+    setRedacting(false);
     setPendingImage({ data, mimeType, w, h });
+  };
+
+  // Redaction: toggle marking mode (mutually exclusive with annotation tools /
+  // image placement), and apply — rasterize + flatten each marked page.
+  const toggleRedact = () => {
+    setRedacting((v) => {
+      const next = !v;
+      if (next) {
+        annoApi?.setActiveTool(null);
+        annoApi?.deselectAnnotation();
+        setPendingImage(null);
+      }
+      return next;
+    });
+  };
+  const applyRedactions = async () => {
+    if (!renderCap || !docCap || !exportCap || !redactions.length) return;
+    setRedactBusy(true);
+    try {
+      const ab = await exportCap.saveAsCopy().toPromise();
+      if (!ab) throw new Error('no document bytes');
+      const srcBytes = new Uint8Array(ab);
+      const scope = renderCap.forDocument(documentId);
+      const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
+      const flattened: { pageIndex: number; png: Uint8Array }[] = [];
+      for (const pi of pageIndices) {
+        // Render at 2× with annotations baked so flattened pages keep markups.
+        const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: 2, withAnnotations: true } }).toPromise();
+        if (!blob) continue;
+        const png = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi));
+        flattened.push({ pageIndex: pi, png });
+      }
+      // Lazy-load the pdf-lib assembly (~90 KB gz) only when applying.
+      const { buildRedactedPdf } = await import('../redact');
+      const out = await buildRedactedPdf(srcBytes, flattened);
+      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+      await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      setRedactions([]);
+      setRedacting(false);
+    } catch {
+      // Keep the marks so the user can retry.
+    } finally {
+      setRedactBusy(false);
+    }
   };
 
   // Leaving the editing state (View mode or full-screen presentation) is
@@ -1384,6 +1534,8 @@ export function Viewer({
       annoApi?.setActiveTool(null);
       annoApi?.deselectAnnotation();
       setPendingImage(null);
+      setRedacting(false);
+      setRedactions([]);
     }
   }, [editing, annoApi]);
 
@@ -1542,7 +1694,7 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -1582,9 +1734,16 @@ export function Viewer({
                         );
                       }}
                     />
-                    {mode !== 'view' && !pendingImage && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
+                    {mode !== 'view' && !pendingImage && !redacting && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
                     {editing && pendingImage && (
                       <ImagePlacer documentId={documentId} pageIndex={pageIndex} image={pendingImage} onPlaced={() => setPendingImage(null)} />
+                    )}
+                    {editing && redacting && (
+                      <RedactionLayer
+                        pageIndex={pageIndex}
+                        redactions={redactions}
+                        onAdd={(r) => setRedactions((prev) => [...prev, r])}
+                      />
                     )}
                   </PagePointerProvider>
                 )}
@@ -1634,6 +1793,29 @@ export function Viewer({
             <span>Click on a page to place the image</span>
             <button type="button" className="cpdf__btn" onClick={() => setPendingImage(null)}>
               Cancel
+            </button>
+          </div>
+        )}
+        {redacting && (
+          <div className="cpdf__placebanner cpdf__placebanner--redact" role="status">
+            <Icon name="redact" size={18} />
+            <span>
+              {redactions.length
+                ? `${redactions.length} region${redactions.length === 1 ? '' : 's'} marked — drag to mark more`
+                : 'Drag on a page to mark regions to permanently remove'}
+            </span>
+            {redactions.length > 0 && (
+              <button type="button" className="cpdf__btn" disabled={redactBusy} onClick={() => setRedactions([])}>
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              className="cpdf__btn cpdf__btn--danger"
+              disabled={redactBusy || !redactions.length}
+              onClick={applyRedactions}
+            >
+              {redactBusy ? 'Applying…' : 'Apply redactions'}
             </button>
           </div>
         )}
