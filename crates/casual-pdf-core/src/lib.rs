@@ -15,6 +15,7 @@
 
 // Pure-Rust structure ops (lopdf) — compile on BOTH native and wasm32, no PDFium.
 pub mod redact;
+pub mod textedit;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
@@ -109,6 +110,42 @@ mod wasm {
     pub fn redact_pdf_wasm(pdf: &[u8], spec: &[f64]) -> Result<Vec<u8>, JsValue> {
         let pages = parse_spec(spec).map_err(JsValue::from_str)?;
         redact_pdf(pdf, &pages).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /* ── Tier-2 text editing ──────────────────────────────────────────────── */
+    use crate::textedit::{edit_text_run, list_text_runs, move_text_run, runs_json};
+
+    /// JSON array of the editable text runs on `page_index` (for the edit overlay).
+    #[wasm_bindgen]
+    pub fn list_text_runs_wasm(pdf: &[u8], page_index: usize) -> Result<String, JsValue> {
+        let runs =
+            list_text_runs(pdf, page_index).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(runs_json(&runs))
+    }
+
+    /// Replace run `run_id`'s text on `page_index`; returns new PDF bytes.
+    #[wasm_bindgen]
+    pub fn edit_text_run_wasm(
+        pdf: &[u8],
+        page_index: usize,
+        run_id: usize,
+        new_text: &str,
+    ) -> Result<Vec<u8>, JsValue> {
+        edit_text_run(pdf, page_index, run_id, new_text)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Move run `run_id` by (dx, dy) in user space; returns new PDF bytes.
+    #[wasm_bindgen]
+    pub fn move_text_run_wasm(
+        pdf: &[u8],
+        page_index: usize,
+        run_id: usize,
+        dx: f64,
+        dy: f64,
+    ) -> Result<Vec<u8>, JsValue> {
+        move_text_run(pdf, page_index, run_id, dx, dy)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 

@@ -116,7 +116,10 @@ try {
     assert(restoredAnns >= 2, 'restored document still has the edited annotations');
   }
 
-  // ── Surgical redaction (UX-S5): remove a word, neighbour text survives ─────
+  // ── Redaction (UX-S5): flatten-only. Redacting a word rasterizes its page, so
+  //    the word — and the rest of that single-page fixture's text — is no longer
+  //    in the byte stream. (Untouched pages keep their text; covered by the
+  //    geometry test on the multi-page fixture.) ─────────────────────────────
   const total = (s) => { const m = (s || '').match(/(\d+)\s*\/\s*(\d+)/); return m ? parseInt(m[2], 10) : NaN; };
   const searchCount = async (term) => {
     const open = await page.locator('.cpdf__search input').isVisible().catch(() => false);
@@ -145,25 +148,24 @@ try {
   await page.getByRole('button', { name: 'Apply redactions' }).click();
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: 'Redact & remove' }).click();
-  // applyRedactions: saveAsCopy → lazy-load wasm → redactSurgical → reopen.
+  // applyRedactions: saveAsCopy → render native → flatten → reopen.
   await page.waitForTimeout(4000);
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
   await page.waitForTimeout(1500);
 
   // Authoritative UX-S5 check: download the redacted result and extract its text.
-  // (In-app search isn't reliable on buffer-reopened docs — orthogonal to
-  // redaction; the byte stream is the source of truth the gate cares about.)
+  // (In-app search isn't reliable on buffer-reopened docs — the byte stream is
+  // the source of truth the gate cares about.)
   const dlPath = '/tmp/e2e-redacted.pdf';
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 20000 }),
     page.keyboard.press('Meta+s'),
   ]);
   await download.saveAs(dlPath);
-  const text = execSync(`python3 ${join(here, 'extract-text.py')} ${dlPath}`).toString();
-  const has = (w) => new RegExp(`\\b${w}\\b`, 'i').test(text);
+  const text = execSync(`python3 ${join(here, 'extract-text.py')} ${dlPath}`, { maxBuffer: 64 * 1024 * 1024 }).toString();
   console.log('redacted text extract:', JSON.stringify(text.slice(0, 90)));
-  assert(!/quick/i.test(text), 'redacted word "quick" removed from the byte stream');
-  assert(has('brown') && has('render'), 'surrounding text ("brown", "render") preserved → surgical, not flatten');
+  assert(!/quick/i.test(text), 'redacted word "quick" removed from the byte stream (UX-S5)');
+  assert(!/parity/i.test(text), 'redacted page flattened to an image — its text is gone, not merely covered');
 
   assert(errors.length === 0, `no page errors (${errors.length})`);
 } catch (e) {

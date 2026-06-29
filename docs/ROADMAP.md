@@ -58,7 +58,7 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 ## Phase 5 — Heavy ops & page management
 **Goal:** full document manipulation, off-thread.
 - Page manager: reorder/rotate/insert/delete/merge/split/extract via `casual-pdf-core` worker (web) / native (desktop). *(Reorder/delete shipped via Organize Pages.)*
-- [x] **True (surgical) redaction** (byte-level removal) in the Rust core — `crates/casual-pdf-core/src/redact.rs`, compiled to wasm and wired into the SDK; keeps the rest of the page's text selectable. Verified end-to-end (UX-S5). Follow-ups: CID/Type0 fonts; search re-index after `openDocumentBuffer`.
+- [x] **True redaction (flatten, geometry-preserving)** — rasterize each marked page, paint opaque boxes, rebuild **inheriting the source MediaBox/CropBox/Rotate** (`packages/pdf-sdk/src/redact.ts`); untouched pages kept verbatim. This is the *secure* method (research-backed: immune to de-redaction attacks). UX-S5 verified on a rotated + offset fixture. The surgical byte-level path (Rust core, keeps text selectable) was attempted but **reverted as unsafe** (under-redacts XObjects/Type3; advance-width leak) — a fail-closed surgical engine is a later opt-in.
 - Watermark/header/footer/Bates; thumbnail generation.
 **Reuse:** the Rust core from Phase 0, now load-bearing.
 **Gates:** UX-S5, UX-P5, UX-F2.

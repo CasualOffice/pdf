@@ -12,8 +12,12 @@ for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
         s = zlib.decompress(s)
     except Exception:
         pass
-    parts.append(s)
-blob = b"\n".join(parts) if parts else data
+    # Only consider content streams (those with text-show operators). Skip image
+    # / binary XObject streams — regexing their bytes as "strings" yields garbage
+    # (and can be huge, e.g. a flattened-page raster).
+    if b"Tj" in s or b"TJ" in s or b"'" in s:
+        parts.append(s)
+blob = b"\n".join(parts)
 
 out = []
 for m in re.finditer(rb"<([0-9A-Fa-f]+)>|\(((?:[^()\\]|\\.)*)\)", blob):
