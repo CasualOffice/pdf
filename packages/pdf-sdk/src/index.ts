@@ -26,3 +26,7 @@ export type {
   AnnotationType,
   EntryState,
 } from './model';
+// PDFium-backed text editing (Tier 2) lives in ./textedit-pdfium and is
+// dynamically imported where used (chrome.tsx) so the PDFium edit path stays a
+// lazy chunk; only the type is surfaced here.
+export type { PdfTextRun } from './textedit-pdfium';

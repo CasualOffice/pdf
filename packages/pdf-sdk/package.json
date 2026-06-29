@@ -56,7 +56,8 @@
     "@signpdf/signer-p12": "^3.3.0",
     "node-forge": "^1.4.0",
     "pdf-lib": "^1.17.1",
-    "@embedpdf/models": "^2.14.4"
+    "@embedpdf/models": "^2.14.4",
+    "@embedpdf/pdfium": "2.14.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
