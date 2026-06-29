@@ -334,15 +334,12 @@ function RedactionLayer({
 }
 
 /** Render a page Blob to a canvas, paint opaque black over the fractional
- *  redaction rects, and return PNG bytes + the page size in points (canvas px /
- *  scaleFactor). Throws if the bitmap can't be decoded or the canvas can't
- *  encode — callers must treat that as a hard failure (never silently skip a
- *  page on a redaction). */
-async function flattenPage(
-  blob: Blob,
-  rects: RedactRect[],
-  scaleFactor: number,
-): Promise<{ png: Uint8Array; widthPt: number; heightPt: number }> {
+ *  redaction rects (top-left fractional coords map directly to canvas pixels),
+ *  and return PNG bytes. The output page geometry is taken from the source page
+ *  (buildRedactedPdf), not the image, so a `/Rotate`d or offset page isn't
+ *  distorted. Throws if the bitmap can't be decoded or the canvas can't encode —
+ *  callers must treat that as a hard failure (never silently skip a page). */
+async function flattenPage(blob: Blob, rects: { x: number; y: number; w: number; h: number }[]): Promise<Uint8Array> {
   const img = await createImageBitmap(blob);
   const canvas = document.createElement('canvas');
   canvas.width = img.width;
@@ -360,11 +357,7 @@ async function flattenPage(
   }
   const out: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
   if (!out) throw new Error('redaction: canvas encode failed (page too large?)');
-  return {
-    png: new Uint8Array(await out.arrayBuffer()),
-    widthPt: canvas.width / scaleFactor,
-    heightPt: canvas.height / scaleFactor,
-  };
+  return new Uint8Array(await out.arrayBuffer());
 }
 
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
@@ -1651,50 +1644,41 @@ export function Viewer({
     });
   };
   const SCALE = 2; // render scale for flattened pages (2× for crisp output)
-  // Fallback path: rasterize each marked page at 2×, paint opaque boxes, rebuild
-  // with pdf-lib. True removal, but the redacted pages lose selectable text.
-  // Used only if the surgical core can't process the document.
-  const flattenRedact = async (srcBytes: Uint8Array): Promise<ArrayBuffer> => {
-    if (!renderCap) throw new Error('Renderer unavailable for fallback redaction.');
-    const scope = renderCap.forDocument(documentId);
-    const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
-    const flattened: { pageIndex: number; png: Uint8Array; widthPt: number; heightPt: number }[] = [];
-    for (const pi of pageIndices) {
-      const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
-      // A failed render must NOT be skipped — that would leave the page's content
-      // un-redacted in the output. Fail the whole operation instead.
-      if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
-      const f = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi), SCALE);
-      flattened.push({ pageIndex: pi, ...f });
-    }
-    const { buildRedactedPdf } = await import('../redact');
-    const out = await buildRedactedPdf(srcBytes, flattened);
-    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-  };
+  // Redaction = rasterize-and-flatten (the secure default; immune to the
+  // de-redaction attacks that defeat surgical text removal — see the research
+  // note in docs). Each marked page is rendered at 2× in its NATIVE orientation,
+  // opaque black boxes are painted over the marks, and the page is rebuilt
+  // PRESERVING its MediaBox/CropBox/Rotate (buildRedactedPdf). Untouched pages
+  // are copied verbatim (keeping their text). The surgical wasm path is shelved
+  // until it's a fail-closed interpreter (it under-redacts on XObjects/Type3).
   const applyRedactions = async () => {
     setConfirmRedact(false);
-    if (!docCap || !exportCap || !redactions.length) return;
+    if (!renderCap || !docCap || !exportCap || !redactions.length) return;
     setRedactBusy(true);
     setRedactError(null);
     try {
       const ab = await exportCap.saveAsCopy().toPromise();
       if (!ab) throw new Error('Could not read the document.');
       const srcBytes = new Uint8Array(ab);
-      let outBuffer: ArrayBuffer;
-      try {
-        // Primary: surgical removal in the Rust core (wasm) — true byte removal
-        // that keeps the rest of the page's text selectable/searchable.
-        const { redactSurgical } = await import('../redact-core');
-        const out = await redactSurgical(srcBytes, redactions);
-        outBuffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-      } catch (surgicalErr) {
-        // Fall back to rasterize-and-flatten — still true removal, but the
-        // redacted pages lose selectable text. Never leave content un-redacted.
-        // eslint-disable-next-line no-console
-        console.warn('surgical redaction unavailable; flattening instead', surgicalErr);
-        outBuffer = await flattenRedact(srcBytes);
+      const scope = renderCap.forDocument(documentId);
+      const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
+      const flattened: { pageIndex: number; png: Uint8Array }[] = [];
+      for (const pi of pageIndices) {
+        const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
+        // A failed render must NOT be skipped — that would leave the page's
+        // content un-redacted in the output. Fail the whole operation instead.
+        if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
+        // The viewer renders pages in native orientation (it reads /Rotate but
+        // doesn't rotate the canvas), and renderPage is native too — so the marks
+        // and the bitmap share one space; paint directly. The output page keeps
+        // the source /Rotate (buildRedactedPdf) so external viewers match.
+        const png = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi));
+        flattened.push({ pageIndex: pi, png });
       }
-      await docCap.openDocumentBuffer({ buffer: outBuffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      const { buildRedactedPdf } = await import('../redact');
+      const out = await buildRedactedPdf(srcBytes, flattened);
+      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+      await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
       onEdited?.();
       setRedactions([]);
       setRedacting(false);
@@ -2128,9 +2112,12 @@ export function Viewer({
                 <h2 className="cpdf__confirm-title">Apply redactions?</h2>
               </div>
               <p className="cpdf__confirm-body">
-                This permanently removes the text and content under {redactions.length} marked region
-                {redactions.length === 1 ? '' : 's'} from the document — it <strong>can’t be undone</strong>. The
-                surrounding text stays selectable and searchable. Download the result to keep the redacted copy.
+                This permanently removes the content under {redactions.length} marked region
+                {redactions.length === 1 ? '' : 's'} — it <strong>can’t be undone</strong>. The{' '}
+                {new Set(redactions.map((r) => r.pageIndex)).size} affected page
+                {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} are rebuilt as flattened images
+                (preserving their size &amp; rotation), so text on {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? 'it' : 'them'} is
+                no longer selectable. Untouched pages keep their text. Download the result to keep the redacted copy.
               </p>
               <div className="cpdf__confirm-acts">
                 <button type="button" className="cpdf__btn" onClick={() => setConfirmRedact(false)}>
