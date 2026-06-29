@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
+import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
 
@@ -36,10 +37,58 @@ export function App() {
   const [about, setAbout] = useState(false);
   const [signing, setSigning] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef(title);
+  titleRef.current = title;
+  const snapshotTimer = useRef<number | null>(null);
+
+  // Crash recovery (UX-I5): on load, offer to restore the last unsaved session.
+  useEffect(() => {
+    void loadSnapshot().then((s) => { if (s) setRecovery(s); });
+  }, []);
+
+  // Autosave: debounce a full-bytes snapshot after edits settle (2.5s idle), so
+  // a crash/close loses at most a couple of seconds of work.
+  const cancelSnapshot = () => {
+    if (snapshotTimer.current) {
+      clearTimeout(snapshotTimer.current);
+      snapshotTimer.current = null;
+    }
+  };
+  const scheduleSnapshot = () => {
+    cancelSnapshot();
+    snapshotTimer.current = window.setTimeout(async () => {
+      snapshotTimer.current = null;
+      const bytes = await api.current?.getBytes();
+      if (bytes && bytes.byteLength) {
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        await saveSnapshot({ title: titleRef.current, bytes: ab, savedAt: Date.now() });
+      }
+    }, 2500);
+  };
+  const markEdited = () => {
+    setDirty(true);
+    scheduleSnapshot();
+  };
+  useEffect(() => cancelSnapshot, []);
+
+  const restoreRecovery = (snap: RecoverySnapshot) => {
+    revokeObjectUrl();
+    const url = URL.createObjectURL(new Blob([snap.bytes], { type: 'application/pdf' }));
+    objectUrl.current = url;
+    setSrc(url);
+    setTitle(snap.title || 'Recovered document');
+    setDirty(true); // recovered work isn't on disk yet — keep the unsaved guard
+    setRecovery(null); // keep the snapshot itself until a clean Download
+  };
+  const discardRecovery = () => {
+    setRecovery(null);
+    void clearSnapshot();
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : '';
@@ -101,6 +150,9 @@ export function App() {
     setDirty(false);
   };
   const download = async () => {
+    // A clean save to disk supersedes the recovery snapshot.
+    cancelSnapshot();
+    void clearSnapshot();
     if (api.current) {
       api.current.download();
       setDirty(false);
@@ -202,6 +254,22 @@ export function App() {
         </div>
       </header>
 
+      {recovery && (
+        <div className="recoverybar" role="status">
+          <Icon name="refresh" size={16} />
+          <span className="recoverybar__text">
+            Unsaved changes from a previous session{recovery.title ? ` (“${recovery.title}”)` : ''} —{' '}
+            {relativeTime(recovery.savedAt, Date.now())}.
+          </span>
+          <button type="button" className="recoverybar__btn recoverybar__btn--primary" onClick={() => restoreRecovery(recovery)}>
+            Restore
+          </button>
+          <button type="button" className="recoverybar__btn" onClick={discardRecovery}>
+            Discard
+          </button>
+        </div>
+      )}
+
       <input
         ref={fileRef}
         type="file"
@@ -215,7 +283,7 @@ export function App() {
       />
 
       <main className="canvas">
-        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} onEdited={() => setDirty(true)} className="viewer" />
+        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} onEdited={markEdited} className="viewer" />
       </main>
 
       {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}

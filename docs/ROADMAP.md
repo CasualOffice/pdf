@@ -31,8 +31,9 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 - [x] Contextual **property bar** (color swatches + stroke width) — appears when a tool is active or annotation(s) selected; applies via `setToolDefaults` (active tool) / `updateAnnotations` (selection).
 - [x] Property panel: color + stroke width + **opacity**. (Font size done. Stamp/image, multi-select marquee + snap still to come.)
 - [x] Editing UX: labelled tool rail + contextual properties panel; keyboard shortcuts (V/H/D/T/N/R/O/A, Esc, Delete, ⌘D duplicate, ⌘C/⌘V copy-paste, ⌘A select-all, ⌘Z / ⌘⇧Z undo-redo, arrow-key nudge of the selection — ⇧ for a 10pt step). Duplicate/paste place an offset copy (fresh id, own history entry); ⌘A enables bulk move/style/delete on the whole selection; crosshair cursor with a tool active; in-place free-text editing; move/resize/rotate handles; auto-revert to Select after placing a one-shot shape; text selection/copy in all modes; full screen = clean presentation view; Ctrl/⌘+wheel & pinch zoom.
-- [ ] Form fill (AcroForm) + flatten.
-- [ ] Autosave + desktop recovery; define the **Yjs document model** (so Phase 3 collab drops in cleanly).
+- [x] Form fill (AcroForm) + flatten.
+- [x] **Multi-select marquee** (UX-I3) — rubber-band drag selects enclosed annotations (`MarqueeSelect`); yields to text selection on glyph-start. *(Snap-to-align during move stays a later polish item — EmbedPDF owns the drag.)*
+- [x] **Autosave + crash recovery** (UX-I5) — web app snapshots exported bytes to IndexedDB on a debounce; reload offers Restore/Discard (`apps/web/src/recovery.ts`). The **Yjs document model** is *defined* (`model.ts`); the source-of-truth *binding* is deferred to Phase 3 (collab, deprioritized). Desktop recovery rides the Tauri sidecar (separate repo).
 **Reuse:** EmbedPDF annotation/history/export, pdf-lib (later), desktop recovery/save.
 **Gates:** UX-I1..I5, UX-P4, UX-F2.
 
@@ -56,8 +57,8 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 
 ## Phase 5 — Heavy ops & page management
 **Goal:** full document manipulation, off-thread.
-- Page manager: reorder/rotate/insert/delete/merge/split/extract via `casual-pdf-core` worker (web) / native (desktop).
-- **True redaction** (byte-level removal) in the Rust core.
+- Page manager: reorder/rotate/insert/delete/merge/split/extract via `casual-pdf-core` worker (web) / native (desktop). *(Reorder/delete shipped via Organize Pages.)*
+- [x] **True (surgical) redaction** (byte-level removal) in the Rust core — `crates/casual-pdf-core/src/redact.rs`, compiled to wasm and wired into the SDK; keeps the rest of the page's text selectable. Verified end-to-end (UX-S5). Follow-ups: CID/Type0 fonts; search re-index after `openDocumentBuffer`.
 - Watermark/header/footer/Bates; thumbnail generation.
 **Reuse:** the Rust core from Phase 0, now load-bearing.
 **Gates:** UX-S5, UX-P5, UX-F2.

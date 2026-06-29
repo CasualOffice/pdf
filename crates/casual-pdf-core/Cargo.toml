@@ -11,6 +11,13 @@ publish = false
 # cdylib: built to wasm32 for the browser worker (and a C ABI on desktop if needed).
 crate-type = ["cdylib", "rlib"]
 
+# Pure-Rust structure ops (merge/split/redact) ride on lopdf, which compiles to
+# BOTH native and wasm32 with no PDFium dependency — so surgical redaction (UX-S5)
+# runs in the browser worker via the same crate. nom_parser only; chrono/rayon
+# off to stay wasm-clean. (lopdf is MIT — locked decision #4.)
+[dependencies]
+lopdf = { version = "0.36", default-features = false }
+
 # PDFium binding lives on native targets for Phase 0. The browser gets the same
 # engine via PDFium-WASM (EmbedPDF) today; wiring this crate's own pdfium calls
 # through a wasm PDFium build is the immediate Phase 0.5 step (see src/lib.rs).
@@ -20,3 +27,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+# lopdf's (always-on) encryption pulls rand → getrandom; on wasm that needs the
+# browser crypto backend. Paired with the getrandom_backend rustflag in
+# ../../.cargo/config.toml. Runs in the worker, which has crypto.getRandomValues.
+getrandom = { version = "0.3", features = ["wasm_js"] }
