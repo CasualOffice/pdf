@@ -117,34 +117,91 @@ const genId = () =>
 // PdfAnnotationSubtype values for text markups (HIGHLIGHT=9, UNDERLINE=10, SQUIGGLY=11, STRIKEOUT=12).
 const MARKUP_SUBTYPE: Record<string, number> = { highlight: 9, underline: 10, squiggly: 11, strikeout: 12 };
 
-/** Deselect when the user clicks empty space (no annotation under the pointer).
- *  EmbedPDF selects annotations on click but doesn't deselect on background click;
- *  we hit-test the click against annotation rects so move/select are unaffected.
- *  Registered for the default 'pointerMode' (Select tool), so drawing is unaffected. */
-function DeselectGuard({ documentId, pageIndex }: { documentId: string; pageIndex: number }) {
-  const { provides: cap } = useAnnotationCapability();
+type AnnoRect = { origin: { x: number; y: number }; size: { width: number; height: number } };
+const ptInRect = (p: { x: number; y: number }, r?: AnnoRect) =>
+  !!r && p.x >= r.origin.x && p.x <= r.origin.x + r.size.width && p.y >= r.origin.y && p.y <= r.origin.y + r.size.height;
+const boxFromPts = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+  x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y),
+});
+const boxHitsRect = (r: { x: number; y: number; w: number; h: number }, o?: AnnoRect) =>
+  !!o && r.x < o.origin.x + o.size.width && r.x + r.w > o.origin.x && r.y < o.origin.y + o.size.height && r.y + r.h > o.origin.y;
+
+/** Select-tool pointer behaviour on a page:
+ *   • click empty space → deselect (EmbedPDF selects on click but never
+ *     deselects on a background click);
+ *   • drag empty space → rubber-band marquee: select every annotation the box
+ *     touches (feeds the existing multi-select / bulk-style/-delete machinery).
+ *
+ *  A drag that begins on a glyph is a *text* selection, not a marquee — we watch
+ *  for a text selection forming (getFormattedSelection becomes non-empty) and
+ *  bow out, so marquee and the select-text→highlight/copy/redact flow coexist.
+ *  Registered on the default 'pointerMode' (Select tool); drawing tools are
+ *  unaffected. */
+function MarqueeSelect({ documentId, pageIndex }: { documentId: string; pageIndex: number }) {
+  const { provides: annoApi } = useAnnotation(documentId);
+  const { provides: selectionCap } = useSelectionCapability();
+  const { provides: docCap } = useDocumentManagerCapability();
   const { register } = usePointerHandlers({ modeId: 'pointerMode', pageIndex, documentId });
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const textDrag = useRef(false);
+  const moved = useRef(false);
+  const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const annsHere = () => (annoApi?.getAnnotations() ?? []).filter((a) => a.object.pageIndex === pageIndex);
+
   useEffect(() => {
     return register({
       onPointerDown: (pos) => {
-        const scope = cap?.forDocument(documentId);
-        if (!scope) return;
-        const here = scope.getAnnotations().filter((a) => a.object.pageIndex === pageIndex);
-        const hit = here.some((a) => {
-          const r = a.object.rect;
-          return (
-            !!r &&
-            pos.x >= r.origin.x &&
-            pos.x <= r.origin.x + r.size.width &&
-            pos.y >= r.origin.y &&
-            pos.y <= r.origin.y + r.size.height
-          );
-        });
-        if (!hit) scope.deselectAnnotation();
+        if (!annoApi) return;
+        // Press on an existing annotation → let the plugin move/select it.
+        if (annsHere().some((a) => ptInRect(pos, a.object.rect))) {
+          start.current = null;
+          return;
+        }
+        annoApi.deselectAnnotation();
+        start.current = { x: pos.x, y: pos.y };
+        textDrag.current = false;
+        moved.current = false;
+        setDraft(null);
+      },
+      onPointerMove: (pos) => {
+        if (!start.current || textDrag.current) return;
+        // A text selection forming means the drag began on glyphs — yield to it.
+        if ((selectionCap?.getFormattedSelection(documentId)?.length ?? 0) > 0) {
+          textDrag.current = true;
+          setDraft(null);
+          return;
+        }
+        const r = boxFromPts(start.current, pos);
+        if (r.w > 1 || r.h > 1) moved.current = true;
+        setDraft(r);
+      },
+      onPointerUp: (pos) => {
+        if (start.current && moved.current && !textDrag.current && annoApi) {
+          const r = boxFromPts(start.current, pos);
+          const ids = annsHere().filter((a) => boxHitsRect(r, a.object.rect)).map((a) => a.object.id);
+          if (ids.length) annoApi.setSelection(ids);
+        }
+        start.current = null;
+        moved.current = false;
+        textDrag.current = false;
+        setDraft(null);
       },
     });
-  }, [register, cap, documentId, pageIndex]);
-  return null;
+  }, [register, annoApi, selectionCap, documentId, pageIndex]);
+
+  const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
+  if (!draft || !size) return null;
+  return (
+    <div
+      className="cpdf__marquee"
+      style={{
+        left: `${(draft.x / size.width) * 100}%`,
+        top: `${(draft.y / size.height) * 100}%`,
+        width: `${(draft.w / size.width) * 100}%`,
+        height: `${(draft.h / size.height) * 100}%`,
+      }}
+    />
+  );
 }
 
 /** A picked image awaiting placement: raw bytes + mime + natural aspect. */
@@ -1594,32 +1651,50 @@ export function Viewer({
     });
   };
   const SCALE = 2; // render scale for flattened pages (2× for crisp output)
+  // Fallback path: rasterize each marked page at 2×, paint opaque boxes, rebuild
+  // with pdf-lib. True removal, but the redacted pages lose selectable text.
+  // Used only if the surgical core can't process the document.
+  const flattenRedact = async (srcBytes: Uint8Array): Promise<ArrayBuffer> => {
+    if (!renderCap) throw new Error('Renderer unavailable for fallback redaction.');
+    const scope = renderCap.forDocument(documentId);
+    const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
+    const flattened: { pageIndex: number; png: Uint8Array; widthPt: number; heightPt: number }[] = [];
+    for (const pi of pageIndices) {
+      const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
+      // A failed render must NOT be skipped — that would leave the page's content
+      // un-redacted in the output. Fail the whole operation instead.
+      if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
+      const f = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi), SCALE);
+      flattened.push({ pageIndex: pi, ...f });
+    }
+    const { buildRedactedPdf } = await import('../redact');
+    const out = await buildRedactedPdf(srcBytes, flattened);
+    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+  };
   const applyRedactions = async () => {
     setConfirmRedact(false);
-    if (!renderCap || !docCap || !exportCap || !redactions.length) return;
+    if (!docCap || !exportCap || !redactions.length) return;
     setRedactBusy(true);
     setRedactError(null);
     try {
       const ab = await exportCap.saveAsCopy().toPromise();
       if (!ab) throw new Error('Could not read the document.');
       const srcBytes = new Uint8Array(ab);
-      const scope = renderCap.forDocument(documentId);
-      const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
-      const flattened: { pageIndex: number; png: Uint8Array; widthPt: number; heightPt: number }[] = [];
-      for (const pi of pageIndices) {
-        // Render at 2× with annotations baked so flattened pages keep markups.
-        const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
-        // A failed render must NOT be skipped — that would leave the page's
-        // content un-redacted in the output. Fail the whole operation instead.
-        if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
-        const f = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi), SCALE);
-        flattened.push({ pageIndex: pi, ...f });
+      let outBuffer: ArrayBuffer;
+      try {
+        // Primary: surgical removal in the Rust core (wasm) — true byte removal
+        // that keeps the rest of the page's text selectable/searchable.
+        const { redactSurgical } = await import('../redact-core');
+        const out = await redactSurgical(srcBytes, redactions);
+        outBuffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+      } catch (surgicalErr) {
+        // Fall back to rasterize-and-flatten — still true removal, but the
+        // redacted pages lose selectable text. Never leave content un-redacted.
+        // eslint-disable-next-line no-console
+        console.warn('surgical redaction unavailable; flattening instead', surgicalErr);
+        outBuffer = await flattenRedact(srcBytes);
       }
-      // Lazy-load the pdf-lib assembly (~90 KB gz) only when applying.
-      const { buildRedactedPdf } = await import('../redact');
-      const out = await buildRedactedPdf(srcBytes, flattened);
-      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-      await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      await docCap.openDocumentBuffer({ buffer: outBuffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
       onEdited?.();
       setRedactions([]);
       setRedacting(false);
@@ -1942,7 +2017,7 @@ export function Viewer({
                         );
                       }}
                     />
-                    {mode !== 'view' && !pendingImage && !redacting && <DeselectGuard documentId={documentId} pageIndex={pageIndex} />}
+                    {mode !== 'view' && !pendingImage && !redacting && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && pendingImage && (
                       <ImagePlacer documentId={documentId} pageIndex={pageIndex} image={pendingImage} onPlaced={() => setPendingImage(null)} />
                     )}
@@ -2053,12 +2128,9 @@ export function Viewer({
                 <h2 className="cpdf__confirm-title">Apply redactions?</h2>
               </div>
               <p className="cpdf__confirm-body">
-                This permanently removes the content under {redactions.length} marked region
-                {redactions.length === 1 ? '' : 's'} — it <strong>can’t be undone</strong>. The{' '}
-                {new Set(redactions.map((r) => r.pageIndex)).size} affected page
-                {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} will be flattened to an image, so
-                text on {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? 'it' : 'them'} will no longer be
-                selectable or searchable. Download the result to keep the redacted copy.
+                This permanently removes the text and content under {redactions.length} marked region
+                {redactions.length === 1 ? '' : 's'} from the document — it <strong>can’t be undone</strong>. The
+                surrounding text stays selectable and searchable. Download the result to keep the redacted copy.
               </p>
               <div className="cpdf__confirm-acts">
                 <button type="button" className="cpdf__btn" onClick={() => setConfirmRedact(false)}>

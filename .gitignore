@@ -6,6 +6,9 @@ dist/
 build/
 target/
 *.wasm
+# …but the vendored core wasm must ship — the web build runs no Rust toolchain.
+# Regenerate with tools/build-core-wasm.sh.
+!packages/pdf-sdk/src/wasm/*.wasm
 
 # Render-parity harness artifacts (keep fixtures/, drop renders + libs)
 tools/render-parity/out/

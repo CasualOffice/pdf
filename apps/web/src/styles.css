@@ -24,6 +24,45 @@ body {
   height: 100%;
 }
 
+/* ── Crash-recovery bar (UX-I5) ──────────────────────────────────────────── */
+.recoverybar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: 8px var(--space-3, 12px);
+  background: var(--color-warning-soft, #fff4d6);
+  color: var(--color-text, #1b1c1f);
+  box-shadow: var(--shadow-1, 0 1px 4px rgba(0, 0, 0, 0.08));
+  z-index: 25;
+}
+.recoverybar__text {
+  flex: 1;
+  min-width: 0;
+}
+.recoverybar__btn {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border, #d4d7dd);
+  border-radius: 8px;
+  background: var(--color-surface-raised, #fff);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.recoverybar__btn:hover {
+  background: var(--color-surface-hover, #f1f3f6);
+}
+.recoverybar__btn--primary {
+  border-color: transparent;
+  background: var(--color-primary, #2d8cff);
+  color: #fff;
+}
+.recoverybar__btn--primary:hover {
+  background: var(--color-primary-strong, #1f6fd6);
+}
+
 /* ── Slim top app bar ───────────────────────────────────────────────────── */
 .appbar {
   display: flex;

@@ -13,6 +13,9 @@
 //! This is the single-engine thesis in code: the desktop and the web run the
 //! same PDFium, so fidelity is identical by construction (gate UX-F1).
 
+// Pure-Rust structure ops (lopdf) — compile on BOTH native and wasm32, no PDFium.
+pub mod redact;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use pdfium_render::prelude::*;
@@ -60,6 +63,7 @@ pub use native::{bind_pdfium, page_count, render_first_page_png};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
+    use crate::redact::{redact_pdf, FracRect, PageRects};
     use wasm_bindgen::prelude::*;
 
     /// Build identifier — proves the same crate compiles to wasm32. The PDFium
@@ -68,6 +72,43 @@ mod wasm {
     #[wasm_bindgen]
     pub fn core_version() -> String {
         concat!("casual-pdf-core ", env!("CARGO_PKG_VERSION"), " (wasm)").to_string()
+    }
+
+    /// Decode the flat redaction spec the SDK packs into a `Float64Array`:
+    ///   `[ nPages, (pageIndex, nRects, x,y,w,h × nRects) × nPages ]`
+    /// Rects are fractional, top-left page coordinates (0..1) — the SDK's native
+    /// mark format. Rust converts them to user space per page via the MediaBox.
+    fn parse_spec(spec: &[f64]) -> Result<Vec<PageRects>, &'static str> {
+        let mut i = 0usize;
+        let take = |i: &mut usize| -> Option<f64> {
+            let v = spec.get(*i).copied();
+            *i += 1;
+            v
+        };
+        let n_pages = take(&mut i).ok_or("empty spec")? as usize;
+        let mut pages = Vec::with_capacity(n_pages);
+        for _ in 0..n_pages {
+            let page_index = take(&mut i).ok_or("truncated spec: pageIndex")? as usize;
+            let n_rects = take(&mut i).ok_or("truncated spec: rectCount")? as usize;
+            let mut rects = Vec::with_capacity(n_rects);
+            for _ in 0..n_rects {
+                let x = take(&mut i).ok_or("truncated spec: rect")?;
+                let y = take(&mut i).ok_or("truncated spec: rect")?;
+                let w = take(&mut i).ok_or("truncated spec: rect")?;
+                let h = take(&mut i).ok_or("truncated spec: rect")?;
+                rects.push(FracRect { x, y, w, h });
+            }
+            pages.push(PageRects { page_index, rects });
+        }
+        Ok(pages)
+    }
+
+    /// Surgically redact `pdf` (true byte removal, surrounding text preserved),
+    /// returning the new PDF bytes. `spec` is the flat array from `parse_spec`.
+    #[wasm_bindgen]
+    pub fn redact_pdf_wasm(pdf: &[u8], spec: &[f64]) -> Result<Vec<u8>, JsValue> {
+        let pages = parse_spec(spec).map_err(JsValue::from_str)?;
+        redact_pdf(pdf, &pages).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 
