@@ -153,9 +153,15 @@ try {
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
   await page.waitForTimeout(1500);
 
+  // In-app search after redaction: with the onDocumentReplaced → blob URL →
+  // key-remount fix, EmbedPDF fully reinitializes (text layer re-indexes) after
+  // the operation. Search should return 0 (rasterized page has no text), not NaN
+  // or a stale pre-redaction count.
+  const quickAfter = await searchCount('quick');
+  console.log('search "quick" after redaction (in-app):', quickAfter);
+  assert(quickAfter === 0, 'text search functional after redaction — returns 0 for rasterized page, not stale/NaN');
+
   // Authoritative UX-S5 check: download the redacted result and extract its text.
-  // (In-app search isn't reliable on buffer-reopened docs — the byte stream is
-  // the source of truth the gate cares about.)
   const dlPath = '/tmp/e2e-redacted.pdf';
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 20000 }),

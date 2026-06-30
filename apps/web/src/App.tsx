@@ -74,6 +74,19 @@ export function App() {
     setDirty(true);
     scheduleSnapshot();
   };
+  // Routes bytes from destructive ops (redaction, organize, text-edit) through a
+  // new Blob URL → `src` prop change. This forces EmbedPDF to fully reinitialize
+  // (including text geometry), fixing selection/search after those operations.
+  // `openDocumentBuffer` skips that re-index step so is avoided here.
+  const onDocumentReplaced = (bytes: Uint8Array) => {
+    revokeObjectUrl();
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const blob = new Blob([buffer], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    objectUrl.current = url;
+    setSrc(url);
+    markEdited();
+  };
   useEffect(() => cancelSnapshot, []);
 
   const restoreRecovery = (snap: RecoverySnapshot) => {
@@ -283,7 +296,7 @@ export function App() {
       />
 
       <main className="canvas">
-        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} onEdited={markEdited} className="viewer" />
+        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} onEdited={markEdited} onDocumentReplaced={onDocumentReplaced} className="viewer" />
       </main>
 
       {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}

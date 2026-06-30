@@ -1061,6 +1061,49 @@
   border-radius: 2px;
   pointer-events: none;
 }
+/* Tier-2 text-edit overlay: a click target over each text run, and the inline
+   editor that replaces it while typing. The container is pass-through; only the
+   run targets and the active input capture pointers. */
+.cpdf__textedit {
+  position: absolute;
+  inset: 0;
+  z-index: 36;
+  pointer-events: none;
+}
+.cpdf__textedit-run {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-primary, #2d8cff) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary, #2d8cff) 35%, transparent);
+  cursor: text;
+  pointer-events: auto;
+}
+.cpdf__textedit-run:hover {
+  background: color-mix(in srgb, var(--color-primary, #2d8cff) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-primary, #2d8cff);
+}
+.cpdf__textedit-run--locked {
+  background: color-mix(in srgb, #888 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #888 25%, transparent);
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.cpdf__textedit-input {
+  position: absolute;
+  margin: 0;
+  padding: 0 1px;
+  border: 1px solid var(--color-primary, #2d8cff);
+  border-radius: 2px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  line-height: 1;
+  pointer-events: auto;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
 .cpdf__placebanner--redact {
   background: var(--color-danger, #e5484d);
 }

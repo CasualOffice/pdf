@@ -54,6 +54,7 @@ import { useRenderCapability } from '@embedpdf/plugin-render/react';
 import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
 import type { Mode, CasualPdfApi } from '../modes';
+import type { PdfTextRun } from '../textedit-pdfium';
 import './viewer.css';
 
 const ROOT_ID = 'cpdf-root';
@@ -360,6 +361,100 @@ async function flattenPage(blob: Blob, rects: { x: number; y: number; w: number;
   return new Uint8Array(await out.arrayBuffer());
 }
 
+/** Tier-2 text editing overlay (one per page). Lists the page's text runs from
+ *  the current document bytes (PDFium), draws a clickable box over each, and on
+ *  click opens an inline input; committing routes through `onCommit` →
+ *  editTextRun → reload. Run bounds are PDFium user space (bottom-left origin),
+ *  mapped to the page overlay with a y-flip. */
+function TextEditLayer({
+  documentId,
+  pageIndex,
+  bytes,
+  onCommit,
+}: {
+  documentId: string;
+  pageIndex: number;
+  bytes: Uint8Array;
+  onCommit: (pageIndex: number, objectIndex: number, newText: string) => void;
+}) {
+  const { provides: docCap } = useDocumentManagerCapability();
+  const [runs, setRuns] = useState<PdfTextRun[] | null>(null);
+  const [active, setActive] = useState<{ index: number; text: string } | null>(null);
+  const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
+
+  useEffect(() => {
+    let cancelled = false;
+    setRuns(null);
+    import('../textedit-pdfium')
+      .then(({ listTextRuns }) => listTextRuns(bytes, pageIndex))
+      .then((r) => !cancelled && setRuns(r))
+      .catch(() => !cancelled && setRuns([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [bytes, pageIndex]);
+
+  if (!size || !runs) return null;
+  const boxStyle = (r: PdfTextRun) => ({
+    left: `${(r.left / size.width) * 100}%`,
+    top: `${((size.height - r.top) / size.height) * 100}%`,
+    width: `${((r.right - r.left) / size.width) * 100}%`,
+    height: `${((r.top - r.bottom) / size.height) * 100}%`,
+  });
+  const commit = (index: number, text: string, original: string) => {
+    if (text !== original) onCommit(pageIndex, index, text);
+    setActive(null);
+  };
+  return (
+    <div className="cpdf__textedit">
+      {runs.map((r) =>
+        !r.editable ? (
+          // Non-editable run: locked indicator — don't let an edit produce
+          // wrong glyphs from a Type3 / custom-encoding font.
+          <div
+            key={r.index}
+            className="cpdf__textedit-run cpdf__textedit-run--locked"
+            style={boxStyle(r)}
+            title="This text uses a font that cannot be safely edited"
+            aria-label="Text cannot be edited (custom font encoding)"
+            role="presentation"
+          />
+        ) : active?.index === r.index ? (
+          <input
+            key={r.index}
+            className="cpdf__textedit-input"
+            style={boxStyle(r)}
+            autoFocus
+            value={active.text}
+            aria-label="Edit text"
+            onChange={(e) => setActive({ index: r.index, text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commit(r.index, active.text, r.text);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setActive(null);
+              }
+            }}
+            onBlur={() => commit(r.index, active.text, r.text)}
+          />
+        ) : (
+          <button
+            key={r.index}
+            type="button"
+            className="cpdf__textedit-run"
+            style={boxStyle(r)}
+            title={`Edit: ${r.text}`}
+            aria-label={`Edit text: ${r.text}`}
+            onClick={() => setActive({ index: r.index, text: r.text })}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
 /* ── Left tool rail ───────────────────────────────────────────────────────── */
 /** A labelled rail button — icon + caption so the rail reads as a tool palette. */
 function RailBtn({
@@ -403,6 +498,8 @@ function LeftRail({
   onInsertImage,
   redacting,
   onToggleRedact,
+  textEditing,
+  onToggleTextEdit,
 }: {
   documentId: string;
   mode: Mode;
@@ -413,6 +510,8 @@ function LeftRail({
   onInsertImage: () => void;
   redacting: boolean;
   onToggleRedact: () => void;
+  textEditing: boolean;
+  onToggleTextEdit: () => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -427,6 +526,7 @@ function LeftRail({
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
+          <RailBtn icon="text-tool" label="Edit text" title="Edit existing text" active={textEditing} onClick={onToggleTextEdit} />
           <RailBtn icon="image" label="Image" title="Insert an image" onClick={onInsertImage} />
           <RailBtn icon="redact" label="Redact" title="Redact (permanently remove regions)" active={redacting} onClick={onToggleRedact} />
           <RailBtn icon="sign" label="Sign" title="Add a signature" onClick={onSign} />
@@ -1154,12 +1254,14 @@ function OrganizeOverlay({
   totalPages,
   onClose,
   onApplied,
+  onDocumentReplaced,
 }: {
   documentId: string;
   engine: MergeEngine;
   totalPages: number;
   onClose: () => void;
   onApplied?: () => void;
+  onDocumentReplaced?: (bytes: Uint8Array) => void;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const [order, setOrder] = useState<number[]>(() => Array.from({ length: totalPages }, (_, i) => i));
@@ -1191,11 +1293,15 @@ function OrganizeOverlay({
     setError(null);
     try {
       const file = await engine.mergePages([{ docId: documentId, pageIndices: order }]).toPromise();
-      await docCap.openDocumentBuffer({ buffer: file.content, name: 'organized.pdf', autoActivate: true }).toPromise();
+      if (onDocumentReplaced) {
+        onDocumentReplaced(new Uint8Array(file.content));
+      } else {
+        await docCap.openDocumentBuffer({ buffer: file.content, name: 'organized.pdf', autoActivate: true }).toPromise();
+      }
       onApplied?.();
       onClose();
     } catch {
-      setError('Couldn’t apply the page changes. Try again.');
+      setError("Couldn't apply the page changes. Try again.");
       setBusy(false);
     }
   };
@@ -1480,6 +1586,7 @@ export function Viewer({
   mode,
   apiRef,
   onEdited,
+  onDocumentReplaced,
   engine,
 }: {
   documentId: string;
@@ -1487,6 +1594,7 @@ export function Viewer({
   onModeChange?: (m: Mode) => void;
   apiRef?: MutableRefObject<CasualPdfApi | null>;
   onEdited?: () => void;
+  onDocumentReplaced?: (bytes: Uint8Array) => void;
   engine?: MergeEngine;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1498,6 +1606,12 @@ export function Viewer({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [redacting, setRedacting] = useState(false);
   const [redactions, setRedactions] = useState<RedactRect[]>([]);
+  // Tier-2 text editing: `editBytes` is the current document bytes the PDFium
+  // edit core operates on; set when the tool activates and after each commit.
+  const [textEditing, setTextEditing] = useState(false);
+  const [editBytes, setEditBytes] = useState<Uint8Array | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
@@ -1667,7 +1781,7 @@ export function Viewer({
         const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
         // A failed render must NOT be skipped — that would leave the page's
         // content un-redacted in the output. Fail the whole operation instead.
-        if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
+        if (!blob) throw new Error(`Couldn't render page ${pi + 1} for redaction.`);
         // The viewer renders pages in native orientation (it reads /Rotate but
         // doesn't rotate the canvas), and renderPage is native too — so the marks
         // and the bitmap share one space; paint directly. The output page keeps
@@ -1677,8 +1791,12 @@ export function Viewer({
       }
       const { buildRedactedPdf } = await import('../redact');
       const out = await buildRedactedPdf(srcBytes, flattened);
-      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-      await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      if (onDocumentReplaced) {
+        onDocumentReplaced(out);
+      } else {
+        const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+        await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      }
       onEdited?.();
       setRedactions([]);
       setRedacting(false);
@@ -1688,6 +1806,47 @@ export function Viewer({
       setRedactError(e instanceof Error ? e.message : 'Redaction failed. Nothing was changed.');
     } finally {
       setRedactBusy(false);
+    }
+  };
+
+  // Tier-2 text editing: activate → snapshot the current bytes for the PDFium
+  // edit core to operate on; deactivate other tools. Commit → editTextRun on the
+  // snapshot, reload the result, and keep the snapshot current for further edits.
+  const toggleTextEdit = async () => {
+    if (textEditing) {
+      setTextEditing(false);
+      setEditBytes(null);
+      return;
+    }
+    if (!exportCap) return;
+    annoApi?.setActiveTool(null);
+    annoApi?.deselectAnnotation();
+    setRedacting(false);
+    setPendingImage(null);
+    const ab = await exportCap.saveAsCopy().toPromise();
+    if (!ab) return;
+    setEditBytes(new Uint8Array(ab));
+    setTextEditing(true);
+  };
+  const commitTextEdit = async (pageIndex: number, objectIndex: number, newText: string) => {
+    if (!editBytes || !docCap || editBusy) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const { editTextRun } = await import('../textedit-pdfium');
+      const out = await editTextRun(editBytes, pageIndex, objectIndex, newText);
+      if (onDocumentReplaced) {
+        onDocumentReplaced(out);
+      } else {
+        const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+        await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
+      }
+      setEditBytes(out); // keep editing the updated document
+      onEdited?.();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -1772,6 +1931,8 @@ export function Viewer({
       setConfirmRedact(false);
       setOrganizing(false);
       setSigning(false);
+      setTextEditing(false);
+      setEditBytes(null);
       sigCap?.forDocument(documentId).deactivatePlacement();
     }
   }, [mode, sigCap, documentId]);
@@ -1961,7 +2122,7 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -2001,7 +2162,10 @@ export function Viewer({
                         );
                       }}
                     />
-                    {mode !== 'view' && !pendingImage && !redacting && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
+                    {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
+                    {editing && textEditing && editBytes && (
+                      <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} />
+                    )}
                     {editing && pendingImage && (
                       <ImagePlacer documentId={documentId} pageIndex={pageIndex} image={pendingImage} onPlaced={() => setPendingImage(null)} />
                     )}
@@ -2049,7 +2213,7 @@ export function Viewer({
           </div>
         )}
         {organizing && (
-          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} onApplied={onEdited} />
+          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} onApplied={onEdited} onDocumentReplaced={onDocumentReplaced} />
         )}
         {signing && <SignatureModal documentId={documentId} onClose={() => setSigning(false)} />}
         <PlacementBanner documentId={documentId} />
@@ -2070,6 +2234,26 @@ export function Viewer({
             <span>Click on a page to place the image</span>
             <button type="button" className="cpdf__btn" onClick={() => setPendingImage(null)}>
               Cancel
+            </button>
+          </div>
+        )}
+        {textEditing && !presenting && (
+          <div className="cpdf__placebanner" role="status">
+            <Icon name="text-tool" size={18} />
+            <span>
+              {editBusy
+                ? 'Applying edit…'
+                : editError
+                  ? editError
+                  : 'Click any text to edit it, then press Enter'}
+            </span>
+            {editError && (
+              <button type="button" className="cpdf__iconbtn" aria-label="Dismiss error" onClick={() => setEditError(null)}>
+                <Icon name="close" size={16} />
+              </button>
+            )}
+            <button type="button" className="cpdf__btn" disabled={editBusy} onClick={() => toggleTextEdit()}>
+              Done
             </button>
           </div>
         )}
@@ -2113,7 +2297,7 @@ export function Viewer({
               </div>
               <p className="cpdf__confirm-body">
                 This permanently removes the content under {redactions.length} marked region
-                {redactions.length === 1 ? '' : 's'} — it <strong>can’t be undone</strong>. The{' '}
+                {redactions.length === 1 ? '' : 's'} — it <strong>can't be undone</strong>. The{' '}
                 {new Set(redactions.map((r) => r.pageIndex)).size} affected page
                 {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} are rebuilt as flattened images
                 (preserving their size &amp; rotation), so text on {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? 'it' : 'them'} is

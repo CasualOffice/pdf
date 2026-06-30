@@ -81,6 +81,14 @@ export interface CasualPdfProps {
    *  pages organized, redaction applied). Lets the host warn before discarding
    *  unsaved work (e.g. on Open or tab close). */
   onEdited?: () => void;
+  /**
+   * Fired when the document bytes are replaced by an operation (redaction,
+   * organize pages, text edit session end). The host should reload the viewer
+   * with these bytes (e.g. via a new Blob URL as the `src` prop) so that
+   * EmbedPDF's text layer re-indexes — `openDocumentBuffer` skips that step.
+   * When provided, the viewer skips its own `openDocumentBuffer` reload.
+   */
+  onDocumentReplaced?: (bytes: Uint8Array) => void;
   className?: string;
   style?: CSSProperties;
 }
