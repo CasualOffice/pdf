@@ -371,11 +371,13 @@ function TextEditLayer({
   pageIndex,
   bytes,
   onCommit,
+  onReady,
 }: {
   documentId: string;
   pageIndex: number;
   bytes: Uint8Array;
   onCommit: (pageIndex: number, objectIndex: number, newText: string) => void;
+  onReady?: () => void;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const [runs, setRuns] = useState<PdfTextRun[] | null>(null);
@@ -387,14 +389,28 @@ function TextEditLayer({
     setRuns(null);
     import('../textedit-pdfium')
       .then(({ listTextRuns }) => listTextRuns(bytes, pageIndex))
-      .then((r) => !cancelled && setRuns(r))
+      .then((r) => {
+        if (!cancelled) {
+          setRuns(r);
+          onReady?.();
+        }
+      })
       .catch(() => !cancelled && setRuns([]));
     return () => {
       cancelled = true;
     };
   }, [bytes, pageIndex]);
 
-  if (!size || !runs) return null;
+  if (!size) return null;
+  if (!runs) {
+    // WASM is still loading — show a subtle per-page indicator so the user
+    // knows the boxes are coming (not a broken/empty state).
+    return (
+      <div className="cpdf__textedit" aria-live="polite" aria-label="Analyzing text…">
+        <div className="cpdf__textedit-loading">Analyzing text…</div>
+      </div>
+    );
+  }
   const boxStyle = (r: PdfTextRun) => ({
     left: `${(r.left / size.width) * 100}%`,
     top: `${((size.height - r.top) / size.height) * 100}%`,
@@ -405,21 +421,11 @@ function TextEditLayer({
     if (text !== original) onCommit(pageIndex, index, text);
     setActive(null);
   };
+  const cancel = () => setActive(null);
   return (
     <div className="cpdf__textedit">
       {runs.map((r) =>
-        !r.editable ? (
-          // Non-editable run: locked indicator — don't let an edit produce
-          // wrong glyphs from a Type3 / custom-encoding font.
-          <div
-            key={r.index}
-            className="cpdf__textedit-run cpdf__textedit-run--locked"
-            style={boxStyle(r)}
-            title="This text uses a font that cannot be safely edited"
-            aria-label="Text cannot be edited (custom font encoding)"
-            role="presentation"
-          />
-        ) : active?.index === r.index ? (
+        active?.index === r.index ? (
           <input
             key={r.index}
             className="cpdf__textedit-input"
@@ -427,6 +433,8 @@ function TextEditLayer({
             autoFocus
             value={active.text}
             aria-label="Edit text"
+            // Select all on focus so the user can immediately overtype the run.
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => setActive({ index: r.index, text: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -434,10 +442,12 @@ function TextEditLayer({
                 commit(r.index, active.text, r.text);
               } else if (e.key === 'Escape') {
                 e.preventDefault();
-                setActive(null);
+                cancel();
               }
             }}
-            onBlur={() => commit(r.index, active.text, r.text)}
+            // onBlur deliberately omitted: committing on focus-loss caused
+            // accidental commits when the user clicked elsewhere to cancel.
+            // Commit via Enter; Escape or clicking another run cancels.
           />
         ) : (
           <button
@@ -445,9 +455,12 @@ function TextEditLayer({
             type="button"
             className="cpdf__textedit-run"
             style={boxStyle(r)}
-            title={`Edit: ${r.text}`}
+            title={r.text}
             aria-label={`Edit text: ${r.text}`}
-            onClick={() => setActive({ index: r.index, text: r.text })}
+            onClick={() => {
+              if (active) cancel(); // dismiss previous edit without committing
+              setActive({ index: r.index, text: r.text });
+            }}
           />
         ),
       )}
@@ -518,6 +531,19 @@ function LeftRail({
   const activeToolId = anno?.activeToolId ?? null;
   const editing = mode !== 'view';
 
+  // Track annotation-history availability so undo/redo buttons reflect real state.
+  const [annoCanUndo, setAnnoCanUndo] = useState(false);
+  const [annoCanRedo, setAnnoCanRedo] = useState(false);
+  useEffect(() => {
+    if (!history) return;
+    const update = () => {
+      setAnnoCanUndo(history.canUndo());
+      setAnnoCanRedo(history.canRedo());
+    };
+    update();
+    return history.onHistoryChange(update);
+  }, [history]);
+
   return (
     <div className="cpdf__rail" role="toolbar" aria-orientation="vertical" aria-label="Tools">
       <RailBtn icon="thumbnails" label="Pages" title="Page thumbnails" active={leftPanel === 'thumbs'} onClick={() => onToggleLeft('thumbs')} />
@@ -544,8 +570,8 @@ function LeftRail({
             />
           ))}
           <span className="cpdf__rail-sep" aria-hidden="true" />
-          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" onClick={() => history?.undo()} />
-          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" onClick={() => history?.redo()} />
+          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" disabled={!annoCanUndo} onClick={() => history?.undo()} />
+          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" disabled={!annoCanRedo} onClick={() => history?.redo()} />
         </>
       )}
     </div>
@@ -1612,6 +1638,7 @@ export function Viewer({
   const [editBytes, setEditBytes] = useState<Uint8Array | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [textRunsReady, setTextRunsReady] = useState(false);
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
@@ -1641,7 +1668,11 @@ export function Viewer({
   // shape/ink/text/note tools that own the drag to draw. The AnnotationLayer
   // sits on top and still captures clicks on existing annotations, so selecting
   // text (over glyphs) and selecting/moving annotations coexist.
-  const textSelectable = (activeToolId === null || MARKUP_TOOLS.has(activeToolId)) && !redacting;
+  // SelectionLayer must be off while text-edit mode is active: the interaction
+  // manager routes pointer events to SelectionLayer before they reach the
+  // TextEditLayer's native button elements, causing "selecting a char" instead
+  // of opening the inline editor on click.
+  const textSelectable = (activeToolId === null || MARKUP_TOOLS.has(activeToolId)) && !redacting && !textEditing;
 
   // Selection mini-toolbar: turn the current text selection into a markup
   // annotation (one per page the selection spans), using the selection's
@@ -1688,6 +1719,8 @@ export function Viewer({
       download: () => exportCap?.download(),
       undo: () => history?.undo(),
       redo: () => history?.redo(),
+      canUndo: () => history?.canUndo() ?? false,
+      canRedo: () => history?.canRedo() ?? false,
       deleteSelection: () => {
         const sel = annoApi?.getSelectedAnnotations() ?? [];
         if (annoApi && sel.length) annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
@@ -1816,6 +1849,7 @@ export function Viewer({
     if (textEditing) {
       setTextEditing(false);
       setEditBytes(null);
+      setTextRunsReady(false);
       return;
     }
     if (!exportCap) return;
@@ -1823,6 +1857,9 @@ export function Viewer({
     annoApi?.deselectAnnotation();
     setRedacting(false);
     setPendingImage(null);
+    // Start warming the PDFium WASM in the background now so it's ready by the
+    // time the user clicks a text run (avoids a 10-15s stall on first use).
+    import('../textedit-pdfium').then(({ preloadPdfium }) => preloadPdfium());
     const ab = await exportCap.saveAsCopy().toPromise();
     if (!ab) return;
     setEditBytes(new Uint8Array(ab));
@@ -2045,18 +2082,10 @@ export function Viewer({
         }
         return;
       }
-      // Undo / redo (⌘/Ctrl+Z, ⇧ for redo; Ctrl+Y also redoes).
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) history?.redo();
-        else history?.undo();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        history?.redo();
-        return;
-      }
+      // Undo / redo (⌘Z / ⌘⇧Z / Ctrl+Y) are handled by the host app so it can
+      // layer a version-level undo (redaction, organize, text-edit) on top of
+      // the annotation-history undo. Don't intercept them here.
+
       // Duplicate selection (⌘/Ctrl+D) — offset copy with a fresh id.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         const sel = (annoApi?.getSelectedAnnotations() ?? []).filter((a) => (a.object as { type?: number }).type !== 13);
@@ -2164,7 +2193,7 @@ export function Viewer({
                     />
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && textEditing && editBytes && (
-                      <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} />
+                      <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} />
                     )}
                     {editing && pendingImage && (
                       <ImagePlacer documentId={documentId} pageIndex={pageIndex} image={pendingImage} onPlaced={() => setPendingImage(null)} />
@@ -2245,7 +2274,9 @@ export function Viewer({
                 ? 'Applying edit…'
                 : editError
                   ? editError
-                  : 'Click any text to edit it, then press Enter'}
+                  : textRunsReady
+                    ? 'Click a blue text block to edit — then press Enter to apply, Esc to cancel'
+                    : 'Analyzing text runs…'}
             </span>
             {editError && (
               <button type="button" className="cpdf__iconbtn" aria-label="Dismiss error" onClick={() => setEditError(null)}>

@@ -17,7 +17,11 @@
  * typing a character the run's font doesn't already contain renders as .notdef.
  * Detection/substitution is layered on top; this module is the raw edit engine.
  */
-import { init, DEFAULT_PDFIUM_WASM_URL } from '@embedpdf/pdfium';
+import { init } from '@embedpdf/pdfium';
+// Use the locally-bundled WASM asset so the browser can hit its HTTP cache
+// (the viewer already fetches this file during render-engine init). The ?url
+// Vite suffix emits the asset and returns its hashed public path.
+import pdfiumWasmUrl from '@embedpdf/pdfium/pdfium.wasm?url';
 
 const FPDF_PAGEOBJ_TEXT = 1;
 // Full rewrite (not FPDF_INCREMENTAL): the edited text replaces the original in
@@ -79,14 +83,22 @@ interface Pdfium {
 let modulePromise: Promise<Pdfium> | null = null;
 async function ensurePdfium(): Promise<Pdfium> {
   if (!modulePromise) {
+    // Fetch the locally-bundled WASM. The render engine already fetched this
+    // same URL so the browser HTTP cache serves it instantly on the second call.
     modulePromise = (async () => {
-      const wasmBinary = new Uint8Array(await (await fetch(DEFAULT_PDFIUM_WASM_URL)).arrayBuffer());
+      const wasmBinary = new Uint8Array(await (await fetch(pdfiumWasmUrl)).arrayBuffer());
       const wrapped = (await init({ wasmBinary } as Parameters<typeof init>[0])) as unknown as Pdfium;
       wrapped.PDFiumExt_Init();
       return wrapped;
     })();
   }
   return modulePromise;
+}
+
+/** Warm up the PDFium WASM in the background (call when entering text-edit mode
+ *  so the module is ready before the user clicks a run). */
+export function preloadPdfium(): void {
+  ensurePdfium().catch(() => { /* ignore — will retry on actual edit */ });
 }
 
 /** Read a text object's current text (UTF-16LE) via a text page. */
@@ -173,17 +185,14 @@ export interface PdfTextRun {
   bottom: number;
   right: number;
   top: number;
-  /** False for fonts PDFium can't safely edit (Type3, invalid descriptor, empty
-   *  base name). The UI should disable the run rather than letting an edit
-   *  silently produce wrong glyphs or corrupt the document. */
+  /** Always true — every run is offered for editing; errors from the engine
+   *  surface via the edit banner so the document stays unchanged on failure. */
   editable: boolean;
 }
 
-/** List the text runs (text objects) on a page. Each run carries an `editable`
- *  flag — false if the font's descriptor is invalid or the base name is empty
- *  (a reliable sign of Type3 / symbolic-only fonts that PDFium cannot safely
- *  re-encode via FPDFText_SetText). The UI disables such runs rather than
- *  allowing a silent corrupt-glyph edit. */
+/** List the text runs (text objects) on a page. All runs are marked editable;
+ *  any WASM abort or engine error during `editTextRun` is caught and surfaced
+ *  as an error message rather than blocking the click. */
 export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<PdfTextRun[]> {
   return withPage(src, pageIndex, (p, _doc, page, textPage) => {
     const m = p.pdfium;
@@ -199,14 +208,7 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       const f = new Float32Array(m.HEAPU8.buffer, fl, 4);
       const [left, bottom, right, top] = [f[0], f[1], f[2], f[3]];
       m._free(fl);
-      // Fail-closed: detect fonts PDFium cannot safely re-encode.
-      // FPDFFont_GetFlags returns -1 for fonts without a descriptor (Type3, etc.).
-      // An empty base name is another reliable Type3 indicator.
-      const font = p.FPDFTextObj_GetFont(obj);
-      const flags = font ? p.FPDFFont_GetFlags(font) : -1;
-      const name = font ? readFontName(p, font) : '';
-      const editable = flags >= 0 && name.length > 0;
-      runs.push({ index: i, text, left, bottom, right, top, editable });
+      runs.push({ index: i, text, left, bottom, right, top, editable: true });
     }
     return runs;
   });
