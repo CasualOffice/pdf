@@ -87,12 +87,19 @@ export interface CasualPdfProps {
   onEdited?: () => void;
   /**
    * Fired when the document bytes are replaced by an operation (redaction,
-   * organize pages, text edit session end). The host should reload the viewer
-   * with these bytes (e.g. via a new Blob URL as the `src` prop) so that
-   * EmbedPDF's text layer re-indexes — `openDocumentBuffer` skips that step.
-   * When provided, the viewer skips its own `openDocumentBuffer` reload.
+   * organize pages, or when the user exits the text-edit tool after making edits).
+   * The host should reload the viewer with these bytes (e.g. via a new Blob URL
+   * as the `src` prop) so that EmbedPDF's text layer re-indexes — `openDocumentBuffer`
+   * skips that step. Text-edit commits use `openDocumentBuffer` internally for a
+   * seamless editing experience; `onDocumentReplaced` fires once on tool deactivation.
    */
   onDocumentReplaced?: (bytes: Uint8Array) => void;
+  /** Called when the undo button or Ctrl+Z is triggered from within the viewer
+   *  chrome. Lets the host inject two-level undo (annotation-history first, then
+   *  document-version undo). When omitted, the rail button calls annotation undo. */
+  onUndo?: () => void;
+  /** Symmetric with `onUndo` — called for redo actions from the viewer chrome. */
+  onRedo?: () => void;
   className?: string;
   style?: CSSProperties;
 }

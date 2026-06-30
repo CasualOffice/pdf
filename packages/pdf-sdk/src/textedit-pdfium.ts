@@ -175,10 +175,14 @@ async function withPage<T>(
   }
 }
 
-/** A text run on a page (one text object), for hit-testing + the edit overlay. */
+/** A logical text run shown in the edit overlay (may span multiple raw PDFium
+ *  text objects that were merged by proximity). */
 export interface PdfTextRun {
-  /** Index of the object on the page (target for an edit). */
+  /** Primary object index (used for font/matrix info on edit). */
   index: number;
+  /** All object indices in this run — the primary plus any adjacent objects
+   *  that were merged with it. On edit, secondary objects are cleared. */
+  indices: number[];
   text: string;
   /** Bounds in PDF user space (left, bottom, right, top). */
   left: number;
@@ -190,27 +194,72 @@ export interface PdfTextRun {
   editable: boolean;
 }
 
-/** List the text runs (text objects) on a page. All runs are marked editable;
- *  any WASM abort or engine error during `editTextRun` is caught and surfaced
- *  as an error message rather than blocking the click. */
+/** List the text runs on a page. Adjacent PDFium text objects (which can be
+ *  per-character in many PDFs) are grouped into logical runs by proximity —
+ *  objects on the same baseline within a small horizontal gap are merged into
+ *  one editable box. */
 export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<PdfTextRun[]> {
   return withPage(src, pageIndex, (p, _doc, page, textPage) => {
     const m = p.pdfium;
-    const runs: PdfTextRun[] = [];
+    type Obj = { index: number; text: string; left: number; bottom: number; right: number; top: number };
+    const objs: Obj[] = [];
     const n = p.FPDFPage_CountObjects(page);
     for (let i = 0; i < n; i++) {
       const obj = p.FPDFPage_GetObject(page, i);
       if (p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) continue;
       const text = readObjText(p, textPage, obj);
-      if (!text) continue;
-      const fl = m._malloc(16); // 4 × float out-params
+      if (!text.trim()) continue;
+      const fl = m._malloc(16);
       p.FPDFPageObj_GetBounds(obj, fl, fl + 4, fl + 8, fl + 12);
       const f = new Float32Array(m.HEAPU8.buffer, fl, 4);
       const [left, bottom, right, top] = [f[0], f[1], f[2], f[3]];
       m._free(fl);
-      runs.push({ index: i, text, left, bottom, right, top, editable: true });
+      if (right <= left || top <= bottom) continue;
+      objs.push({ index: i, text, left, bottom, right, top });
     }
-    return runs;
+
+    // Sort top→bottom (descending PDF y), then left→right within a line.
+    objs.sort((a, b) => {
+      const aMid = (a.bottom + a.top) / 2;
+      const bMid = (b.bottom + b.top) / 2;
+      const dy = bMid - aMid;
+      if (Math.abs(dy) > 1) return dy;
+      return a.left - b.left;
+    });
+
+    // Group adjacent objects into logical runs. Two objects merge when:
+    //  • their vertical midpoints are within 50% of a font height (same line), AND
+    //  • the horizontal gap between them is < 2× the font height, capped at 40pt
+    //    (~0.55") to avoid merging across wide layout gaps at large font sizes.
+    // A negative gap (overlap) up to 50% of font height is tolerated for kerning.
+    const groups: Obj[][] = [];
+    for (const o of objs) {
+      const h = o.top - o.bottom;
+      const maxGap = Math.min(h * 2, 40);
+      const last = groups.length ? groups[groups.length - 1] : null;
+      if (last) {
+        const prev = last[last.length - 1];
+        const prevMid = (prev.bottom + prev.top) / 2;
+        const thisMid = (o.bottom + o.top) / 2;
+        const hGap = o.left - prev.right;
+        if (Math.abs(prevMid - thisMid) < h * 0.5 && hGap < maxGap && hGap >= -h * 0.5) {
+          last.push(o);
+          continue;
+        }
+      }
+      groups.push([o]);
+    }
+
+    return groups.map((g) => ({
+      index: g[0].index,
+      indices: g.map((o) => o.index),
+      text: g.map((o) => o.text).join(''),
+      left: Math.min(...g.map((o) => o.left)),
+      bottom: Math.min(...g.map((o) => o.bottom)),
+      right: Math.max(...g.map((o) => o.right)),
+      top: Math.max(...g.map((o) => o.top)),
+      editable: true,
+    }));
   });
 }
 
@@ -284,72 +333,83 @@ function readFillColor(p: Pdfium, obj: number): [number, number, number, number]
   }
 }
 
-/** Replace text object `objectIndex` on `pageIndex` with `newText`; new bytes.
- *  Keeps the original font when no new glyphs are introduced (perfect fidelity);
- *  otherwise substitutes a standard PDF font (Helvetica/Times/Courier) that
- *  covers the full Latin + digit range so new characters render correctly. */
-export async function editTextRun(src: Uint8Array, pageIndex: number, objectIndex: number, newText: string): Promise<Uint8Array> {
+/** Replace the logical text run starting at `objectIndex` on `pageIndex` with
+ *  `newText`; returns updated document bytes. `objectIndices` lists all PDFium
+ *  object indices that were grouped into this run (secondary objects are zeroed
+ *  out after the primary is edited, so no ghost text remains). Keeps the
+ *  original font when no new glyphs are introduced; otherwise substitutes a
+ *  standard PDF font (Helvetica/Times/Courier) chosen by style heuristics. */
+export async function editTextRun(
+  src: Uint8Array,
+  pageIndex: number,
+  objectIndex: number,
+  objectIndices: number[],
+  newText: string,
+): Promise<Uint8Array> {
   try {
-  return await withPage(src, pageIndex, (p, doc, page, textPage) => {
-    const m = p.pdfium;
-    const obj = p.FPDFPage_GetObject(page, objectIndex);
-    if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) throw new Error('Selected object is not editable text.');
-    const origText = readObjText(p, textPage, obj);
-    const newChars = [...newText].filter((c) => !origText.includes(c));
+    return await withPage(src, pageIndex, (p, doc, page, textPage) => {
+      const m = p.pdfium;
+      const obj = p.FPDFPage_GetObject(page, objectIndex);
+      if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) throw new Error('Selected object is not editable text.');
+      const origText = readObjText(p, textPage, obj);
+      const newChars = [...newText].filter((c) => !origText.includes(c));
 
-    if (newChars.length === 0) {
-      // No new glyphs: the run's own font can render this — keep it (exact font).
-      const wide = allocUtf16(p, newText);
-      try {
-        if (!p.FPDFText_SetText(obj, wide)) throw new Error('FPDFText_SetText failed.');
-      } finally {
-        m._free(wide);
-      }
-    } else {
-      // New glyphs: substitute a standard PDF font (Helvetica / Times / Courier)
-      // chosen by the original font's style flags and name. Standard fonts are
-      // built into every viewer (ISO 32000 §9.6.2) — no external fetch needed.
-      const font = p.FPDFTextObj_GetFont(obj);
-      const flags = font ? p.FPDFFont_GetFlags(font) : 0;
-      const weight = font ? p.FPDFFont_GetWeight(font) : 400;
-      const name = font ? readFontName(p, font) : '';
-      const size = readFontSize(p, obj) || 12;
-      const matrix = readMatrix(p, obj);
-      const color = readFillColor(p, obj);
-      const stdFontName = pickStandardFont(flags, weight, name);
-      const subFont = p.FPDFText_LoadStandardFont(doc, stdFontName);
-      if (!subFont) throw new Error(`Could not load standard font "${stdFontName}".`);
-      // Suppress the original run: FPDFText_SetText aborts on an empty string
-      // (PDFium WASM limitation), so replace with a single space which is invisible
-      // and keeps the text object valid.
-      const space = allocUtf16(p, ' ');
-      try {
-        p.FPDFText_SetText(obj, space);
-      } finally {
-        m._free(space);
-      }
-      // Insert a new text object with the standard font at the same position.
-      const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
-      const wide = allocUtf16(p, newText);
-      try {
-        p.FPDFText_SetText(newObj, wide);
-      } finally {
-        m._free(wide);
-      }
-      setMatrix(p, newObj, matrix);
-      p.FPDFPageObj_SetFillColor(newObj, color[0], color[1], color[2], color[3]);
-      p.FPDFPage_InsertObject(page, newObj);
-    }
+      // Suppress a secondary object by replacing its text with a single space.
+      // FPDFText_SetText("") aborts in the WASM build; a space is invisible but
+      // keeps the object valid in the content stream.
+      const suppress = (idx: number) => {
+        if (idx === objectIndex) return;
+        const o = p.FPDFPage_GetObject(page, idx);
+        if (!o || p.FPDFPageObj_GetType(o) !== FPDF_PAGEOBJ_TEXT) return;
+        const sp = allocUtf16(p, ' ');
+        try { p.FPDFText_SetText(o, sp); } finally { m._free(sp); }
+      };
 
-    if (!p.FPDFPage_GenerateContent(page)) throw new Error('FPDFPage_GenerateContent failed.');
-    return saveDoc(p, doc);
-  });
+      // Zero out every secondary object in the group first so no ghost text
+      // from per-character objects lingers after the primary is replaced.
+      for (const idx of objectIndices) suppress(idx);
+
+      if (newChars.length === 0) {
+        // No new glyphs: the run's own font covers every character — keep it.
+        const wide = allocUtf16(p, newText);
+        try {
+          if (!p.FPDFText_SetText(obj, wide)) throw new Error('FPDFText_SetText failed.');
+        } finally {
+          m._free(wide);
+        }
+      } else {
+        // New glyphs introduced: substitute a standard PDF font so the characters
+        // render correctly (ISO 32000 §9.6.2 — every viewer has standard fonts).
+        const font = p.FPDFTextObj_GetFont(obj);
+        const flags = font ? p.FPDFFont_GetFlags(font) : 0;
+        const weight = font ? p.FPDFFont_GetWeight(font) : 400;
+        const name = font ? readFontName(p, font) : '';
+        const size = readFontSize(p, obj) || 12;
+        const matrix = readMatrix(p, obj);
+        const color = readFillColor(p, obj);
+        const stdFontName = pickStandardFont(flags, weight, name);
+        const subFont = p.FPDFText_LoadStandardFont(doc, stdFontName);
+        if (!subFont) throw new Error(`Could not load standard font "${stdFontName}".`);
+        // Also suppress the primary (already done above for secondaries, but the
+        // primary needs to be blanked separately since we insert a new object).
+        const space = allocUtf16(p, ' ');
+        try { p.FPDFText_SetText(obj, space); } finally { m._free(space); }
+        const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
+        const wide = allocUtf16(p, newText);
+        try { p.FPDFText_SetText(newObj, wide); } finally { m._free(wide); }
+        setMatrix(p, newObj, matrix);
+        p.FPDFPageObj_SetFillColor(newObj, color[0], color[1], color[2], color[3]);
+        p.FPDFPage_InsertObject(page, newObj);
+      }
+
+      if (!p.FPDFPage_GenerateContent(page)) throw new Error('FPDFPage_GenerateContent failed.');
+      return saveDoc(p, doc);
+    });
   } catch (e) {
-    // If the WASM module aborted (e.g. FPDFText_SetText with empty string), the
-    // module's heap is in an unknown state — reset the singleton so the next call
-    // gets a fresh instance. The document is unchanged (error propagates to caller).
+    // If the WASM module aborted, its heap is unknown — reset the singleton so
+    // the next call gets a fresh instance. Document unchanged (error propagates).
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === 'unreachable' || (e instanceof WebAssembly.RuntimeError)) {
+    if (msg === 'unreachable' || e instanceof WebAssembly.RuntimeError) {
       modulePromise = null;
       throw new Error('A PDFium internal error occurred — the document is unchanged. Try again.');
     }

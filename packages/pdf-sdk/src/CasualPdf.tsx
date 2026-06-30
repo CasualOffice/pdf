@@ -41,7 +41,7 @@ import type { CasualPdfProps } from './modes';
  * plugins, driven by the floating toolbar in ./ui/chrome. The annotation
  * overlay, suggest-mode review, and collab binding layer on in Phases 2–3.
  */
-export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, className, style }: CasualPdfProps) {
+export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, onUndo, onRedo, className, style }: CasualPdfProps) {
   const { engine, isLoading, error } = usePdfiumEngine();
 
   const plugins = useMemo(
@@ -118,7 +118,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
                     <span className="cpdf__status-sub">It may be corrupt, password-protected, or not a PDF.</span>
                   </div>
                 ) : isLoaded ? (
-                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} engine={engine} />
+                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} engine={engine} />
                 ) : (
                   <div className="cpdf__status">
                     <span className="cpdf__spinner" aria-hidden="true" />
