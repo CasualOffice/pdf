@@ -1243,12 +1243,14 @@ function OrganizeOverlay({
   totalPages,
   onClose,
   onApplied,
+  onDocumentReplaced,
 }: {
   documentId: string;
   engine: MergeEngine;
   totalPages: number;
   onClose: () => void;
   onApplied?: () => void;
+  onDocumentReplaced?: (bytes: Uint8Array) => void;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const [order, setOrder] = useState<number[]>(() => Array.from({ length: totalPages }, (_, i) => i));
@@ -1280,11 +1282,15 @@ function OrganizeOverlay({
     setError(null);
     try {
       const file = await engine.mergePages([{ docId: documentId, pageIndices: order }]).toPromise();
-      await docCap.openDocumentBuffer({ buffer: file.content, name: 'organized.pdf', autoActivate: true }).toPromise();
+      if (onDocumentReplaced) {
+        onDocumentReplaced(new Uint8Array(file.content));
+      } else {
+        await docCap.openDocumentBuffer({ buffer: file.content, name: 'organized.pdf', autoActivate: true }).toPromise();
+      }
       onApplied?.();
       onClose();
     } catch {
-      setError('Couldn’t apply the page changes. Try again.');
+      setError("Couldn't apply the page changes. Try again.");
       setBusy(false);
     }
   };
@@ -1569,6 +1575,7 @@ export function Viewer({
   mode,
   apiRef,
   onEdited,
+  onDocumentReplaced,
   engine,
 }: {
   documentId: string;
@@ -1576,6 +1583,7 @@ export function Viewer({
   onModeChange?: (m: Mode) => void;
   apiRef?: MutableRefObject<CasualPdfApi | null>;
   onEdited?: () => void;
+  onDocumentReplaced?: (bytes: Uint8Array) => void;
   engine?: MergeEngine;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1761,7 +1769,7 @@ export function Viewer({
         const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
         // A failed render must NOT be skipped — that would leave the page's
         // content un-redacted in the output. Fail the whole operation instead.
-        if (!blob) throw new Error(`Couldn’t render page ${pi + 1} for redaction.`);
+        if (!blob) throw new Error(`Couldn't render page ${pi + 1} for redaction.`);
         // The viewer renders pages in native orientation (it reads /Rotate but
         // doesn't rotate the canvas), and renderPage is native too — so the marks
         // and the bitmap share one space; paint directly. The output page keeps
@@ -1771,8 +1779,12 @@ export function Viewer({
       }
       const { buildRedactedPdf } = await import('../redact');
       const out = await buildRedactedPdf(srcBytes, flattened);
-      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-      await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      if (onDocumentReplaced) {
+        onDocumentReplaced(out);
+      } else {
+        const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+        await docCap.openDocumentBuffer({ buffer, name: 'redacted.pdf', autoActivate: true }).toPromise();
+      }
       onEdited?.();
       setRedactions([]);
       setRedacting(false);
@@ -1810,8 +1822,12 @@ export function Viewer({
     try {
       const { editTextRun } = await import('../textedit-pdfium');
       const out = await editTextRun(editBytes, pageIndex, objectIndex, newText);
-      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-      await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
+      if (onDocumentReplaced) {
+        onDocumentReplaced(out);
+      } else {
+        const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+        await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
+      }
       setEditBytes(out); // keep editing the updated document
       onEdited?.();
     } catch {
@@ -2184,7 +2200,7 @@ export function Viewer({
           </div>
         )}
         {organizing && (
-          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} onApplied={onEdited} />
+          <OrganizeOverlay documentId={documentId} engine={engine} totalPages={totalPages} onClose={() => setOrganizing(false)} onApplied={onEdited} onDocumentReplaced={onDocumentReplaced} />
         )}
         {signing && <SignatureModal documentId={documentId} onClose={() => setSigning(false)} />}
         <PlacementBanner documentId={documentId} />
@@ -2257,7 +2273,7 @@ export function Viewer({
               </div>
               <p className="cpdf__confirm-body">
                 This permanently removes the content under {redactions.length} marked region
-                {redactions.length === 1 ? '' : 's'} — it <strong>can’t be undone</strong>. The{' '}
+                {redactions.length === 1 ? '' : 's'} — it <strong>can't be undone</strong>. The{' '}
                 {new Set(redactions.map((r) => r.pageIndex)).size} affected page
                 {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} are rebuilt as flattened images
                 (preserving their size &amp; rotation), so text on {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? 'it' : 'them'} is

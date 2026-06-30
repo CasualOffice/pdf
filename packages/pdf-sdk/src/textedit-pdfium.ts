@@ -20,10 +20,16 @@
 import { init, DEFAULT_PDFIUM_WASM_URL } from '@embedpdf/pdfium';
 
 const FPDF_PAGEOBJ_TEXT = 1;
+const FPDF_FONT_TRUETYPE = 2;
 // Full rewrite (not FPDF_INCREMENTAL): the edited text replaces the original in
 // the output rather than appending a superseding update, so the old text isn't
 // left buried in the bytes (matches the native save_to_bytes() behaviour).
 const FPDF_NO_INCREMENTAL = 2;
+
+// PDF font descriptor flags (ISO 32000 Table 121; 1-based bit → value).
+const FLAG_FIXED_PITCH = 1 << 0;
+const FLAG_SERIF = 1 << 1;
+const FLAG_ITALIC = 1 << 6;
 
 /** The Emscripten heap helpers (on the wrapped module's `.pdfium`). */
 interface Heap {
@@ -51,6 +57,18 @@ interface Pdfium {
   FPDFTextObj_GetText(obj: number, textPage: number, buffer: number, length: number): number;
   FPDFPageObj_GetBounds(obj: number, l: number, b: number, r: number, t: number): boolean;
   FPDFText_SetText(obj: number, wide: number): boolean;
+  FPDFTextObj_GetFont(obj: number): number;
+  FPDFTextObj_GetFontSize(obj: number, sizeOut: number): boolean;
+  FPDFFont_GetFlags(font: number): number;
+  FPDFFont_GetWeight(font: number): number;
+  FPDFFont_GetBaseFontName(font: number, buffer: number, length: number): number;
+  FPDFPageObj_GetMatrix(obj: number, matrixOut: number): boolean;
+  FPDFPageObj_SetMatrix(obj: number, matrix: number): boolean;
+  FPDFPageObj_GetFillColor(obj: number, r: number, g: number, b: number, a: number): boolean;
+  FPDFPageObj_SetFillColor(obj: number, r: number, g: number, b: number, a: number): boolean;
+  FPDFText_LoadFont(doc: number, data: number, size: number, type: number, cid: boolean): number;
+  FPDFPageObj_CreateTextObj(doc: number, font: number, fontSize: number): number;
+  FPDFPage_InsertObject(page: number, obj: number): void;
   FPDFPage_GenerateContent(page: number): boolean;
   PDFiumExt_OpenFileWriter(): number;
   FPDF_SaveAsCopy(doc: number, writer: number, flags: number): boolean;
@@ -120,7 +138,7 @@ function saveDoc(p: Pdfium, doc: number): Uint8Array {
 async function withPage<T>(
   src: Uint8Array,
   pageIndex: number,
-  fn: (p: Pdfium, doc: number, page: number, textPage: number) => T,
+  fn: (p: Pdfium, doc: number, page: number, textPage: number) => T | Promise<T>,
 ): Promise<T> {
   const p = await ensurePdfium();
   const m = p.pdfium;
@@ -137,7 +155,7 @@ async function withPage<T>(
     page = p.FPDF_LoadPage(doc, pageIndex);
     if (!page) throw new Error(`Could not load page ${pageIndex + 1}.`);
     textPage = p.FPDFText_LoadPage(page);
-    return fn(p, doc, page, textPage);
+    return await fn(p, doc, page, textPage); // await: keep the doc loaded across async font fetch
   } finally {
     if (textPage) p.FPDFText_ClosePage(textPage);
     if (page) p.FPDF_ClosePage(page);
@@ -180,19 +198,160 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
   });
 }
 
-/** Replace text object `objectIndex` on `pageIndex` with `newText`; new bytes. */
+/* ── Font substitution ───────────────────────────────────────────────────────
+   Embedded fonts are subsetted — they only carry the glyphs already used — so an
+   edit that introduces a new character would render as .notdef. When that
+   happens we swap the run to a metric-compatible Google font that has the glyph
+   (Arimo≈Arial/Helvetica, Tinos≈Times, Cousine≈Courier; bold/italic by flags).
+   The TTF is fetched at runtime (cached) and embedded; the original object is
+   emptied and a new object with the substitute font is inserted — which avoids
+   FPDFPage_RemoveObject (it crashes on these builds). */
+interface Substitute {
+  pkg: string;
+  file: string;
+}
+function pickSubstitute(flags: number, weight: number, name: string): Substitute {
+  const n = name.toLowerCase();
+  const mono = (flags & FLAG_FIXED_PITCH) !== 0 || /courier|mono|consol/.test(n);
+  const serif = !mono && ((flags & FLAG_SERIF) !== 0 || /times|serif|georgia|roman|garamond|minion/.test(n));
+  const bold = weight >= 600 || /bold|black|heavy|semibold/.test(n);
+  const italic = (flags & FLAG_ITALIC) !== 0 || /italic|oblique/.test(n);
+  const family = mono ? 'Cousine' : serif ? 'Tinos' : 'Arimo';
+  const file = `${family}_${bold ? '700Bold' : '400Regular'}${italic ? '_Italic' : ''}`;
+  return { pkg: family.toLowerCase(), file };
+}
+const fontCache = new Map<string, Promise<Uint8Array>>();
+function fetchSubstituteFont(s: Substitute): Promise<Uint8Array> {
+  // OFL/Apache fonts (safe to embed). TODO: bundle locally for offline use.
+  const url = `https://cdn.jsdelivr.net/npm/@expo-google-fonts/${s.pkg}/${s.file}.ttf`;
+  let pr = fontCache.get(url);
+  if (!pr) {
+    pr = fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`substitute font fetch failed (${r.status})`);
+        return r.arrayBuffer();
+      })
+      .then((b) => new Uint8Array(b));
+    fontCache.set(url, pr);
+  }
+  return pr;
+}
+function readFontName(p: Pdfium, font: number): string {
+  const m = p.pdfium;
+  const buf = m._malloc(256);
+  try {
+    const len = p.FPDFFont_GetBaseFontName(font, buf, 256);
+    let s = '';
+    for (let i = 0; i < Math.min(Math.max(len - 1, 0), 255); i++) s += String.fromCharCode(m.HEAPU8[buf + i]);
+    return s;
+  } finally {
+    m._free(buf);
+  }
+}
+function readMatrix(p: Pdfium, obj: number): Float32Array {
+  const buf = p.pdfium._malloc(24);
+  try {
+    p.FPDFPageObj_GetMatrix(obj, buf);
+    return new Float32Array(p.pdfium.HEAPU8.buffer, buf, 6).slice();
+  } finally {
+    p.pdfium._free(buf);
+  }
+}
+function setMatrix(p: Pdfium, obj: number, mtx: Float32Array): void {
+  const buf = p.pdfium._malloc(24);
+  try {
+    new Float32Array(p.pdfium.HEAPU8.buffer, buf, 6).set(mtx);
+    p.FPDFPageObj_SetMatrix(obj, buf);
+  } finally {
+    p.pdfium._free(buf);
+  }
+}
+function readFontSize(p: Pdfium, obj: number): number {
+  const buf = p.pdfium._malloc(4);
+  try {
+    p.FPDFTextObj_GetFontSize(obj, buf);
+    return new Float32Array(p.pdfium.HEAPU8.buffer, buf, 1)[0];
+  } finally {
+    p.pdfium._free(buf);
+  }
+}
+function readFillColor(p: Pdfium, obj: number): [number, number, number, number] {
+  const m = p.pdfium;
+  const buf = m._malloc(16);
+  try {
+    if (!p.FPDFPageObj_GetFillColor(obj, buf, buf + 4, buf + 8, buf + 12)) return [0, 0, 0, 255];
+    const u = new Uint32Array(m.HEAPU8.buffer, buf, 4);
+    return [u[0], u[1], u[2], u[3]];
+  } finally {
+    m._free(buf);
+  }
+}
+
+/** Replace text object `objectIndex` on `pageIndex` with `newText`; new bytes.
+ *  Keeps the original font when no new glyphs are introduced (perfect fidelity);
+ *  otherwise substitutes a matching full font so new characters render rather
+ *  than appearing as .notdef. */
 export async function editTextRun(src: Uint8Array, pageIndex: number, objectIndex: number, newText: string): Promise<Uint8Array> {
-  return withPage(src, pageIndex, (p, doc, page) => {
+  return withPage(src, pageIndex, async (p, doc, page, textPage) => {
+    const m = p.pdfium;
     const obj = p.FPDFPage_GetObject(page, objectIndex);
     if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) throw new Error('Selected object is not editable text.');
-    const wide = allocUtf16(p, newText);
-    try {
-      if (!p.FPDFText_SetText(obj, wide)) throw new Error('FPDFText_SetText failed.');
-    } finally {
-      p.pdfium._free(wide);
+    const origText = readObjText(p, textPage, obj);
+    const newChars = [...newText].filter((c) => !origText.includes(c));
+    let ttfPtr = 0;
+
+    if (newChars.length === 0) {
+      // No new glyphs: the run's own font can render this — keep it (exact font).
+      const wide = allocUtf16(p, newText);
+      try {
+        if (!p.FPDFText_SetText(obj, wide)) throw new Error('FPDFText_SetText failed.');
+      } finally {
+        m._free(wide);
+      }
+    } else {
+      // New glyphs: substitute a matching full Google font that has them.
+      const font = p.FPDFTextObj_GetFont(obj);
+      const flags = font ? p.FPDFFont_GetFlags(font) : 0;
+      const weight = font ? p.FPDFFont_GetWeight(font) : 400;
+      const name = font ? readFontName(p, font) : '';
+      const size = readFontSize(p, obj) || 12;
+      const matrix = readMatrix(p, obj);
+      const color = readFillColor(p, obj);
+      const ttf = await fetchSubstituteFont(pickSubstitute(flags, weight, name));
+      ttfPtr = m._malloc(ttf.length);
+      m.HEAPU8.set(ttf, ttfPtr);
+      const subFont = p.FPDFText_LoadFont(doc, ttfPtr, ttf.length, FPDF_FONT_TRUETYPE, false);
+      if (!subFont) {
+        m._free(ttfPtr);
+        throw new Error('Could not embed the substitute font.');
+      }
+      // Empty the original run (renders nothing) and add a new run with the
+      // substitute font, copying position/size/colour.
+      const empty = allocUtf16(p, '');
+      try {
+        p.FPDFText_SetText(obj, empty);
+      } finally {
+        m._free(empty);
+      }
+      const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
+      const wide = allocUtf16(p, newText);
+      try {
+        p.FPDFText_SetText(newObj, wide);
+      } finally {
+        m._free(wide);
+      }
+      setMatrix(p, newObj, matrix);
+      p.FPDFPageObj_SetFillColor(newObj, color[0], color[1], color[2], color[3]);
+      p.FPDFPage_InsertObject(page, newObj);
     }
-    if (!p.FPDFPage_GenerateContent(page)) throw new Error('FPDFPage_GenerateContent failed.');
-    return saveDoc(p, doc);
+
+    if (!p.FPDFPage_GenerateContent(page)) {
+      if (ttfPtr) m._free(ttfPtr);
+      throw new Error('FPDFPage_GenerateContent failed.');
+    }
+    const out = saveDoc(p, doc);
+    if (ttfPtr) m._free(ttfPtr);
+    return out;
   });
 }
 
