@@ -40,6 +40,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out = doc.save_to_bytes()?;
     std::fs::write(outp, &out)?;
-    eprintln!("edited {edited} text object(s); wrote {outp} ({} bytes)", out.len());
+    eprintln!(
+        "edited {edited} text object(s); wrote {outp} ({} bytes)",
+        out.len()
+    );
     Ok(())
 }
