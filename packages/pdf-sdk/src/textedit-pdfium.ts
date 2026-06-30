@@ -173,17 +173,14 @@ export interface PdfTextRun {
   bottom: number;
   right: number;
   top: number;
-  /** False for fonts PDFium can't safely edit (Type3, invalid descriptor, empty
-   *  base name). The UI should disable the run rather than letting an edit
-   *  silently produce wrong glyphs or corrupt the document. */
+  /** Always true — every run is offered for editing; errors from the engine
+   *  surface via the edit banner so the document stays unchanged on failure. */
   editable: boolean;
 }
 
-/** List the text runs (text objects) on a page. Each run carries an `editable`
- *  flag — false if the font's descriptor is invalid or the base name is empty
- *  (a reliable sign of Type3 / symbolic-only fonts that PDFium cannot safely
- *  re-encode via FPDFText_SetText). The UI disables such runs rather than
- *  allowing a silent corrupt-glyph edit. */
+/** List the text runs (text objects) on a page. All runs are marked editable;
+ *  any WASM abort or engine error during `editTextRun` is caught and surfaced
+ *  as an error message rather than blocking the click. */
 export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<PdfTextRun[]> {
   return withPage(src, pageIndex, (p, _doc, page, textPage) => {
     const m = p.pdfium;
@@ -199,14 +196,7 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       const f = new Float32Array(m.HEAPU8.buffer, fl, 4);
       const [left, bottom, right, top] = [f[0], f[1], f[2], f[3]];
       m._free(fl);
-      // Fail-closed: detect fonts PDFium cannot safely re-encode.
-      // FPDFFont_GetFlags returns -1 for fonts without a descriptor (Type3, etc.).
-      // An empty base name is another reliable Type3 indicator.
-      const font = p.FPDFTextObj_GetFont(obj);
-      const flags = font ? p.FPDFFont_GetFlags(font) : -1;
-      const name = font ? readFontName(p, font) : '';
-      const editable = flags >= 0 && name.length > 0;
-      runs.push({ index: i, text, left, bottom, right, top, editable });
+      runs.push({ index: i, text, left, bottom, right, top, editable: true });
     }
     return runs;
   });

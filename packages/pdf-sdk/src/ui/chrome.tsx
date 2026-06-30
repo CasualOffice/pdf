@@ -408,18 +408,7 @@ function TextEditLayer({
   return (
     <div className="cpdf__textedit">
       {runs.map((r) =>
-        !r.editable ? (
-          // Non-editable run: locked indicator — don't let an edit produce
-          // wrong glyphs from a Type3 / custom-encoding font.
-          <div
-            key={r.index}
-            className="cpdf__textedit-run cpdf__textedit-run--locked"
-            style={boxStyle(r)}
-            title="This text uses a font that cannot be safely edited"
-            aria-label="Text cannot be edited (custom font encoding)"
-            role="presentation"
-          />
-        ) : active?.index === r.index ? (
+        active?.index === r.index ? (
           <input
             key={r.index}
             className="cpdf__textedit-input"
@@ -518,6 +507,19 @@ function LeftRail({
   const activeToolId = anno?.activeToolId ?? null;
   const editing = mode !== 'view';
 
+  // Track annotation-history availability so undo/redo buttons reflect real state.
+  const [annoCanUndo, setAnnoCanUndo] = useState(false);
+  const [annoCanRedo, setAnnoCanRedo] = useState(false);
+  useEffect(() => {
+    if (!history) return;
+    const update = () => {
+      setAnnoCanUndo(history.canUndo());
+      setAnnoCanRedo(history.canRedo());
+    };
+    update();
+    return history.onHistoryChange(update);
+  }, [history]);
+
   return (
     <div className="cpdf__rail" role="toolbar" aria-orientation="vertical" aria-label="Tools">
       <RailBtn icon="thumbnails" label="Pages" title="Page thumbnails" active={leftPanel === 'thumbs'} onClick={() => onToggleLeft('thumbs')} />
@@ -544,8 +546,8 @@ function LeftRail({
             />
           ))}
           <span className="cpdf__rail-sep" aria-hidden="true" />
-          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" onClick={() => history?.undo()} />
-          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" onClick={() => history?.redo()} />
+          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" disabled={!annoCanUndo} onClick={() => history?.undo()} />
+          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" disabled={!annoCanRedo} onClick={() => history?.redo()} />
         </>
       )}
     </div>
@@ -1688,6 +1690,8 @@ export function Viewer({
       download: () => exportCap?.download(),
       undo: () => history?.undo(),
       redo: () => history?.redo(),
+      canUndo: () => history?.canUndo() ?? false,
+      canRedo: () => history?.canRedo() ?? false,
       deleteSelection: () => {
         const sel = annoApi?.getSelectedAnnotations() ?? [];
         if (annoApi && sel.length) annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
@@ -2045,18 +2049,10 @@ export function Viewer({
         }
         return;
       }
-      // Undo / redo (⌘/Ctrl+Z, ⇧ for redo; Ctrl+Y also redoes).
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) history?.redo();
-        else history?.undo();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        history?.redo();
-        return;
-      }
+      // Undo / redo (⌘Z / ⌘⇧Z / Ctrl+Y) are handled by the host app so it can
+      // layer a version-level undo (redaction, organize, text-edit) on top of
+      // the annotation-history undo. Don't intercept them here.
+
       // Duplicate selection (⌘/Ctrl+D) — offset copy with a fresh id.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         const sel = (annoApi?.getSelectedAnnotations() ?? []).filter((a) => (a.object as { type?: number }).type !== 13);

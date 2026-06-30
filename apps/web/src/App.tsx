@@ -44,7 +44,18 @@ export function App() {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef(title);
   titleRef.current = title;
+  const srcRef = useRef(src);
+  srcRef.current = src;
   const snapshotTimer = useRef<number | null>(null);
+  // Version undo/redo stack: blob URLs for doc-rebuild ops (redaction, organize,
+  // text-edit). Annotation-level undo/redo is handled by EmbedPDF's history plugin.
+  const undoStack = useRef<string[]>([]);
+  const redoStack = useRef<string[]>([]);
+  const revokeUrl = (url: string) => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
+  const clearStack = (stack: { current: string[] }) => {
+    stack.current.forEach(revokeUrl);
+    stack.current = [];
+  };
 
   // Crash recovery (UX-I5): on load, offer to restore the last unsaved session.
   useEffect(() => {
@@ -78,8 +89,11 @@ export function App() {
   // new Blob URL → `src` prop change. This forces EmbedPDF to fully reinitialize
   // (including text geometry), fixing selection/search after those operations.
   // `openDocumentBuffer` skips that re-index step so is avoided here.
+  // The old src is pushed to the version undo stack (not revoked) so Ctrl+Z can
+  // restore it. Any pending redo history is discarded (new branch).
   const onDocumentReplaced = (bytes: Uint8Array) => {
-    revokeObjectUrl();
+    undoStack.current.push(srcRef.current);
+    clearStack(redoStack);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const blob = new Blob([buffer], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
@@ -87,10 +101,29 @@ export function App() {
     setSrc(url);
     markEdited();
   };
+
+  const versionUndo = () => {
+    const prev = undoStack.current.pop();
+    if (!prev) return;
+    redoStack.current.push(srcRef.current);
+    objectUrl.current = prev.startsWith('blob:') ? prev : null;
+    setSrc(prev);
+  };
+
+  const versionRedo = () => {
+    const next = redoStack.current.pop();
+    if (!next) return;
+    undoStack.current.push(srcRef.current);
+    objectUrl.current = next.startsWith('blob:') ? next : null;
+    setSrc(next);
+  };
+
   useEffect(() => cancelSnapshot, []);
 
   const restoreRecovery = (snap: RecoverySnapshot) => {
     revokeObjectUrl();
+    clearStack(undoStack);
+    clearStack(redoStack);
     const url = URL.createObjectURL(new Blob([snap.bytes], { type: 'application/pdf' }));
     objectUrl.current = url;
     setSrc(url);
@@ -138,7 +171,11 @@ export function App() {
       objectUrl.current = null;
     }
   };
-  useEffect(() => revokeObjectUrl, []);
+  useEffect(() => () => {
+    revokeObjectUrl();
+    clearStack(undoStack);
+    clearStack(redoStack);
+  }, []);
 
   // Warn before discarding unsaved edits (Open, Open-sample, tab close).
   useEffect(() => {
@@ -156,6 +193,8 @@ export function App() {
 
   const openFromFile = (file: File) => {
     revokeObjectUrl();
+    clearStack(undoStack);
+    clearStack(redoStack);
     const url = URL.createObjectURL(file);
     objectUrl.current = url;
     setSrc(url);
@@ -195,7 +234,7 @@ export function App() {
       icon: <Icon name="menu" size={18} />,
       items: [
         { label: 'Open…', shortcut: '⌘O', onSelect: () => { if (confirmDiscard()) fileRef.current?.click(); } },
-        { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); } } },
+        { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); clearStack(undoStack); clearStack(redoStack); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); } } },
         { divider: true },
         { label: 'Download', shortcut: '⌘S', onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
@@ -209,11 +248,28 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
       if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
       else if (k === 'p') { e.preventDefault(); window.open(src, '_blank'); }
+      else if (k === 'z' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+        // Two-level undo: annotation history first, then document-version undo.
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (api.current?.canRedo()) api.current.redo();
+          else if (redoStack.current.length > 0) versionRedo();
+        } else {
+          if (api.current?.canUndo()) api.current.undo();
+          else if (undoStack.current.length > 0) versionUndo();
+        }
+      }
+      else if (k === 'y' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+        e.preventDefault();
+        if (api.current?.canRedo()) api.current.redo();
+        else if (redoStack.current.length > 0) versionRedo();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

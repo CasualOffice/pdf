@@ -53,6 +53,10 @@ export interface CasualPdfApi {
   download(): void;
   undo(): void;
   redo(): void;
+  /** True when there is at least one annotation-history entry to undo. */
+  canUndo(): boolean;
+  /** True when there is at least one annotation-history entry to redo. */
+  canRedo(): boolean;
   /** Delete the currently selected annotation(s). */
   deleteSelection(): void;
   /** Activate an annotation tool by id, or null to return to select. */
