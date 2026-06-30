@@ -408,7 +408,18 @@ function TextEditLayer({
   return (
     <div className="cpdf__textedit">
       {runs.map((r) =>
-        active?.index === r.index ? (
+        !r.editable ? (
+          // Non-editable run: locked indicator — don't let an edit produce
+          // wrong glyphs from a Type3 / custom-encoding font.
+          <div
+            key={r.index}
+            className="cpdf__textedit-run cpdf__textedit-run--locked"
+            style={boxStyle(r)}
+            title="This text uses a font that cannot be safely edited"
+            aria-label="Text cannot be edited (custom font encoding)"
+            role="presentation"
+          />
+        ) : active?.index === r.index ? (
           <input
             key={r.index}
             className="cpdf__textedit-input"
@@ -1600,6 +1611,7 @@ export function Viewer({
   const [textEditing, setTextEditing] = useState(false);
   const [editBytes, setEditBytes] = useState<Uint8Array | null>(null);
   const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
@@ -1819,6 +1831,7 @@ export function Viewer({
   const commitTextEdit = async (pageIndex: number, objectIndex: number, newText: string) => {
     if (!editBytes || !docCap || editBusy) return;
     setEditBusy(true);
+    setEditError(null);
     try {
       const { editTextRun } = await import('../textedit-pdfium');
       const out = await editTextRun(editBytes, pageIndex, objectIndex, newText);
@@ -1830,8 +1843,8 @@ export function Viewer({
       }
       setEditBytes(out); // keep editing the updated document
       onEdited?.();
-    } catch {
-      /* a failed edit leaves the document untouched */
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
     } finally {
       setEditBusy(false);
     }
@@ -2227,7 +2240,18 @@ export function Viewer({
         {textEditing && !presenting && (
           <div className="cpdf__placebanner" role="status">
             <Icon name="text-tool" size={18} />
-            <span>{editBusy ? 'Applying edit…' : 'Click any text to edit it, then press Enter'}</span>
+            <span>
+              {editBusy
+                ? 'Applying edit…'
+                : editError
+                  ? editError
+                  : 'Click any text to edit it, then press Enter'}
+            </span>
+            {editError && (
+              <button type="button" className="cpdf__iconbtn" aria-label="Dismiss error" onClick={() => setEditError(null)}>
+                <Icon name="close" size={16} />
+              </button>
+            )}
             <button type="button" className="cpdf__btn" disabled={editBusy} onClick={() => toggleTextEdit()}>
               Done
             </button>

@@ -20,7 +20,6 @@
 import { init, DEFAULT_PDFIUM_WASM_URL } from '@embedpdf/pdfium';
 
 const FPDF_PAGEOBJ_TEXT = 1;
-const FPDF_FONT_TRUETYPE = 2;
 // Full rewrite (not FPDF_INCREMENTAL): the edited text replaces the original in
 // the output rather than appending a superseding update, so the old text isn't
 // left buried in the bytes (matches the native save_to_bytes() behaviour).
@@ -66,7 +65,7 @@ interface Pdfium {
   FPDFPageObj_SetMatrix(obj: number, matrix: number): boolean;
   FPDFPageObj_GetFillColor(obj: number, r: number, g: number, b: number, a: number): boolean;
   FPDFPageObj_SetFillColor(obj: number, r: number, g: number, b: number, a: number): boolean;
-  FPDFText_LoadFont(doc: number, data: number, size: number, type: number, cid: boolean): number;
+  FPDFText_LoadStandardFont(doc: number, fontName: string): number;
   FPDFPageObj_CreateTextObj(doc: number, font: number, fontSize: number): number;
   FPDFPage_InsertObject(page: number, obj: number): void;
   FPDFPage_GenerateContent(page: number): boolean;
@@ -174,9 +173,17 @@ export interface PdfTextRun {
   bottom: number;
   right: number;
   top: number;
+  /** False for fonts PDFium can't safely edit (Type3, invalid descriptor, empty
+   *  base name). The UI should disable the run rather than letting an edit
+   *  silently produce wrong glyphs or corrupt the document. */
+  editable: boolean;
 }
 
-/** List the editable text runs (text objects) on a page. */
+/** List the text runs (text objects) on a page. Each run carries an `editable`
+ *  flag — false if the font's descriptor is invalid or the base name is empty
+ *  (a reliable sign of Type3 / symbolic-only fonts that PDFium cannot safely
+ *  re-encode via FPDFText_SetText). The UI disables such runs rather than
+ *  allowing a silent corrupt-glyph edit. */
 export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<PdfTextRun[]> {
   return withPage(src, pageIndex, (p, _doc, page, textPage) => {
     const m = p.pdfium;
@@ -192,7 +199,14 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       const f = new Float32Array(m.HEAPU8.buffer, fl, 4);
       const [left, bottom, right, top] = [f[0], f[1], f[2], f[3]];
       m._free(fl);
-      runs.push({ index: i, text, left, bottom, right, top });
+      // Fail-closed: detect fonts PDFium cannot safely re-encode.
+      // FPDFFont_GetFlags returns -1 for fonts without a descriptor (Type3, etc.).
+      // An empty base name is another reliable Type3 indicator.
+      const font = p.FPDFTextObj_GetFont(obj);
+      const flags = font ? p.FPDFFont_GetFlags(font) : -1;
+      const name = font ? readFontName(p, font) : '';
+      const editable = flags >= 0 && name.length > 0;
+      runs.push({ index: i, text, left, bottom, right, top, editable });
     }
     return runs;
   });
@@ -201,40 +215,21 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
 /* ── Font substitution ───────────────────────────────────────────────────────
    Embedded fonts are subsetted — they only carry the glyphs already used — so an
    edit that introduces a new character would render as .notdef. When that
-   happens we swap the run to a metric-compatible Google font that has the glyph
-   (Arimo≈Arial/Helvetica, Tinos≈Times, Cousine≈Courier; bold/italic by flags).
-   The TTF is fetched at runtime (cached) and embedded; the original object is
-   emptied and a new object with the substitute font is inserted — which avoids
-   FPDFPage_RemoveObject (it crashes on these builds). */
-interface Substitute {
-  pkg: string;
-  file: string;
-}
-function pickSubstitute(flags: number, weight: number, name: string): Substitute {
+   happens we swap the run to a standard PDF font (Helvetica / Times / Courier
+   family, chosen by the original font's flags and name). Standard fonts are
+   required by ISO 32000 §9.6.2 and built into every viewer; no external fetch
+   or font data embedding is needed. The original object is emptied and a new
+   object with the standard font is inserted (FPDFPage_RemoveObject crashes on
+   these builds so we zero-out the original instead). */
+function pickStandardFont(flags: number, weight: number, name: string): string {
   const n = name.toLowerCase();
   const mono = (flags & FLAG_FIXED_PITCH) !== 0 || /courier|mono|consol/.test(n);
   const serif = !mono && ((flags & FLAG_SERIF) !== 0 || /times|serif|georgia|roman|garamond|minion/.test(n));
   const bold = weight >= 600 || /bold|black|heavy|semibold/.test(n);
   const italic = (flags & FLAG_ITALIC) !== 0 || /italic|oblique/.test(n);
-  const family = mono ? 'Cousine' : serif ? 'Tinos' : 'Arimo';
-  const file = `${family}_${bold ? '700Bold' : '400Regular'}${italic ? '_Italic' : ''}`;
-  return { pkg: family.toLowerCase(), file };
-}
-const fontCache = new Map<string, Promise<Uint8Array>>();
-function fetchSubstituteFont(s: Substitute): Promise<Uint8Array> {
-  // OFL/Apache fonts (safe to embed). TODO: bundle locally for offline use.
-  const url = `https://cdn.jsdelivr.net/npm/@expo-google-fonts/${s.pkg}/${s.file}.ttf`;
-  let pr = fontCache.get(url);
-  if (!pr) {
-    pr = fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`substitute font fetch failed (${r.status})`);
-        return r.arrayBuffer();
-      })
-      .then((b) => new Uint8Array(b));
-    fontCache.set(url, pr);
-  }
-  return pr;
+  if (mono) return bold ? (italic ? 'Courier-BoldOblique' : 'Courier-Bold') : (italic ? 'Courier-Oblique' : 'Courier');
+  if (serif) return bold ? (italic ? 'Times-BoldItalic' : 'Times-Bold') : (italic ? 'Times-Italic' : 'Times-Roman');
+  return bold ? (italic ? 'Helvetica-BoldOblique' : 'Helvetica-Bold') : (italic ? 'Helvetica-Oblique' : 'Helvetica');
 }
 function readFontName(p: Pdfium, font: number): string {
   const m = p.pdfium;
@@ -289,16 +284,16 @@ function readFillColor(p: Pdfium, obj: number): [number, number, number, number]
 
 /** Replace text object `objectIndex` on `pageIndex` with `newText`; new bytes.
  *  Keeps the original font when no new glyphs are introduced (perfect fidelity);
- *  otherwise substitutes a matching full font so new characters render rather
- *  than appearing as .notdef. */
+ *  otherwise substitutes a standard PDF font (Helvetica/Times/Courier) that
+ *  covers the full Latin + digit range so new characters render correctly. */
 export async function editTextRun(src: Uint8Array, pageIndex: number, objectIndex: number, newText: string): Promise<Uint8Array> {
-  return withPage(src, pageIndex, async (p, doc, page, textPage) => {
+  try {
+  return await withPage(src, pageIndex, (p, doc, page, textPage) => {
     const m = p.pdfium;
     const obj = p.FPDFPage_GetObject(page, objectIndex);
     if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) throw new Error('Selected object is not editable text.');
     const origText = readObjText(p, textPage, obj);
     const newChars = [...newText].filter((c) => !origText.includes(c));
-    let ttfPtr = 0;
 
     if (newChars.length === 0) {
       // No new glyphs: the run's own font can render this — keep it (exact font).
@@ -309,7 +304,9 @@ export async function editTextRun(src: Uint8Array, pageIndex: number, objectInde
         m._free(wide);
       }
     } else {
-      // New glyphs: substitute a matching full Google font that has them.
+      // New glyphs: substitute a standard PDF font (Helvetica / Times / Courier)
+      // chosen by the original font's style flags and name. Standard fonts are
+      // built into every viewer (ISO 32000 §9.6.2) — no external fetch needed.
       const font = p.FPDFTextObj_GetFont(obj);
       const flags = font ? p.FPDFFont_GetFlags(font) : 0;
       const weight = font ? p.FPDFFont_GetWeight(font) : 400;
@@ -317,22 +314,19 @@ export async function editTextRun(src: Uint8Array, pageIndex: number, objectInde
       const size = readFontSize(p, obj) || 12;
       const matrix = readMatrix(p, obj);
       const color = readFillColor(p, obj);
-      const ttf = await fetchSubstituteFont(pickSubstitute(flags, weight, name));
-      ttfPtr = m._malloc(ttf.length);
-      m.HEAPU8.set(ttf, ttfPtr);
-      const subFont = p.FPDFText_LoadFont(doc, ttfPtr, ttf.length, FPDF_FONT_TRUETYPE, false);
-      if (!subFont) {
-        m._free(ttfPtr);
-        throw new Error('Could not embed the substitute font.');
-      }
-      // Empty the original run (renders nothing) and add a new run with the
-      // substitute font, copying position/size/colour.
-      const empty = allocUtf16(p, '');
+      const stdFontName = pickStandardFont(flags, weight, name);
+      const subFont = p.FPDFText_LoadStandardFont(doc, stdFontName);
+      if (!subFont) throw new Error(`Could not load standard font "${stdFontName}".`);
+      // Suppress the original run: FPDFText_SetText aborts on an empty string
+      // (PDFium WASM limitation), so replace with a single space which is invisible
+      // and keeps the text object valid.
+      const space = allocUtf16(p, ' ');
       try {
-        p.FPDFText_SetText(obj, empty);
+        p.FPDFText_SetText(obj, space);
       } finally {
-        m._free(empty);
+        m._free(space);
       }
+      // Insert a new text object with the standard font at the same position.
       const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
       const wide = allocUtf16(p, newText);
       try {
@@ -345,14 +339,20 @@ export async function editTextRun(src: Uint8Array, pageIndex: number, objectInde
       p.FPDFPage_InsertObject(page, newObj);
     }
 
-    if (!p.FPDFPage_GenerateContent(page)) {
-      if (ttfPtr) m._free(ttfPtr);
-      throw new Error('FPDFPage_GenerateContent failed.');
-    }
-    const out = saveDoc(p, doc);
-    if (ttfPtr) m._free(ttfPtr);
-    return out;
+    if (!p.FPDFPage_GenerateContent(page)) throw new Error('FPDFPage_GenerateContent failed.');
+    return saveDoc(p, doc);
   });
+  } catch (e) {
+    // If the WASM module aborted (e.g. FPDFText_SetText with empty string), the
+    // module's heap is in an unknown state — reset the singleton so the next call
+    // gets a fresh instance. The document is unchanged (error propagates to caller).
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === 'unreachable' || (e instanceof WebAssembly.RuntimeError)) {
+      modulePromise = null;
+      throw new Error('A PDFium internal error occurred — the document is unchanged. Try again.');
+    }
+    throw e;
+  }
 }
 
 /** Spike/diagnostic: replace every occurrence of `find` with `replace` in the
