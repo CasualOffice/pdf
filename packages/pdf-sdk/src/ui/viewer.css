@@ -1087,35 +1087,36 @@
   padding: 0;
   border: 0;
   border-radius: 2px;
-  /* Stronger tint + border so run boxes are visibly clickable, not invisible. */
-  background: color-mix(in srgb, var(--color-primary, #2d8cff) 12%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-primary, #2d8cff) 50%, transparent);
+  background: color-mix(in srgb, var(--color-primary, #2d8cff) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary, #2d8cff) 45%, transparent);
   cursor: text;
   pointer-events: auto;
   transition: background 0.1s, box-shadow 0.1s;
 }
 .cpdf__textedit-run:hover {
-  background: color-mix(in srgb, var(--color-primary, #2d8cff) 22%, transparent);
+  background: color-mix(in srgb, var(--color-primary, #2d8cff) 20%, transparent);
   box-shadow: inset 0 0 0 1.5px var(--color-primary, #2d8cff);
 }
 .cpdf__textedit-input {
   position: absolute;
   margin: 0;
-  /* Padding matches common PDF text margins; keeps the caret inside the box. */
-  padding: 1px 3px;
+  padding: 0 2px;
   border: 2px solid var(--color-primary, #2d8cff);
   border-radius: 2px;
-  /* White background with text so the user can see what they're typing. */
-  background: #fff;
+  /* Slightly translucent so the user can see the original text through it. */
+  background: rgba(255, 255, 255, 0.96);
   color: #111;
-  font: inherit;
-  line-height: 1.2;
+  /* Use a proportional font and fill the run height so the text size is close
+     to the original. The PDF font size can't be matched exactly from the browser,
+     but line-height: 1 + height: 100% keeps it in the right ballpark. */
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 100%;
+  line-height: 1;
   pointer-events: auto;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 2px 12px rgba(45, 140, 255, 0.3), 0 1px 4px rgba(0,0,0,0.18);
   outline: none;
-  /* Stretch to at least 120px so short runs have room to type. */
-  min-width: 120px;
-  z-index: 1;
+  min-width: 80px;
+  z-index: 2;
 }
 .cpdf__placebanner--redact {
   background: var(--color-danger, #e5484d);

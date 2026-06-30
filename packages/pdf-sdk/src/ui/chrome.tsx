@@ -372,16 +372,18 @@ function TextEditLayer({
   bytes,
   onCommit,
   onReady,
+  editBusy,
 }: {
   documentId: string;
   pageIndex: number;
   bytes: Uint8Array;
-  onCommit: (pageIndex: number, objectIndex: number, newText: string) => void;
+  onCommit: (pageIndex: number, objectIndex: number, objectIndices: number[], newText: string) => void;
   onReady?: () => void;
+  editBusy?: boolean;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const [runs, setRuns] = useState<PdfTextRun[] | null>(null);
-  const [active, setActive] = useState<{ index: number; text: string } | null>(null);
+  const [active, setActive] = useState<{ index: number; indices: number[]; text: string } | null>(null);
   const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
 
   useEffect(() => {
@@ -417,8 +419,10 @@ function TextEditLayer({
     width: `${((r.right - r.left) / size.width) * 100}%`,
     height: `${((r.top - r.bottom) / size.height) * 100}%`,
   });
-  const commit = (index: number, text: string, original: string) => {
-    if (text !== original) onCommit(pageIndex, index, text);
+  const commit = (index: number, indices: number[], text: string, original: string) => {
+    // Empty text would call FPDFText_SetText("") → WASM abort; cancel instead.
+    if (!text.trim()) { setActive(null); return; }
+    if (text !== original) onCommit(pageIndex, index, indices, text);
     setActive(null);
   };
   const cancel = () => setActive(null);
@@ -435,11 +439,11 @@ function TextEditLayer({
             aria-label="Edit text"
             // Select all on focus so the user can immediately overtype the run.
             onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => setActive({ index: r.index, text: e.target.value })}
+            onChange={(e) => setActive({ index: r.index, indices: r.indices, text: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                commit(r.index, active.text, r.text);
+                commit(r.index, r.indices, active.text, r.text);
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 cancel();
@@ -457,9 +461,10 @@ function TextEditLayer({
             style={boxStyle(r)}
             title={r.text}
             aria-label={`Edit text: ${r.text}`}
+            disabled={editBusy}
             onClick={() => {
               if (active) cancel(); // dismiss previous edit without committing
-              setActive({ index: r.index, text: r.text });
+              setActive({ index: r.index, indices: r.indices, text: r.text });
             }}
           />
         ),
@@ -513,6 +518,8 @@ function LeftRail({
   onToggleRedact,
   textEditing,
   onToggleTextEdit,
+  onUndo,
+  onRedo,
 }: {
   documentId: string;
   mode: Mode;
@@ -525,6 +532,8 @@ function LeftRail({
   onToggleRedact: () => void;
   textEditing: boolean;
   onToggleTextEdit: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }) {
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: history } = useHistoryCapability();
@@ -570,8 +579,8 @@ function LeftRail({
             />
           ))}
           <span className="cpdf__rail-sep" aria-hidden="true" />
-          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" disabled={!annoCanUndo} onClick={() => history?.undo()} />
-          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" disabled={!annoCanRedo} onClick={() => history?.redo()} />
+          <RailBtn icon="undo" label="Undo" title="Undo (⌘Z)" disabled={!annoCanUndo && !onUndo} onClick={() => onUndo ? onUndo() : history?.undo()} />
+          <RailBtn icon="redo" label="Redo" title="Redo (⌘⇧Z)" disabled={!annoCanRedo && !onRedo} onClick={() => onRedo ? onRedo() : history?.redo()} />
         </>
       )}
     </div>
@@ -1613,6 +1622,8 @@ export function Viewer({
   apiRef,
   onEdited,
   onDocumentReplaced,
+  onUndo,
+  onRedo,
   engine,
 }: {
   documentId: string;
@@ -1621,6 +1632,8 @@ export function Viewer({
   apiRef?: MutableRefObject<CasualPdfApi | null>;
   onEdited?: () => void;
   onDocumentReplaced?: (bytes: Uint8Array) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   engine?: MergeEngine;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1636,6 +1649,9 @@ export function Viewer({
   // edit core operates on; set when the tool activates and after each commit.
   const [textEditing, setTextEditing] = useState(false);
   const [editBytes, setEditBytes] = useState<Uint8Array | null>(null);
+  // True once at least one text-edit commit has been made; triggers an
+  // onDocumentReplaced call on exit so the text layer re-indexes.
+  const [editDirty, setEditDirty] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [textRunsReady, setTextRunsReady] = useState(false);
@@ -1847,8 +1863,16 @@ export function Viewer({
   // snapshot, reload the result, and keep the snapshot current for further edits.
   const toggleTextEdit = async () => {
     if (textEditing) {
+      // Fire onDocumentReplaced only when edits were made so the host can swap
+      // the src to a new Blob URL — this triggers EmbedPDF to re-index the text
+      // layer (search/selection fix). In-session commits used openDocumentBuffer
+      // (no remount) so the re-index is deferred to here.
+      if (editDirty && editBytes && onDocumentReplaced) {
+        onDocumentReplaced(editBytes);
+      }
       setTextEditing(false);
       setEditBytes(null);
+      setEditDirty(false);
       setTextRunsReady(false);
       return;
     }
@@ -1865,20 +1889,20 @@ export function Viewer({
     setEditBytes(new Uint8Array(ab));
     setTextEditing(true);
   };
-  const commitTextEdit = async (pageIndex: number, objectIndex: number, newText: string) => {
+  const commitTextEdit = async (pageIndex: number, objectIndex: number, objectIndices: number[], newText: string) => {
     if (!editBytes || !docCap || editBusy) return;
     setEditBusy(true);
     setEditError(null);
     try {
       const { editTextRun } = await import('../textedit-pdfium');
-      const out = await editTextRun(editBytes, pageIndex, objectIndex, newText);
-      if (onDocumentReplaced) {
-        onDocumentReplaced(out);
-      } else {
-        const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-        await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
-      }
-      setEditBytes(out); // keep editing the updated document
+      const out = await editTextRun(editBytes, pageIndex, objectIndex, objectIndices, newText);
+      // Use openDocumentBuffer (not onDocumentReplaced) so the Viewer stays mounted
+      // and the user can keep editing without re-clicking the tool. The text layer
+      // re-index via onDocumentReplaced is deferred to when they exit text-edit mode.
+      const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+      await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
+      setEditBytes(out); // updated bytes for the next commit
+      setEditDirty(true);
       onEdited?.();
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
@@ -2151,7 +2175,7 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -2193,7 +2217,7 @@ export function Viewer({
                     />
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && textEditing && editBytes && (
-                      <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} />
+                      <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} editBusy={editBusy} />
                     )}
                     {editing && pendingImage && (
                       <ImagePlacer documentId={documentId} pageIndex={pageIndex} image={pendingImage} onPlaced={() => setPendingImage(null)} />

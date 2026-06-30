@@ -108,6 +108,8 @@ export function App() {
     redoStack.current.push(srcRef.current);
     objectUrl.current = prev.startsWith('blob:') ? prev : null;
     setSrc(prev);
+    setDirty(true);
+    scheduleSnapshot(); // snapshot the restored state after viewer remounts
   };
 
   const versionRedo = () => {
@@ -116,6 +118,8 @@ export function App() {
     undoStack.current.push(srcRef.current);
     objectUrl.current = next.startsWith('blob:') ? next : null;
     setSrc(next);
+    setDirty(true);
+    scheduleSnapshot();
   };
 
   useEffect(() => cancelSnapshot, []);
@@ -352,7 +356,18 @@ export function App() {
       />
 
       <main className="canvas">
-        <CasualPdf key={src} src={src} mode={mode} onModeChange={setMode} apiRef={api} onEdited={markEdited} onDocumentReplaced={onDocumentReplaced} className="viewer" />
+        <CasualPdf
+          key={src}
+          src={src}
+          mode={mode}
+          onModeChange={setMode}
+          apiRef={api}
+          onEdited={markEdited}
+          onDocumentReplaced={onDocumentReplaced}
+          onUndo={() => { if (api.current?.canUndo()) api.current.undo(); else versionUndo(); }}
+          onRedo={() => { if (api.current?.canRedo()) api.current.redo(); else versionRedo(); }}
+          className="viewer"
+        />
       </main>
 
       {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}
