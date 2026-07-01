@@ -415,6 +415,19 @@ function TextEditLayer({
   }, []);
   // Guard against onBlur firing after Enter/Escape already handled the action.
   const suppressBlurRef = useRef(false);
+  // If a commit is in-flight when the user blurs an input, we can't commit
+  // immediately (editBusy). Queue the args here; the useEffect below flushes
+  // them once editBusy transitions back to false.
+  type CommitArgs = [number, number, number[], string];
+  const pendingCommitRef = useRef<CommitArgs | null>(null);
+  useEffect(() => {
+    if (!editBusy && pendingCommitRef.current) {
+      const args = pendingCommitRef.current;
+      pendingCommitRef.current = null;
+      onCommit(...args);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editBusy]);
 
   useEffect(() => {
     let cancelled = false;
@@ -525,9 +538,6 @@ function TextEditLayer({
               }
             }}
             onBlur={(e) => {
-              // Don't commit while a previous commit is in-flight — the bytes
-              // snapshot is still updating and a double-commit would corrupt the run.
-              if (editBusy) return;
               if (suppressBlurRef.current) { suppressBlurRef.current = false; return; }
               const rel = e.relatedTarget as HTMLElement | null;
               const clickingOtherRun = !!rel?.classList.contains('cpdf__textedit-run');
@@ -535,7 +545,14 @@ function TextEditLayer({
               // When clicking another run, onBlur fires first; that button's onClick will
               // activate it — so we just need to commit and NOT call setActive(null).
               if (active.text.trim() && active.text !== r.text) {
-                onCommit(pageIndex, r.index, r.indices, active.text);
+                if (editBusy) {
+                  // A commit is already in-flight — queue this one so it's not
+                  // silently dropped. pendingCommitRef is flushed by the useEffect
+                  // above once editBusy becomes false.
+                  pendingCommitRef.current = [pageIndex, r.index, r.indices, active.text];
+                } else {
+                  onCommit(pageIndex, r.index, r.indices, active.text);
+                }
               }
               if (!clickingOtherRun) setActive(null);
               // If clicking another run: keep active momentarily; that run's onClick fires

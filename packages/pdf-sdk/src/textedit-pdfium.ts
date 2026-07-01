@@ -243,6 +243,8 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       const [left, bottom, right, top] = [f[0], f[1], f[2], f[3]];
       m._free(fl);
       if (right <= left || top <= bottom) continue;
+      // Filter objects moved off-page as a suppress fallback (see suppress() below).
+      if (left < -1000 || bottom < -1000) continue;
       objs.push({ index: i, text, left, bottom, right, top });
     }
 
@@ -441,12 +443,23 @@ export async function editTextRun(
       // Suppress a secondary object by replacing its text with a single space.
       // FPDFText_SetText("") aborts in the WASM build; a space is invisible but
       // keeps the object valid in the content stream.
+      // For subsetted fonts the space glyph is often absent → SetText returns
+      // false. Fallback: move the object far off-page so it never appears in
+      // listTextRuns (filtered by the `left < -1000` guard) and isn't rendered.
+      const moveOffPage = (o: number) => {
+        const mtx = readMatrix(p, o);
+        mtx[4] = -99999; // x translation
+        mtx[5] = -99999; // y translation
+        setMatrix(p, o, mtx);
+      };
       const suppress = (idx: number) => {
         if (idx === objectIndex) return;
         const o = p.FPDFPage_GetObject(page, idx);
         if (!o || p.FPDFPageObj_GetType(o) !== FPDF_PAGEOBJ_TEXT) return;
         const sp = allocUtf16(p, ' ');
-        try { p.FPDFText_SetText(o, sp); } finally { m._free(sp); }
+        const ok = p.FPDFText_SetText(o, sp);
+        m._free(sp);
+        if (!ok) moveOffPage(o);
       };
 
       // Zero out every secondary object in the group first so no ghost text
@@ -471,8 +484,12 @@ export async function editTextRun(
         const subFont = p.FPDFText_LoadStandardFont(doc, stdFontName);
         if (!subFont) throw new Error(`Could not load standard font "${stdFontName}".`);
         // Blank the primary (secondaries already suppressed above).
+        // Same fallback as suppress(): move off-page if space glyph is absent.
         const space = allocUtf16(p, ' ');
-        try { p.FPDFText_SetText(obj, space); } finally { m._free(space); }
+        const primaryOk = p.FPDFText_SetText(obj, space);
+        m._free(space);
+        if (!primaryOk) moveOffPage(obj);
+        // `matrix` was captured before this — newObj is still placed correctly.
         const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
         const wide = allocUtf16(p, newText);
         try { p.FPDFText_SetText(newObj, wide); } finally { m._free(wide); }
