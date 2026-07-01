@@ -395,11 +395,10 @@ function TextEditLayer({
   editBusy?: boolean;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
+  // Keep previous runs while re-fetching so there's no loading flash on each commit.
   const [runs, setRuns] = useState<PdfTextRun[] | null>(null);
   const [active, setActive] = useState<{ index: number; indices: number[]; text: string } | null>(null);
   const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
-  // Track the rendered page height in CSS px so we can match the input font-size
-  // to the original text size (run height in PDF points × px/pt ratio).
   const layerRef = useRef<HTMLDivElement>(null);
   const [pagePxH, setPagePxH] = useState(0);
   useEffect(() => {
@@ -411,12 +410,13 @@ function TextEditLayer({
     update();
     return () => ro.disconnect();
   }, []);
-  // Guard against onBlur re-committing after Enter/Escape already handled it.
+  // Guard against onBlur firing after Enter/Escape already handled the action.
   const suppressBlurRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    setRuns(null);
+    // Do NOT reset runs to null — keep previous runs visible while re-fetching
+    // so there's no "Analyzing text…" spinner after each commit.
     import('../textedit-pdfium')
       .then(({ listTextRuns }) => listTextRuns(bytes, pageIndex))
       .then((r) => {
@@ -426,12 +426,11 @@ function TextEditLayer({
         }
       })
       .catch(() => !cancelled && setRuns([]));
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [bytes, pageIndex]);
 
   if (!size) return null;
+  // Show a minimal loading layer only on the very first load (runs === null).
   if (!runs) {
     return (
       <div ref={layerRef} className="cpdf__textedit" aria-live="polite" aria-label="Analyzing text…">
@@ -439,30 +438,51 @@ function TextEditLayer({
       </div>
     );
   }
-  const boxStyle = (r: PdfTextRun) => ({
+
+  const boxStyle = (r: PdfTextRun): React.CSSProperties => ({
     left: `${(r.left / size.width) * 100}%`,
     top: `${((size.height - r.top) / size.height) * 100}%`,
     width: `${((r.right - r.left) / size.width) * 100}%`,
     height: `${((r.top - r.bottom) / size.height) * 100}%`,
   });
-  // Font-size in CSS px ≈ run height (PDF points) × page px/pt scale.
-  // 0.82 corrects for descenders: the PDF bounding box includes them, but
-  // CSS font-size targets cap-height, so scaling slightly down looks right.
-  const runFontPx = (r: PdfTextRun): number | undefined => {
-    if (!pagePxH || !size?.height) return undefined;
-    const px = Math.round((r.top - r.bottom) / size.height * pagePxH * 0.82);
-    return px > 0 ? px : undefined;
+
+  // Build the full style for the active input: position from PDF bounds,
+  // font properties extracted from PDFium so the input matches the original text.
+  const inputStyle = (r: PdfTextRun): React.CSSProperties => {
+    const scale = pagePxH && size?.height ? pagePxH / size.height : 0;
+    const fsPx = scale > 0 ? Math.round(r.fontSizePt * scale) : undefined;
+    return {
+      ...boxStyle(r),
+      fontFamily: r.fontFamily,
+      fontWeight: r.fontWeight,
+      fontStyle: r.fontItalic ? 'italic' : 'normal',
+      color: r.color,
+      ...(fsPx && fsPx > 0 ? { fontSize: `${fsPx}px` } : {}),
+    };
   };
-  const commit = (index: number, indices: number[], text: string, original: string) => {
-    suppressBlurRef.current = true; // prevent onBlur from re-committing
-    if (!text.trim()) { setActive(null); return; } // empty → cancel; never call SetText("")
-    if (text !== original) onCommit(pageIndex, index, indices, text);
-    setActive(null);
+
+  // Tab-order: top-to-bottom, then left-to-right (reading order).
+  const sortedRuns = [...runs].sort((a, b) => {
+    const dy = Math.round((b.top - a.top) * 10);
+    return dy !== 0 ? dy : a.left - b.left;
+  });
+
+  // Commit current text and optionally activate the next run (Tab navigation).
+  const commitAndMove = (
+    index: number, indices: number[], text: string, original: string,
+    nextRun: PdfTextRun | null,
+  ) => {
+    suppressBlurRef.current = true;
+    if (text.trim() && text !== original) onCommit(pageIndex, index, indices, text);
+    setActive(nextRun ? { index: nextRun.index, indices: nextRun.indices, text: nextRun.text } : null);
   };
+
+  // Cancel — revert to original without saving.
   const cancel = () => {
-    suppressBlurRef.current = true; // prevent onBlur from committing after Escape
+    suppressBlurRef.current = true;
     setActive(null);
   };
+
   return (
     <div ref={layerRef} className="cpdf__textedit">
       {runs.map((r) =>
@@ -470,32 +490,44 @@ function TextEditLayer({
           <input
             key={r.index}
             className="cpdf__textedit-input"
-            style={{ ...boxStyle(r), ...(runFontPx(r) ? { fontSize: `${runFontPx(r)}px` } : {}) }}
+            style={inputStyle(r)}
             autoFocus
             value={active.text}
             aria-label="Edit text"
             onFocus={(e) => {
-              suppressBlurRef.current = false; // clear any leftover suppress from cancel()
+              suppressBlurRef.current = false;
               e.currentTarget.select();
             }}
             onChange={(e) => setActive({ index: r.index, indices: r.indices, text: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                commit(r.index, r.indices, active.text, r.text);
+                commitAndMove(r.index, r.indices, active.text, r.text, null);
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 cancel();
+              } else if (e.key === 'Tab') {
+                e.preventDefault();
+                const ci = sortedRuns.findIndex((x) => x.index === r.index);
+                const next = e.shiftKey
+                  ? (ci > 0 ? sortedRuns[ci - 1] : null)
+                  : (ci < sortedRuns.length - 1 ? sortedRuns[ci + 1] : null);
+                commitAndMove(r.index, r.indices, active.text, r.text, next);
               }
             }}
             onBlur={(e) => {
-              // Suppress if Enter/Escape already handled the commit/cancel.
               if (suppressBlurRef.current) { suppressBlurRef.current = false; return; }
-              // Clicking another run button: let that button's onClick handle it.
               const rel = e.relatedTarget as HTMLElement | null;
-              if (rel?.classList.contains('cpdf__textedit-run')) return;
-              // Clicking anywhere else (toolbar, outside PDF): auto-commit (doc UX).
-              commit(r.index, r.indices, active.text, r.text);
+              const clickingOtherRun = !!rel?.classList.contains('cpdf__textedit-run');
+              // Always commit on blur (whether moving to another run or clicking outside).
+              // When clicking another run, onBlur fires first; that button's onClick will
+              // activate it — so we just need to commit and NOT call setActive(null).
+              if (active.text.trim() && active.text !== r.text) {
+                onCommit(pageIndex, r.index, r.indices, active.text);
+              }
+              if (!clickingOtherRun) setActive(null);
+              // If clicking another run: keep active momentarily; that run's onClick fires
+              // immediately after and sets the new active. No setActive(null) = no flicker.
             }}
           />
         ) : (
@@ -508,7 +540,8 @@ function TextEditLayer({
             aria-label={`Edit text: ${r.text}`}
             disabled={editBusy}
             onClick={() => {
-              if (active) cancel(); // dismiss previous edit without committing
+              // onBlur on the previously active input already committed it.
+              // Just activate this run.
               setActive({ index: r.index, indices: r.indices, text: r.text });
             }}
           />
@@ -2354,7 +2387,7 @@ export function Viewer({
                 : editError
                   ? editError
                   : textRunsReady
-                    ? 'Click a blue text block to edit — then press Enter to apply, Esc to cancel'
+                    ? 'Click any text to edit — Tab to jump between runs, Esc to cancel'
                     : 'Analyzing text runs…'}
             </span>
             {editError && (
