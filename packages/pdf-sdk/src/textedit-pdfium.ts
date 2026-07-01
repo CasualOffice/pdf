@@ -213,6 +213,13 @@ export interface PdfTextRun {
   fontItalic: boolean;
   /** CSS color string for the text fill (e.g. "rgb(0,0,0)"). */
   color: string;
+  /**
+   * True when the font name contains a subset tag (e.g. "ABCDEF+Arial" per
+   * ISO 32000 §9.6.4). Subsetted fonts only carry glyphs already used in the
+   * document, so editing may silently substitute a standard font even if no
+   * visually new characters are introduced. Surfaced to the UI for a tooltip.
+   */
+  fontSubsetted: boolean;
 }
 
 /** List the text runs on a page. Adjacent PDFium text objects (which can be
@@ -299,6 +306,9 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
         if (rendered >= 3 && rendered <= 500) fontSizePt = rendered;
       }
 
+      // Subset fonts: base name has a 6-uppercase-letter prefix e.g. "ABCDEF+Arial"
+      // (ISO 32000 §9.6.4 Table 122). They only carry glyphs already in the doc.
+      const fontSubsetted = /^[A-Z]{6}\+/.test(name);
       return {
         index: g[0].index,
         indices: g.map((o) => o.index),
@@ -313,6 +323,7 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
         fontWeight,
         fontItalic: italic,
         color: `rgb(${cr}, ${cg}, ${cb})`,
+        fontSubsetted,
       };
     });
   });
@@ -389,18 +400,26 @@ function readFillColor(p: Pdfium, obj: number): [number, number, number, number]
 }
 
 /** Replace the logical text run starting at `objectIndex` on `pageIndex` with
- *  `newText`; returns updated document bytes. `objectIndices` lists all PDFium
- *  object indices that were grouped into this run (secondary objects are zeroed
- *  out after the primary is edited, so no ghost text remains). Keeps the
- *  original font when no new glyphs are introduced; otherwise substitutes a
- *  standard PDF font (Helvetica/Times/Courier) chosen by style heuristics. */
+ *  `newText`; returns updated document bytes and a flag indicating whether the
+ *  engine fell back to a standard PDF font.
+ *
+ *  `objectIndices` lists all PDFium object indices grouped into this run
+ *  (secondary objects are zeroed out after the primary is edited).
+ *
+ *  Font strategy (fail-closed):
+ *  - No new glyphs AND font is non-subsetted → keep original font (safe).
+ *  - Any new glyph OR font has a subset tag (ISO 32000 §9.6.4 "ABCDEF+Name")
+ *    → substitute Helvetica/Times/Courier (standard fonts: every viewer has
+ *    them, no embedding required). Subsetted fonts are treated as unreliable
+ *    even for same-char edits because their glyph-id encoding may not match
+ *    the Unicode PDFium returns via FPDFTextObj_GetText. */
 export async function editTextRun(
   src: Uint8Array,
   pageIndex: number,
   objectIndex: number,
   objectIndices: number[],
   newText: string,
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; substituted: boolean }> {
   try {
     return await withPage(src, pageIndex, (p, doc, page, textPage) => {
       const m = p.pdfium;
@@ -408,6 +427,16 @@ export async function editTextRun(
       if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) throw new Error('Selected object is not editable text.');
       const origText = readObjText(p, textPage, obj);
       const newChars = [...newText].filter((c) => !origText.includes(c));
+
+      const font = p.FPDFTextObj_GetFont(obj);
+      const flags = font ? p.FPDFFont_GetFlags(font) : 0;
+      const weight = font ? p.FPDFFont_GetWeight(font) : 400;
+      const name = font ? readFontName(p, font) : '';
+      // Subsetted font: base name starts with 6 uppercase letters + "+" per
+      // ISO 32000 §9.6.4. Even for same-char edits, glyph-id mapping is
+      // unreliable → always substitute a standard font.
+      const isSubset = /^[A-Z]{6}\+/.test(name);
+      const needsSubstitution = newChars.length > 0 || isSubset;
 
       // Suppress a secondary object by replacing its text with a single space.
       // FPDFText_SetText("") aborts in the WASM build; a space is invisible but
@@ -424,8 +453,8 @@ export async function editTextRun(
       // from per-character objects lingers after the primary is replaced.
       for (const idx of objectIndices) suppress(idx);
 
-      if (newChars.length === 0) {
-        // No new glyphs: the run's own font covers every character — keep it.
+      if (!needsSubstitution) {
+        // Keep original font — all chars already present and font is not subsetted.
         const wide = allocUtf16(p, newText);
         try {
           if (!p.FPDFText_SetText(obj, wide)) throw new Error('FPDFText_SetText failed.');
@@ -433,20 +462,15 @@ export async function editTextRun(
           m._free(wide);
         }
       } else {
-        // New glyphs introduced: substitute a standard PDF font so the characters
-        // render correctly (ISO 32000 §9.6.2 — every viewer has standard fonts).
-        const font = p.FPDFTextObj_GetFont(obj);
-        const flags = font ? p.FPDFFont_GetFlags(font) : 0;
-        const weight = font ? p.FPDFFont_GetWeight(font) : 400;
-        const name = font ? readFontName(p, font) : '';
+        // Substitute a standard PDF font so all characters render correctly
+        // (ISO 32000 §9.6.2 — every conforming viewer includes the 14 standard fonts).
         const size = readFontSize(p, obj) || 12;
         const matrix = readMatrix(p, obj);
         const color = readFillColor(p, obj);
         const stdFontName = pickStandardFont(flags, weight, name);
         const subFont = p.FPDFText_LoadStandardFont(doc, stdFontName);
         if (!subFont) throw new Error(`Could not load standard font "${stdFontName}".`);
-        // Also suppress the primary (already done above for secondaries, but the
-        // primary needs to be blanked separately since we insert a new object).
+        // Blank the primary (secondaries already suppressed above).
         const space = allocUtf16(p, ' ');
         try { p.FPDFText_SetText(obj, space); } finally { m._free(space); }
         const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
@@ -458,7 +482,7 @@ export async function editTextRun(
       }
 
       if (!p.FPDFPage_GenerateContent(page)) throw new Error('FPDFPage_GenerateContent failed.');
-      return saveDoc(p, doc);
+      return { bytes: saveDoc(p, doc), substituted: needsSubstitution };
     });
   } catch (e) {
     // If the WASM module aborted, its heap is unknown — reset the singleton so

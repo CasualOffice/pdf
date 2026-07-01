@@ -548,7 +548,7 @@ function TextEditLayer({
             type="button"
             className="cpdf__textedit-run"
             style={boxStyle(r)}
-            title={r.text}
+            title={r.fontSubsetted ? `${r.text}\n(Font is subsetted — editing may change the typeface)` : r.text}
             aria-label={`Edit text: ${r.text}`}
             disabled={editBusy}
             onClick={() => {
@@ -1743,6 +1743,7 @@ export function Viewer({
   // onDocumentReplaced call on exit so the text layer re-indexes.
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState<string | null>(null);
   const [textRunsReady, setTextRunsReady] = useState(false);
   // Refs for editBytes/editDirty so the mode→view teardown effect can read
   // current values without listing them as deps (which would re-run the effect
@@ -1756,9 +1757,8 @@ export function Viewer({
   const redactIdCounter = useRef(0);
   const nextRedactId = () => { redactIdCounter.current += 1; return redactIdCounter.current; };
 
-  // H-4: clear text-edit error when a new document is opened so stale messages
-  // from a previous file don't surface on a fresh doc's first run fetch.
-  useEffect(() => { setEditError(null); }, [documentId]);
+  // H-4: clear text-edit error/note when a new document is opened.
+  useEffect(() => { setEditError(null); setEditNote(null); }, [documentId]);
 
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
@@ -2009,7 +2009,7 @@ export function Viewer({
     setEditError(null);
     try {
       const { editTextRun } = await import('../textedit-pdfium');
-      const out = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText);
+      const { bytes: out, substituted } = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText);
       // Use openDocumentBuffer (not onDocumentReplaced) so the Viewer stays mounted
       // and the user can keep editing without re-clicking the tool. The text layer
       // re-index via onDocumentReplaced is deferred to when they exit text-edit mode.
@@ -2017,6 +2017,8 @@ export function Viewer({
       await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
       editBytesRef.current = out; setEditBytes(out); // updated bytes for the next commit
       editDirtyRef.current = true;
+      // Let the user know when we silently swapped the font (subsetted or new glyphs).
+      setEditNote(substituted ? 'Font changed to a standard substitute (original was embedded/subsetted).' : null);
       onEdited?.();
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
@@ -2426,12 +2428,14 @@ export function Viewer({
                 ? 'Applying edit…'
                 : editError
                   ? editError
-                  : textRunsReady
-                    ? 'Click any text to edit — Tab to jump between runs, Esc to cancel'
-                    : 'Analyzing text runs…'}
+                  : editNote
+                    ? editNote
+                    : textRunsReady
+                      ? 'Click any text to edit — Tab to jump between runs, Esc to cancel'
+                      : 'Analyzing text runs…'}
             </span>
-            {editError && (
-              <button type="button" className="cpdf__iconbtn" aria-label="Dismiss error" onClick={() => setEditError(null)}>
+            {(editError || editNote) && (
+              <button type="button" className="cpdf__iconbtn" aria-label="Dismiss" onClick={() => { setEditError(null); setEditNote(null); }}>
                 <Icon name="close" size={16} />
               </button>
             )}
