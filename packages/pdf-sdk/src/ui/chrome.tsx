@@ -447,17 +447,19 @@ function TextEditLayer({
   });
 
   // Build the full style for the active input: position from PDF bounds,
-  // font properties extracted from PDFium so the input matches the original text.
+  // font properties extracted from PDFium so the input visually matches.
+  // fontSizePt = rendered size in PDF user space (design × text-matrix scale).
+  // × page_scale → CSS px; × 0.82 corrects for CSS em-square > visual glyph height.
   const inputStyle = (r: PdfTextRun): React.CSSProperties => {
     const scale = pagePxH && size?.height ? pagePxH / size.height : 0;
-    const fsPx = scale > 0 ? Math.round(r.fontSizePt * scale) : undefined;
+    const fsPx = scale > 0 ? Math.round(r.fontSizePt * scale * 0.82) : undefined;
     return {
       ...boxStyle(r),
       fontFamily: r.fontFamily,
       fontWeight: r.fontWeight,
       fontStyle: r.fontItalic ? 'italic' : 'normal',
       color: r.color,
-      ...(fsPx && fsPx > 0 ? { fontSize: `${fsPx}px` } : {}),
+      ...(fsPx && fsPx > 4 ? { fontSize: `${fsPx}px` } : {}),
     };
   };
 

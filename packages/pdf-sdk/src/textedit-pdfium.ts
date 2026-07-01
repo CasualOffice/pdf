@@ -239,31 +239,33 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       objs.push({ index: i, text, left, bottom, right, top });
     }
 
-    // Sort top→bottom (descending PDF y), then left→right within a line.
+    // Sort by baseline (bottom coordinate) descending — higher on page first.
+    // Baseline is stable across mixed-height characters on the same line
+    // (capitals, descenders, accents all differ in top but share the baseline).
+    // Within the same baseline (tolerance 3pt), sort left→right.
     objs.sort((a, b) => {
-      const aMid = (a.bottom + a.top) / 2;
-      const bMid = (b.bottom + b.top) / 2;
-      const dy = bMid - aMid;
-      if (Math.abs(dy) > 1) return dy;
+      const dy = b.bottom - a.bottom;
+      if (Math.abs(dy) > 3) return dy;
       return a.left - b.left;
     });
 
-    // Group adjacent objects into logical runs. Two objects merge when:
-    //  • their vertical midpoints are within 50% of a font height (same line), AND
-    //  • the horizontal gap between them is < 2× the font height, capped at 40pt
-    //    (~0.55") to avoid merging across wide layout gaps at large font sizes.
-    // A negative gap (overlap) up to 50% of font height is tolerated for kerning.
+    // Group adjacent objects into logical runs (word/line level).
+    // Two objects merge when:
+    //  • their baselines are within 25% of the taller character's height (same line)
+    //  • the horizontal gap is < 3× font height, capped at 72pt (1") to handle
+    //    word spacing at any size without merging across column gaps
+    //  • overlap ≤ 50% of height (tolerate kerning but not two separate words)
     const groups: Obj[][] = [];
     for (const o of objs) {
       const h = o.top - o.bottom;
-      const maxGap = Math.min(h * 2, 40);
       const last = groups.length ? groups[groups.length - 1] : null;
       if (last) {
         const prev = last[last.length - 1];
-        const prevMid = (prev.bottom + prev.top) / 2;
-        const thisMid = (o.bottom + o.top) / 2;
+        const prevH = prev.top - prev.bottom;
+        const sameLine = Math.abs(prev.bottom - o.bottom) < Math.max(prevH, h) * 0.25;
         const hGap = o.left - prev.right;
-        if (Math.abs(prevMid - thisMid) < h * 0.5 && hGap < maxGap && hGap >= -h * 0.5) {
+        const maxGap = Math.min(Math.max(prevH, h) * 3, 72);
+        if (sameLine && hGap < maxGap && hGap >= -h * 0.5) {
           last.push(o);
           continue;
         }
@@ -278,10 +280,25 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       const flags = font ? p.FPDFFont_GetFlags(font) : 0;
       const rawWeight = font ? p.FPDFFont_GetWeight(font) : 400;
       const name = font ? readFontName(p, font) : '';
-      const fontSizePt = primaryObj ? (readFontSize(p, primaryObj) || 12) : 12;
+      const designSizePt = primaryObj ? (readFontSize(p, primaryObj) || 0) : 0;
       const [cr, cg, cb] = primaryObj ? readFillColor(p, primaryObj) : [0, 0, 0, 255];
       const italic = (flags & FLAG_ITALIC) !== 0 || /italic|oblique/i.test(name);
       const fontWeight = Math.min(900, Math.max(100, rawWeight > 0 ? rawWeight : 400));
+
+      // FPDFTextObj_GetFontSize returns the *design* font size (before the text
+      // matrix scale). Rendered size = designSizePt × |matrix.d|. Use the primary
+      // object's bounding-box height as a sanity fallback when the matrix-corrected
+      // value is out of a plausible reading range (4–200pt).
+      const primaryH = g[0].top - g[0].bottom;
+      let fontSizePt = primaryH; // safe default = actual bounding box height
+      if (primaryObj && designSizePt > 0) {
+        const mtx = readMatrix(p, primaryObj); // [a b c d e f]
+        const matD = Math.abs(mtx[3]);
+        const rendered = designSizePt * (matD > 0.001 ? matD : 1);
+        // Accept only plausible rendered sizes; fall back to bbox height otherwise.
+        if (rendered >= 3 && rendered <= 500) fontSizePt = rendered;
+      }
+
       return {
         index: g[0].index,
         indices: g.map((o) => o.index),
