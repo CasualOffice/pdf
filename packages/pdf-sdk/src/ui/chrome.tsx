@@ -262,6 +262,7 @@ function ImagePlacer({
  *  origin) — zoom-independent, so the same mark maps cleanly to the rendered
  *  image at any scale. */
 interface RedactRect {
+  id: number;
   pageIndex: number;
   x: number;
   y: number;
@@ -289,7 +290,7 @@ function RedactionLayer({
 }: {
   pageIndex: number;
   redactions: RedactRect[];
-  onAdd: (r: RedactRect) => void;
+  onAdd: (r: Omit<RedactRect, 'id'>) => void;
   onRemove: (mark: RedactRect) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -329,8 +330,8 @@ function RedactionLayer({
         setDraft(null);
       }}
     >
-      {mine.map((r, i) => (
-        <div key={i} className="cpdf__redactrect" style={pctStyle(r)}>
+      {mine.map((r) => (
+        <div key={r.id} className="cpdf__redactrect" style={pctStyle(r)}>
           <button
             type="button"
             className="cpdf__redactrect-remove"
@@ -401,6 +402,8 @@ function TextEditLayer({
   const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
   const layerRef = useRef<HTMLDivElement>(null);
   const [pagePxH, setPagePxH] = useState(0);
+  // Fire onReady only once per tool activation (not after every commit re-fetch).
+  const firstRunsDoneRef = useRef(false);
   useEffect(() => {
     const el = layerRef.current;
     if (!el) return;
@@ -422,7 +425,10 @@ function TextEditLayer({
       .then((r) => {
         if (!cancelled) {
           setRuns(r);
-          onReady?.();
+          if (!firstRunsDoneRef.current) {
+            firstRunsDoneRef.current = true;
+            onReady?.();
+          }
         }
       })
       .catch(() => !cancelled && setRuns([]));
@@ -453,12 +459,13 @@ function TextEditLayer({
   const inputStyle = (r: PdfTextRun): React.CSSProperties => {
     const scale = pagePxH && size?.height ? pagePxH / size.height : 0;
     const fsPx = scale > 0 ? Math.round(r.fontSizePt * scale * 0.82) : undefined;
+    const isDark = document.documentElement.dataset.theme === 'dark';
     return {
       ...boxStyle(r),
       fontFamily: r.fontFamily,
       fontWeight: r.fontWeight,
       fontStyle: r.fontItalic ? 'italic' : 'normal',
-      color: r.color,
+      color: isDark ? '#f0f0f0' : r.color,
       ...(fsPx && fsPx > 4 ? { fontSize: `${fsPx}px` } : {}),
     };
   };
@@ -518,6 +525,9 @@ function TextEditLayer({
               }
             }}
             onBlur={(e) => {
+              // Don't commit while a previous commit is in-flight — the bytes
+              // snapshot is still updating and a double-commit would corrupt the run.
+              if (editBusy) return;
               if (suppressBlurRef.current) { suppressBlurRef.current = false; return; }
               const rel = e.relatedTarget as HTMLElement | null;
               const clickingOtherRun = !!rel?.classList.contains('cpdf__textedit-run');
@@ -1731,10 +1741,25 @@ export function Viewer({
   const [editBytes, setEditBytes] = useState<Uint8Array | null>(null);
   // True once at least one text-edit commit has been made; triggers an
   // onDocumentReplaced call on exit so the text layer re-indexes.
-  const [editDirty, setEditDirty] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [textRunsReady, setTextRunsReady] = useState(false);
+  // Refs for editBytes/editDirty so the mode→view teardown effect can read
+  // current values without listing them as deps (which would re-run the effect
+  // on every commit and wipe in-progress edits).
+  const editBytesRef = useRef<Uint8Array | null>(null);
+  const editDirtyRef = useRef(false);
+  const onDocumentReplacedRef = useRef(onDocumentReplaced);
+  onDocumentReplacedRef.current = onDocumentReplaced;
+  // Monotonically increasing id for redaction marks — stable identity for React
+  // keys and filter-by-id (avoids reference-equality issues after state updates).
+  const redactIdCounter = useRef(0);
+  const nextRedactId = () => { redactIdCounter.current += 1; return redactIdCounter.current; };
+
+  // H-4: clear text-edit error when a new document is opened so stale messages
+  // from a previous file don't surface on a fresh doc's first run fetch.
+  useEffect(() => { setEditError(null); }, [documentId]);
+
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
@@ -1956,12 +1981,12 @@ export function Viewer({
       // the src to a new Blob URL — this triggers EmbedPDF to re-index the text
       // layer (search/selection fix). In-session commits used openDocumentBuffer
       // (no remount) so the re-index is deferred to here.
-      if (editDirty && editBytes && onDocumentReplaced) {
-        onDocumentReplaced(editBytes);
+      if (editDirtyRef.current && editBytesRef.current && onDocumentReplacedRef.current) {
+        onDocumentReplacedRef.current(editBytesRef.current);
       }
       setTextEditing(false);
-      setEditBytes(null);
-      setEditDirty(false);
+      editBytesRef.current = null; setEditBytes(null);
+      editDirtyRef.current = false;
       setTextRunsReady(false);
       return;
     }
@@ -1970,28 +1995,28 @@ export function Viewer({
     annoApi?.deselectAnnotation();
     setRedacting(false);
     setPendingImage(null);
-    // Start warming the PDFium WASM in the background now so it's ready by the
-    // time the user clicks a text run (avoids a 10-15s stall on first use).
-    import('../textedit-pdfium').then(({ preloadPdfium }) => preloadPdfium());
+    // PDFium WASM is already warmed by the useEffect that fires on mode→Edit.
+    // Do NOT call preloadPdfium() here again — it would fire a second redundant import.
     const ab = await exportCap.saveAsCopy().toPromise();
     if (!ab) return;
-    setEditBytes(new Uint8Array(ab));
+    const bytes = new Uint8Array(ab);
+    editBytesRef.current = bytes; setEditBytes(bytes);
     setTextEditing(true);
   };
   const commitTextEdit = async (pageIndex: number, objectIndex: number, objectIndices: number[], newText: string) => {
-    if (!editBytes || !docCap || editBusy) return;
+    if (!editBytesRef.current || !docCap || editBusy) return;
     setEditBusy(true);
     setEditError(null);
     try {
       const { editTextRun } = await import('../textedit-pdfium');
-      const out = await editTextRun(editBytes, pageIndex, objectIndex, objectIndices, newText);
+      const out = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText);
       // Use openDocumentBuffer (not onDocumentReplaced) so the Viewer stays mounted
       // and the user can keep editing without re-clicking the tool. The text layer
       // re-index via onDocumentReplaced is deferred to when they exit text-edit mode.
       const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
       await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
-      setEditBytes(out); // updated bytes for the next commit
-      setEditDirty(true);
+      editBytesRef.current = out; setEditBytes(out); // updated bytes for the next commit
+      editDirtyRef.current = true;
       onEdited?.();
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
@@ -2015,9 +2040,12 @@ export function Viewer({
       const rects = s.segmentRects?.length ? s.segmentRects : [s.rect];
       for (const r of rects) {
         marks.push({
+          id: nextRedactId(),
           pageIndex: s.pageIndex,
           x: r.origin.x / size.width,
-          y: r.origin.y / size.height,
+          // PDF origin is bottom-left; CSS is top-left. Flip so the mark lands
+          // over the selected text in the page overlay (top-left fraction).
+          y: 1 - (r.origin.y + r.size.height) / size.height,
           w: r.size.width / size.width,
           h: r.size.height / size.height,
         });
@@ -2043,9 +2071,11 @@ export function Viewer({
       if (!size) continue;
       for (const r of res.rects) {
         marks.push({
+          id: nextRedactId(),
           pageIndex: res.pageIndex,
           x: r.origin.x / size.width,
-          y: r.origin.y / size.height,
+          // PDF origin is bottom-left; CSS is top-left. Flip to overlay correctly.
+          y: 1 - (r.origin.y + r.size.height) / size.height,
           w: r.size.width / size.width,
           h: r.size.height / size.height,
         });
@@ -2072,8 +2102,14 @@ export function Viewer({
   // Truly leaving edit (mode → View): tear down every editing surface so none
   // persists in read-only mode — pending placements, redaction marks, the
   // organize / signature modals, and any armed signature placement.
+  // C-4: use refs (not state) to read editDirty/editBytes so this effect never
+  // stales — adding them as deps would cause it to re-fire on every commit.
   useEffect(() => {
     if (mode === 'view') {
+      // Preserve any text edits made before the mode switch.
+      if (editDirtyRef.current && editBytesRef.current && onDocumentReplacedRef.current) {
+        onDocumentReplacedRef.current(editBytesRef.current);
+      }
       setPendingImage(null);
       setRedacting(false);
       setRedactions([]);
@@ -2082,7 +2118,9 @@ export function Viewer({
       setOrganizing(false);
       setSigning(false);
       setTextEditing(false);
-      setEditBytes(null);
+      editBytesRef.current = null; setEditBytes(null);
+      editDirtyRef.current = false;
+      setTextRunsReady(false);
       sigCap?.forDocument(documentId).deactivatePlacement();
     }
   }, [mode, sigCap, documentId]);
@@ -2315,8 +2353,8 @@ export function Viewer({
                       <RedactionLayer
                         pageIndex={pageIndex}
                         redactions={redactions}
-                        onAdd={(r) => setRedactions((prev) => [...prev, r])}
-                        onRemove={(mark) => setRedactions((prev) => prev.filter((r) => r !== mark))}
+                        onAdd={(r) => setRedactions((prev) => [...prev, { ...r, id: nextRedactId() }])}
+                        onRemove={(mark) => setRedactions((prev) => prev.filter((r) => r.id !== mark.id))}
                       />
                     )}
                   </PagePointerProvider>
@@ -2420,7 +2458,7 @@ export function Viewer({
             <button
               type="button"
               className="cpdf__btn cpdf__btn--danger"
-              disabled={redactBusy || !redactions.length}
+              disabled={redactBusy || editBusy || !redactions.length}
               onClick={() => setConfirmRedact(true)}
             >
               {redactBusy ? 'Applying…' : 'Apply redactions'}

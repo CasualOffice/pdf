@@ -258,7 +258,7 @@ export function App() {
       if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
       else if (k === 'p') { e.preventDefault(); window.open(src, '_blank'); }
-      else if (k === 'f') { e.preventDefault(); api.current?.openSearch(); }
+      else if (k === 'f' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) { e.preventDefault(); api.current?.openSearch(); }
       else if (k === 'z' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
         // Two-level undo: annotation history first, then document-version undo.
         e.preventDefault();
