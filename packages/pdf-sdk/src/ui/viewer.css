@@ -1043,7 +1043,29 @@
   position: absolute;
   background: rgba(229, 72, 77, 0.32);
   box-shadow: inset 0 0 0 1.5px var(--color-danger, #e5484d);
-  pointer-events: none;
+  pointer-events: auto;
+}
+.cpdf__redactrect-remove {
+  display: none;
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #b42318;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  z-index: 1;
+  pointer-events: auto;
+}
+.cpdf__redactrect:hover .cpdf__redactrect-remove {
+  display: block;
 }
 .cpdf__redactrect--draft {
   background: rgba(229, 72, 77, 0.2);
@@ -1081,42 +1103,44 @@
   pointer-events: none;
   white-space: nowrap;
 }
+/* Run hitbox: invisible at rest — just captures clicks with a text cursor.
+   No visible box so the PDF reads naturally in edit mode. */
 .cpdf__textedit-run {
   position: absolute;
   margin: 0;
   padding: 0;
-  border: 0;
+  border: none;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--color-primary, #2d8cff) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary, #2d8cff) 45%, transparent);
+  background: transparent;
   cursor: text;
   pointer-events: auto;
-  transition: background 0.1s, box-shadow 0.1s;
+  transition: background 80ms;
 }
 .cpdf__textedit-run:hover {
-  background: color-mix(in srgb, var(--color-primary, #2d8cff) 20%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--color-primary, #2d8cff);
+  background: rgba(45, 140, 255, 0.07);
 }
+[data-theme='dark'] .cpdf__textedit-run:hover {
+  background: rgba(45, 140, 255, 0.18);
+}
+/* Active input: white background covers the PDF glyphs so the user sees their
+   own edits cleanly. Font properties (family/size/weight/color) come from inline
+   style, matched to the PDF run by PDFium metadata. */
 .cpdf__textedit-input {
   position: absolute;
   margin: 0;
   padding: 0 2px;
-  border: 2px solid var(--color-primary, #2d8cff);
+  border: none;
   border-radius: 2px;
-  /* Slightly translucent so the user can see the original text through it. */
-  background: rgba(255, 255, 255, 0.96);
-  color: #111;
-  /* Use a proportional font and fill the run height so the text size is close
-     to the original. The PDF font size can't be matched exactly from the browser,
-     but line-height: 1 + height: 100% keeps it in the right ballpark. */
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 100%;
-  line-height: 1;
+  background: #fff;
+  line-height: 1.2;
   pointer-events: auto;
-  box-shadow: 0 2px 12px rgba(45, 140, 255, 0.3), 0 1px 4px rgba(0,0,0,0.18);
   outline: none;
-  min-width: 80px;
+  box-shadow: 0 0 0 1.5px rgba(45, 140, 255, 0.55), 0 2px 8px rgba(0,0,0,0.12);
+  caret-color: #2d8cff;
   z-index: 2;
+}
+[data-theme='dark'] .cpdf__textedit-input {
+  background: #23272e;
 }
 .cpdf__placebanner--redact {
   background: var(--color-danger, #e5484d);

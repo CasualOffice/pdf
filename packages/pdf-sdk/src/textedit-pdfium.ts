@@ -175,6 +175,17 @@ async function withPage<T>(
   }
 }
 
+/** Map PDFium font flags + name to a CSS font-family stack so the edit input
+ *  renders in approximately the same typeface as the original PDF text. */
+function cssFontFamily(flags: number, name: string): string {
+  const n = name.toLowerCase();
+  const mono = (flags & FLAG_FIXED_PITCH) !== 0 || /courier|mono|consol/.test(n);
+  const serif = !mono && ((flags & FLAG_SERIF) !== 0 || /times|serif|georgia|roman|garamond|minion/.test(n));
+  if (mono) return "'Courier New', Courier, monospace";
+  if (serif) return "Georgia, 'Times New Roman', Times, serif";
+  return "'Helvetica Neue', Helvetica, Arial, sans-serif";
+}
+
 /** A logical text run shown in the edit overlay (may span multiple raw PDFium
  *  text objects that were merged by proximity). */
 export interface PdfTextRun {
@@ -192,6 +203,16 @@ export interface PdfTextRun {
   /** Always true — every run is offered for editing; errors from the engine
    *  surface via the edit banner so the document stays unchanged on failure. */
   editable: boolean;
+  /** CSS font-family stack matching the run's typeface (serif/sans/mono). */
+  fontFamily: string;
+  /** Font size in PDF user-space points (use × px/pt to get CSS pixels). */
+  fontSizePt: number;
+  /** CSS font-weight (100–900). */
+  fontWeight: number;
+  /** True if the run's font is italic/oblique. */
+  fontItalic: boolean;
+  /** CSS color string for the text fill (e.g. "rgb(0,0,0)"). */
+  color: string;
 }
 
 /** List the text runs on a page. Adjacent PDFium text objects (which can be
@@ -250,16 +271,33 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       groups.push([o]);
     }
 
-    return groups.map((g) => ({
-      index: g[0].index,
-      indices: g.map((o) => o.index),
-      text: g.map((o) => o.text).join(''),
-      left: Math.min(...g.map((o) => o.left)),
-      bottom: Math.min(...g.map((o) => o.bottom)),
-      right: Math.max(...g.map((o) => o.right)),
-      top: Math.max(...g.map((o) => o.top)),
-      editable: true,
-    }));
+    return groups.map((g) => {
+      // Extract font metadata from the primary (first) object for display.
+      const primaryObj = p.FPDFPage_GetObject(page, g[0].index);
+      const font = primaryObj ? p.FPDFTextObj_GetFont(primaryObj) : 0;
+      const flags = font ? p.FPDFFont_GetFlags(font) : 0;
+      const rawWeight = font ? p.FPDFFont_GetWeight(font) : 400;
+      const name = font ? readFontName(p, font) : '';
+      const fontSizePt = primaryObj ? (readFontSize(p, primaryObj) || 12) : 12;
+      const [cr, cg, cb] = primaryObj ? readFillColor(p, primaryObj) : [0, 0, 0, 255];
+      const italic = (flags & FLAG_ITALIC) !== 0 || /italic|oblique/i.test(name);
+      const fontWeight = Math.min(900, Math.max(100, rawWeight > 0 ? rawWeight : 400));
+      return {
+        index: g[0].index,
+        indices: g.map((o) => o.index),
+        text: g.map((o) => o.text).join(''),
+        left: Math.min(...g.map((o) => o.left)),
+        bottom: Math.min(...g.map((o) => o.bottom)),
+        right: Math.max(...g.map((o) => o.right)),
+        top: Math.max(...g.map((o) => o.top)),
+        editable: true,
+        fontFamily: cssFontFamily(flags, name),
+        fontSizePt,
+        fontWeight,
+        fontItalic: italic,
+        color: `rgb(${cr}, ${cg}, ${cb})`,
+      };
+    });
   });
 }
 
