@@ -104,14 +104,23 @@ export function preloadPdfium(): void {
 /** Read a text object's current text (UTF-16LE) via a text page. */
 function readObjText(p: Pdfium, textPage: number, obj: number): string {
   const m = p.pdfium;
-  const need = p.FPDFTextObj_GetText(obj, textPage, 0, 0); // count incl. terminator
+  // First call with null/0 returns the required size. PDFium may express this
+  // in UTF-16 code units OR in bytes depending on build; we treat it as units
+  // and allocate byteLen = need * 2 to be safe under either interpretation.
+  const need = p.FPDFTextObj_GetText(obj, textPage, 0, 0);
   if (need <= 0) return '';
-  const buf = m._malloc(need * 2);
+  const byteLen = need * 2;
+  const buf = m._malloc(byteLen);
   try {
-    p.FPDFTextObj_GetText(obj, textPage, buf, need);
+    // Pass byteLen (not need) so PDFium has the full buffer regardless of
+    // whether it interprets the length as bytes or code units.
+    p.FPDFTextObj_GetText(obj, textPage, buf, byteLen);
     const u16 = new Uint16Array(m.HEAPU8.buffer, buf, need);
     let s = '';
-    for (let i = 0; i < need - 1; i++) s += String.fromCharCode(u16[i]);
+    for (let i = 0; i < u16.length; i++) {
+      if (u16[i] === 0) break; // stop at null terminator, not at `need - 1`
+      s += String.fromCharCode(u16[i]);
+    }
     return s;
   } finally {
     m._free(buf);
