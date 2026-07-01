@@ -15,6 +15,10 @@
     "./sign": {
       "types": "./src/sign.ts",
       "import": "./src/sign.ts"
+    },
+    "./page-furniture": {
+      "types": "./src/page-furniture.ts",
+      "import": "./src/page-furniture.ts"
     }
   },
   "scripts": {

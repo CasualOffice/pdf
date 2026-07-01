@@ -444,3 +444,98 @@ body {
   opacity: 0.55;
   cursor: default;
 }
+
+/* ── Page Furniture dialog ─────────────────────────────────────────────── */
+.pf-dialog {
+  width: min(540px, 96vw);
+}
+.pf-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 12px 0 16px;
+  background: var(--color-surface-2, #f0f0f0);
+  border-radius: 8px;
+  padding: 3px;
+}
+.pf-tab {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-2, #555);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.pf-tab[data-active] {
+  background: var(--color-surface-1, #fff);
+  color: var(--color-text-1, #111);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.pf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pf-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.pf-fieldset {
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+  margin: 0;
+}
+.pf-fieldset legend {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-2, #666);
+  padding: 0 4px;
+}
+.pf-trio {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.pf-trio label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-2, #555);
+}
+.pf-trio label input {
+  padding: 5px 8px;
+  border: 1px solid var(--color-border, #d8d8d8);
+  border-radius: 6px;
+  font-size: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.pf-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  padding-top: 18px;
+}
+.pf-hint {
+  font-size: 12px;
+  color: var(--color-text-2, #666);
+  margin: 0;
+}
+.pf-hint code {
+  background: var(--color-surface-2, #f0f0f0);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+[data-theme='dark'] .pf-tabs { background: #2a2d35; }
+[data-theme='dark'] .pf-tab[data-active] { background: #383d48; }
+[data-theme='dark'] .pf-fieldset { border-color: #3a3d47; }
+[data-theme='dark'] .pf-trio label input { background: #23272e; color: #e0e0e0; border-color: #3a3d47; }

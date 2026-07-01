@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
+import { PageFurnitureDialog } from './PageFurnitureDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
@@ -36,6 +37,7 @@ export function App() {
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [pageFurniture, setPageFurniture] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -244,6 +246,7 @@ export function App() {
         { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
         { divider: true },
         { label: 'Digitally sign…', onSelect: () => setSigning(true) },
+        { label: 'Watermark / Header / Bates…', onSelect: () => setPageFurniture(true) },
         { divider: true },
         { label: 'About Casual PDF', onSelect: () => setAbout(true) },
       ],
@@ -372,6 +375,13 @@ export function App() {
       </main>
 
       {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}
+      {pageFurniture && (
+        <PageFurnitureDialog
+          api={api.current}
+          onDocumentReplaced={onDocumentReplaced}
+          onClose={() => setPageFurniture(false)}
+        />
+      )}
 
       {about && (
         <div className="dialog__scrim" role="presentation" onClick={() => setAbout(false)}>
