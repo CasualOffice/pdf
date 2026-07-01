@@ -415,18 +415,20 @@ function TextEditLayer({
   }, []);
   // Guard against onBlur firing after Enter/Escape already handled the action.
   const suppressBlurRef = useRef(false);
-  // If a commit is in-flight when the user blurs an input, we can't commit
-  // immediately (editBusy). Queue the args here; the useEffect below flushes
-  // them once editBusy transitions back to false.
+  // If a commit is in-flight when the user blurs an input (or presses Enter/Tab),
+  // we can't start a new commit immediately. Queue the args here; the useEffect
+  // below flushes them once editBusy transitions back to false.
   type CommitArgs = [number, number, number[], string];
   const pendingCommitRef = useRef<CommitArgs | null>(null);
+  // Stable ref so the useEffect never captures a stale onCommit closure.
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
   useEffect(() => {
     if (!editBusy && pendingCommitRef.current) {
       const args = pendingCommitRef.current;
       pendingCommitRef.current = null;
-      onCommit(...args);
+      onCommitRef.current(...args);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editBusy]);
 
   useEffect(() => {
@@ -489,13 +491,21 @@ function TextEditLayer({
     return dy !== 0 ? dy : a.left - b.left;
   });
 
-  // Commit current text and optionally activate the next run (Tab navigation).
+  // Commit current text and optionally activate the next run (Tab/Enter navigation).
+  // Uses the same pending queue as onBlur so edits aren't silently dropped when
+  // a previous commit is still in-flight.
   const commitAndMove = (
     index: number, indices: number[], text: string, original: string,
     nextRun: PdfTextRun | null,
   ) => {
     suppressBlurRef.current = true;
-    if (text.trim() && text !== original) onCommit(pageIndex, index, indices, text);
+    if (text.trim() && text !== original) {
+      if (editBusy) {
+        pendingCommitRef.current = [pageIndex, index, indices, text];
+      } else {
+        onCommit(pageIndex, index, indices, text);
+      }
+    }
     setActive(nextRun ? { index: nextRun.index, indices: nextRun.indices, text: nextRun.text } : null);
   };
 
