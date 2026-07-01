@@ -278,16 +278,19 @@ const pctStyle = (r: { x: number; y: number; w: number; h: number }) => ({
 
 /** Drag-to-mark redaction regions on a page. Captures fractional rects from its
  *  own bounding box (independent of EmbedPDF's pointer/coord system) and draws
- *  the committed + in-progress marks as red boxes. Applying the marks rasterizes
+ *  the committed + in-progress marks as red boxes. Each mark has an ✕ button
+ *  (visible on hover) to remove it individually. Applying the marks rasterizes
  *  + flattens the page (see redact.ts). */
 function RedactionLayer({
   pageIndex,
   redactions,
   onAdd,
+  onRemove,
 }: {
   pageIndex: number;
   redactions: RedactRect[];
   onAdd: (r: RedactRect) => void;
+  onRemove: (mark: RedactRect) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -327,7 +330,17 @@ function RedactionLayer({
       }}
     >
       {mine.map((r, i) => (
-        <div key={i} className="cpdf__redactrect" style={pctStyle(r)} />
+        <div key={i} className="cpdf__redactrect" style={pctStyle(r)}>
+          <button
+            type="button"
+            className="cpdf__redactrect-remove"
+            aria-label="Remove redaction mark"
+            title="Remove this mark"
+            // Stop the pointer from starting a new drag on the parent layer.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onRemove(r); }}
+          >✕</button>
+        </div>
       ))}
       {draft && <div className="cpdf__redactrect cpdf__redactrect--draft" style={pctStyle(draft)} />}
     </div>
@@ -363,9 +376,9 @@ async function flattenPage(blob: Blob, rects: { x: number; y: number; w: number;
 
 /** Tier-2 text editing overlay (one per page). Lists the page's text runs from
  *  the current document bytes (PDFium), draws a clickable box over each, and on
- *  click opens an inline input; committing routes through `onCommit` →
- *  editTextRun → reload. Run bounds are PDFium user space (bottom-left origin),
- *  mapped to the page overlay with a y-flip. */
+ *  click opens an inline input that auto-commits on blur (click-outside = save).
+ *  Run bounds are PDFium user space (bottom-left origin), mapped to the page
+ *  overlay with a y-flip. Font-size is computed from the run's height in CSS px. */
 function TextEditLayer({
   documentId,
   pageIndex,
@@ -385,6 +398,21 @@ function TextEditLayer({
   const [runs, setRuns] = useState<PdfTextRun[] | null>(null);
   const [active, setActive] = useState<{ index: number; indices: number[]; text: string } | null>(null);
   const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
+  // Track the rendered page height in CSS px so we can match the input font-size
+  // to the original text size (run height in PDF points × px/pt ratio).
+  const layerRef = useRef<HTMLDivElement>(null);
+  const [pagePxH, setPagePxH] = useState(0);
+  useEffect(() => {
+    const el = layerRef.current;
+    if (!el) return;
+    const update = () => setPagePxH(el.offsetHeight);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    update();
+    return () => ro.disconnect();
+  }, []);
+  // Guard against onBlur re-committing after Enter/Escape already handled it.
+  const suppressBlurRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -405,10 +433,8 @@ function TextEditLayer({
 
   if (!size) return null;
   if (!runs) {
-    // WASM is still loading — show a subtle per-page indicator so the user
-    // knows the boxes are coming (not a broken/empty state).
     return (
-      <div className="cpdf__textedit" aria-live="polite" aria-label="Analyzing text…">
+      <div ref={layerRef} className="cpdf__textedit" aria-live="polite" aria-label="Analyzing text…">
         <div className="cpdf__textedit-loading">Analyzing text…</div>
       </div>
     );
@@ -419,26 +445,39 @@ function TextEditLayer({
     width: `${((r.right - r.left) / size.width) * 100}%`,
     height: `${((r.top - r.bottom) / size.height) * 100}%`,
   });
+  // Font-size in CSS px ≈ run height (PDF points) × page px/pt scale.
+  // 0.82 corrects for descenders: the PDF bounding box includes them, but
+  // CSS font-size targets cap-height, so scaling slightly down looks right.
+  const runFontPx = (r: PdfTextRun): number | undefined => {
+    if (!pagePxH || !size?.height) return undefined;
+    const px = Math.round((r.top - r.bottom) / size.height * pagePxH * 0.82);
+    return px > 0 ? px : undefined;
+  };
   const commit = (index: number, indices: number[], text: string, original: string) => {
-    // Empty text would call FPDFText_SetText("") → WASM abort; cancel instead.
-    if (!text.trim()) { setActive(null); return; }
+    suppressBlurRef.current = true; // prevent onBlur from re-committing
+    if (!text.trim()) { setActive(null); return; } // empty → cancel; never call SetText("")
     if (text !== original) onCommit(pageIndex, index, indices, text);
     setActive(null);
   };
-  const cancel = () => setActive(null);
+  const cancel = () => {
+    suppressBlurRef.current = true; // prevent onBlur from committing after Escape
+    setActive(null);
+  };
   return (
-    <div className="cpdf__textedit">
+    <div ref={layerRef} className="cpdf__textedit">
       {runs.map((r) =>
         active?.index === r.index ? (
           <input
             key={r.index}
             className="cpdf__textedit-input"
-            style={boxStyle(r)}
+            style={{ ...boxStyle(r), ...(runFontPx(r) ? { fontSize: `${runFontPx(r)}px` } : {}) }}
             autoFocus
             value={active.text}
             aria-label="Edit text"
-            // Select all on focus so the user can immediately overtype the run.
-            onFocus={(e) => e.currentTarget.select()}
+            onFocus={(e) => {
+              suppressBlurRef.current = false; // clear any leftover suppress from cancel()
+              e.currentTarget.select();
+            }}
             onChange={(e) => setActive({ index: r.index, indices: r.indices, text: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -449,9 +488,15 @@ function TextEditLayer({
                 cancel();
               }
             }}
-            // onBlur deliberately omitted: committing on focus-loss caused
-            // accidental commits when the user clicked elsewhere to cancel.
-            // Commit via Enter; Escape or clicking another run cancels.
+            onBlur={(e) => {
+              // Suppress if Enter/Escape already handled the commit/cancel.
+              if (suppressBlurRef.current) { suppressBlurRef.current = false; return; }
+              // Clicking another run button: let that button's onClick handle it.
+              const rel = e.relatedTarget as HTMLElement | null;
+              if (rel?.classList.contains('cpdf__textedit-run')) return;
+              // Clicking anywhere else (toolbar, outside PDF): auto-commit (doc UX).
+              commit(r.index, r.indices, active.text, r.text);
+            }}
           />
         ) : (
           <button
@@ -1742,6 +1787,7 @@ export function Viewer({
         if (annoApi && sel.length) annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
       },
       setTool: (id) => annoApi?.setActiveTool(id),
+      openSearch: () => setSearchOpen(true),
       getBytes: async () => {
         if (!exportCap) return null;
         const ab = await exportCap.saveAsCopy().toPromise();
@@ -1751,7 +1797,15 @@ export function Viewer({
     return () => {
       if (apiRef) apiRef.current = null;
     };
-  }, [apiRef, annoApi, history, exportCap]);
+  }, [apiRef, annoApi, history, exportCap, setSearchOpen]);
+
+  // Preload PDFium WASM as soon as the user enters Edit/Suggest mode so
+  // the "Edit text" tool has no perceptible delay on first click.
+  useEffect(() => {
+    if (mode !== 'view') {
+      import('../textedit-pdfium').then(({ preloadPdfium }) => preloadPdfium());
+    }
+  }, [mode]);
 
   // Text tools default to the placeholder contents "Insert text", and editing
   // appends to it (so a new box reads "Insert textyour words"). Clear the
@@ -2227,6 +2281,7 @@ export function Viewer({
                         pageIndex={pageIndex}
                         redactions={redactions}
                         onAdd={(r) => setRedactions((prev) => [...prev, r])}
+                        onRemove={(mark) => setRedactions((prev) => prev.filter((r) => r !== mark))}
                       />
                     )}
                   </PagePointerProvider>

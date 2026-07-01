@@ -258,6 +258,7 @@ export function App() {
       if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
       else if (k === 'p') { e.preventDefault(); window.open(src, '_blank'); }
+      else if (k === 'f') { e.preventDefault(); api.current?.openSearch(); }
       else if (k === 'z' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
         // Two-level undo: annotation history first, then document-version undo.
         e.preventDefault();
@@ -382,7 +383,7 @@ export function App() {
               e-signing, and granular rights.
             </p>
             <p className="dialog__shortcuts">
-              <strong>Shortcuts</strong> — Open ⌘O · Save ⌘S · Undo ⌘Z · Redo ⌘⇧Z · Copy ⌘C · Paste ⌘V · Duplicate ⌘D · Select all ⌘A · Nudge ←↑↓→ (⇧ = bigger) · Find (top-right) · Tools: V H D T N R O A
+              <strong>Shortcuts</strong> — Open ⌘O · Save ⌘S · Find ⌘F · Undo ⌘Z · Redo ⌘⇧Z · Copy ⌘C · Paste ⌘V · Duplicate ⌘D · Select all ⌘A · Nudge ←↑↓→ (⇧ = bigger) · Tools: V H D T N R O A
             </p>
             <button ref={closeBtnRef} type="button" className="dialog__close" onClick={() => setAbout(false)}>
               Close
