@@ -44,6 +44,7 @@ export function App() {
   const [dragOver, setDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const insertFileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -256,6 +257,37 @@ export function App() {
     }
   };
 
+  const insertPdf = async (file: File) => {
+    if (!src) return;
+    let primaryBytes: Uint8Array | null = null;
+    let secondaryBytes: Uint8Array;
+    try {
+      secondaryBytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      alert('Could not read the selected PDF file.');
+      return;
+    }
+    try {
+      primaryBytes = (await api.current?.getBytes()) ?? null;
+    } catch { /* fall through — use src fetch below */ }
+    if (!primaryBytes) {
+      try {
+        const res = await fetch(src);
+        primaryBytes = new Uint8Array(await res.arrayBuffer());
+      } catch {
+        alert('Could not read the current document.');
+        return;
+      }
+    }
+    try {
+      const { mergePdfs } = await import('@casualoffice/pdf/merge');
+      const merged = await mergePdfs(primaryBytes, secondaryBytes);
+      onDocumentReplaced(merged);
+    } catch {
+      alert('Could not merge the PDF files. The inserted file may be corrupt or encrypted.');
+    }
+  };
+
   const menus: MenuDef[] = [
     {
       label: 'Menu',
@@ -266,6 +298,8 @@ export function App() {
         { divider: true },
         { label: 'Download', shortcut: '⌘S', disabled: !src, onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', disabled: !src, onSelect: () => { void printPdf(); } },
+        { divider: true },
+        { label: 'Insert PDF…', disabled: !src, onSelect: () => insertFileRef.current?.click() },
         { divider: true },
         { label: 'Digitally sign…', disabled: !src, onSelect: () => setSigning(true) },
         { label: 'Watermark / Header / Bates…', disabled: !src, onSelect: () => setPageFurniture(true) },
@@ -407,6 +441,17 @@ export function App() {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) openFromFile(f);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={insertFileRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void insertPdf(f);
           e.target.value = '';
         }}
       />
