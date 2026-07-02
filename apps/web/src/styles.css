@@ -338,9 +338,36 @@ body {
 .canvas {
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 .viewer {
   height: 100%;
+}
+
+/* Drag-and-drop: full-canvas overlay while a PDF is held over the window. */
+.canvas__dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(70, 88, 255, 0.1);
+  border: 3px dashed var(--color-accent, #4658ff);
+  border-radius: 14px;
+  pointer-events: none;
+}
+.canvas__dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 40px;
+  background: var(--color-surface-raised, #fff);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  color: var(--color-accent, #4658ff);
+  font: 700 16px/1.3 var(--font-sans, system-ui, sans-serif);
 }
 
 /* ── About dialog ───────────────────────────────────────────────────────── */

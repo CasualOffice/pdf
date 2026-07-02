@@ -40,6 +40,8 @@ export function App() {
   const [pageFurniture, setPageFurniture] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
@@ -381,7 +383,36 @@ export function App() {
         }}
       />
 
-      <main className="canvas">
+      <main
+        className="canvas"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragCounterRef.current += 1;
+          if (e.dataTransfer.types.includes('Files')) setDragOver(true);
+        }}
+        onDragLeave={() => {
+          dragCounterRef.current -= 1;
+          if (dragCounterRef.current <= 0) { dragCounterRef.current = 0; setDragOver(false); }
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragCounterRef.current = 0;
+          setDragOver(false);
+          const file = Array.from(e.dataTransfer.files).find(
+            (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'),
+          );
+          if (file && confirmDiscard()) openFromFile(file);
+        }}
+      >
+        {dragOver && (
+          <div className="canvas__dropzone" aria-hidden="true">
+            <div className="canvas__dropzone-inner">
+              <Icon name="open" size={36} />
+              <span>Drop PDF to open</span>
+            </div>
+          </div>
+        )}
         <CasualPdf
           key={src}
           src={src}
