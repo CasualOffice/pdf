@@ -132,8 +132,10 @@
     background var(--motion-fast, 120ms) var(--ease-out, ease),
     color var(--motion-fast, 120ms) var(--ease-out, ease);
 }
-/* Tooltip: appears above for bottom-bar buttons, 200ms delay. */
-.cpdf-iconbtn::after {
+/* Tooltip for bottom-bar icon buttons only (appears above; 200ms delay).
+   Scoped to .cpdf__bottom so it doesn't get clipped inside panel containers
+   that have overflow:hidden. */
+.cpdf__bottom .cpdf-iconbtn::after {
   content: attr(title);
   position: absolute;
   bottom: calc(100% + 8px);
@@ -151,11 +153,11 @@
   transition: opacity 60ms ease;
   transition-delay: 0ms;
 }
-.cpdf-iconbtn:not(:disabled):hover::after {
+.cpdf__bottom .cpdf-iconbtn:not(:disabled):hover::after {
   opacity: 1;
   transition-delay: 200ms;
 }
-[data-theme='dark'] .cpdf-iconbtn::after {
+[data-theme='dark'] .cpdf__bottom .cpdf-iconbtn::after {
   background: #e8eaf0;
   color: #111;
 }
@@ -1071,10 +1073,11 @@
   align-items: center;
   gap: var(--space-2, 4px);
 }
-/* Placement banner: floats top-center while a signature is armed for placing. */
+/* Placement banner: floats bottom-centre above the view bar (not top-centre,
+   which conflicts with the search panel / selection toolbar). */
 .cpdf__placebanner {
   position: absolute;
-  top: var(--space-5, 12px);
+  bottom: 68px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 55;
