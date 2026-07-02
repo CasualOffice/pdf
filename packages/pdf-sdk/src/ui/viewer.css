@@ -53,6 +53,7 @@
 }
 /* Labelled rail buttons — icon + caption, so the rail reads as a tool palette. */
 .cpdf__railbtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -83,9 +84,38 @@
   outline: 2px solid var(--color-focus-ring, #4658ff);
   outline-offset: 2px;
 }
+/* Custom tooltip: faster appearance than native `title` (200ms vs ~1s),
+   positioned to the right of the rail so it never clips into the canvas. */
+.cpdf__railbtn::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 200;
+  padding: 4px 9px;
+  background: var(--color-text, #111);
+  color: #fff;
+  font: 500 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 60ms ease;
+  transition-delay: 0ms;
+}
+.cpdf__railbtn:not(:disabled):hover::after {
+  opacity: 1;
+  transition-delay: 220ms;
+}
+[data-theme='dark'] .cpdf__railbtn::after {
+  background: #e8eaf0;
+  color: #111;
+}
 
 /* ── Icon button (shared by rail + bottom bar + panels) ─────────────────── */
 .cpdf-iconbtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -101,6 +131,33 @@
   transition:
     background var(--motion-fast, 120ms) var(--ease-out, ease),
     color var(--motion-fast, 120ms) var(--ease-out, ease);
+}
+/* Tooltip: appears above for bottom-bar buttons, 200ms delay. */
+.cpdf-iconbtn::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 4px 9px;
+  background: var(--color-text, #111);
+  color: #fff;
+  font: 500 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 60ms ease;
+  transition-delay: 0ms;
+}
+.cpdf-iconbtn:not(:disabled):hover::after {
+  opacity: 1;
+  transition-delay: 200ms;
+}
+[data-theme='dark'] .cpdf-iconbtn::after {
+  background: #e8eaf0;
+  color: #111;
 }
 .cpdf-iconbtn:hover:not(:disabled) {
   background: var(--color-hover, rgba(0, 0, 0, 0.05));
@@ -564,7 +621,7 @@
     0 8px 24px rgba(0, 0, 0, 0.2);
 }
 .cpdf__search input {
-  width: 200px;
+  width: clamp(120px, 20vw, 220px);
   height: 32px;
   padding: 0 6px;
   border: none;
@@ -1141,6 +1198,7 @@
 }
 [data-theme='dark'] .cpdf__textedit-input {
   background: #23272e;
+  color: #f0f0f0;
 }
 .cpdf__placebanner--redact {
   background: var(--color-danger, #e5484d);

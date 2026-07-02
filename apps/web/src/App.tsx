@@ -33,7 +33,7 @@ const MODES: { id: Mode; label: string; icon: 'eye' | 'suggest' | 'pencil' }[] =
 export function App() {
   const [mode, setMode] = useState<Mode>('view');
   const [src, setSrc] = useState(initialSrc);
-  const [title, setTitle] = useState('Untitled document');
+  const [title, setTitle] = useState(() => initialSrc() === DEFAULT_PDF ? 'EmbedPDF sample' : 'Untitled document');
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
   const [signing, setSigning] = useState(false);
@@ -298,8 +298,30 @@ export function App() {
             onChange={(e) => setTitle(e.target.value)}
             onFocus={(e) => e.target.select()}
           />
+          {dirty && <span className="appbar__dirty" aria-label="Unsaved changes" title="Unsaved changes" />}
         </div>
         <div className="appbar__actions">
+          <button
+            type="button"
+            className="appbar__quick"
+            aria-label="Open PDF (⌘O)"
+            title="Open PDF (⌘O)"
+            onClick={() => { if (confirmDiscard()) fileRef.current?.click(); }}
+          >
+            <Icon name="open" size={15} />
+            <span>Open</span>
+          </button>
+          <button
+            type="button"
+            className={`appbar__quick${dirty ? ' appbar__quick--save' : ''}`}
+            aria-label={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
+            title={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
+            onClick={download}
+          >
+            <Icon name="download" size={15} />
+            <span>{dirty ? 'Save' : 'Download'}</span>
+          </button>
+          <span className="appbar__sep" aria-hidden="true" />
           <div className="modeseg" role="tablist" aria-label="Editing mode">
             {MODES.map(({ id, label, icon }) => (
               <button

@@ -1858,7 +1858,9 @@ export function Viewer({
       setHasSelection((selectionCap.getFormattedSelection(documentId)?.length ?? 0) > 0),
     );
   }, [selectionCap, documentId]);
-  const showSelTools = editing && activeToolId === null && hasSelection;
+  // Hide the selection mini-toolbar while the search panel is open — both
+  // float at the same top-center position and would visually collide.
+  const showSelTools = editing && activeToolId === null && hasSelection && !searchOpen;
 
   // Imperative API for host menus.
   useEffect(() => {
