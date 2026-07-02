@@ -1783,6 +1783,16 @@ export function Viewer({
   // keys and filter-by-id (avoids reference-equality issues after state updates).
   const redactIdCounter = useRef(0);
   const nextRedactId = () => { redactIdCounter.current += 1; return redactIdCounter.current; };
+  // Per-session text-edit undo/redo stacks (one Uint8Array per commit, capped at 20).
+  // Used by apiRef undo/redo when textEditing is true; cleared on exit.
+  const textEditUndoStackRef = useRef<Uint8Array[]>([]);
+  const textEditRedoStackRef = useRef<Uint8Array[]>([]);
+  // Stable refs so apiRef callbacks always read the latest values without needing
+  // them as useEffect deps (which would re-create the API object on every commit).
+  const textEditingRef = useRef(false);
+  textEditingRef.current = textEditing;
+  const editBusyRef = useRef(false);
+  editBusyRef.current = editBusy;
 
   // H-4: clear text-edit error/note when a new document is opened.
   useEffect(() => { setEditError(null); setEditNote(null); }, [documentId]);
@@ -1801,6 +1811,10 @@ export function Viewer({
   const { provides: exportCap } = useExportCapability();
   const { provides: renderCap } = useRenderCapability();
   const { provides: docCap } = useDocumentManagerCapability();
+  // Ref so text-edit undo/redo callbacks (defined in the apiRef effect) can
+  // access the latest docCap without listing it as an effect dependency.
+  const docCapRef = useRef(docCap);
+  docCapRef.current = docCap;
   const { provides: sigCap } = useSignatureCapability();
   const { rotation: viewRotation, provides: rotateApi } = useRotate(documentId);
   const { state: fs } = useFullscreen();
@@ -1867,10 +1881,34 @@ export function Viewer({
     if (!apiRef) return;
     apiRef.current = {
       download: () => exportCap?.download(),
-      undo: () => history?.undo(),
-      redo: () => history?.redo(),
-      canUndo: () => history?.canUndo() ?? false,
-      canRedo: () => history?.canRedo() ?? false,
+      canUndo: () => textEditingRef.current
+        ? textEditUndoStackRef.current.length > 0
+        : history?.canUndo() ?? false,
+      canRedo: () => textEditingRef.current
+        ? textEditRedoStackRef.current.length > 0
+        : history?.canRedo() ?? false,
+      undo: () => {
+        if (textEditingRef.current) {
+          if (editBusyRef.current || textEditUndoStackRef.current.length === 0) return;
+          const curr = editBytesRef.current;
+          const prev = textEditUndoStackRef.current.pop()!;
+          if (curr) textEditRedoStackRef.current.push(curr);
+          editBytesRef.current = prev; setEditBytes(prev);
+          const buf = prev.buffer.slice(prev.byteOffset, prev.byteOffset + prev.byteLength) as ArrayBuffer;
+          void docCapRef.current?.openDocumentBuffer({ buffer: buf, name: 'edited.pdf', autoActivate: true }).toPromise();
+        } else { history?.undo(); }
+      },
+      redo: () => {
+        if (textEditingRef.current) {
+          if (editBusyRef.current || textEditRedoStackRef.current.length === 0) return;
+          const curr = editBytesRef.current;
+          const next = textEditRedoStackRef.current.pop()!;
+          if (curr) textEditUndoStackRef.current.push(curr);
+          editBytesRef.current = next; setEditBytes(next);
+          const buf = next.buffer.slice(next.byteOffset, next.byteOffset + next.byteLength) as ArrayBuffer;
+          void docCapRef.current?.openDocumentBuffer({ buffer: buf, name: 'edited.pdf', autoActivate: true }).toPromise();
+        } else { history?.redo(); }
+      },
       deleteSelection: () => {
         const sel = annoApi?.getSelectedAnnotations() ?? [];
         if (annoApi && sel.length) annoApi.deleteAnnotations(sel.map((a) => ({ pageIndex: a.object.pageIndex, id: a.object.id })));
@@ -2017,6 +2055,8 @@ export function Viewer({
       editBytesRef.current = null; setEditBytes(null);
       editDirtyRef.current = false;
       setTextRunsReady(false);
+      textEditUndoStackRef.current = [];
+      textEditRedoStackRef.current = [];
       return;
     }
     if (!exportCap) return;
@@ -2044,6 +2084,13 @@ export function Viewer({
       // re-index via onDocumentReplaced is deferred to when they exit text-edit mode.
       const buffer = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
       await docCap.openDocumentBuffer({ buffer, name: 'edited.pdf', autoActivate: true }).toPromise();
+      // Push pre-commit bytes onto the per-session undo stack (cap at 20 to bound memory).
+      const prev = editBytesRef.current;
+      if (prev) {
+        textEditUndoStackRef.current.push(prev);
+        if (textEditUndoStackRef.current.length > 20) textEditUndoStackRef.current.shift();
+      }
+      textEditRedoStackRef.current = []; // new commit forks the redo branch
       editBytesRef.current = out; setEditBytes(out); // updated bytes for the next commit
       editDirtyRef.current = true;
       // Let the user know when we silently swapped the font (subsetted or new glyphs).
@@ -2152,6 +2199,8 @@ export function Viewer({
       editBytesRef.current = null; setEditBytes(null);
       editDirtyRef.current = false;
       setTextRunsReady(false);
+      textEditUndoStackRef.current = [];
+      textEditRedoStackRef.current = [];
       sigCap?.forDocument(documentId).deactivatePlacement();
     }
   }, [mode, sigCap, documentId]);

@@ -10,12 +10,13 @@ import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoveryS
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
 
-function initialSrc(): string {
-  if (typeof window === 'undefined') return DEFAULT_PDF;
+// Returns the URL from ?src= param, or null (welcome screen) when none is set.
+function initialSrc(): string | null {
+  if (typeof window === 'undefined') return null;
   try {
-    return new URL(window.location.href).searchParams.get('src') || DEFAULT_PDF;
+    return new URL(window.location.href).searchParams.get('src') || null;
   } catch {
-    return DEFAULT_PDF;
+    return null;
   }
 }
 
@@ -32,8 +33,8 @@ const MODES: { id: Mode; label: string; icon: 'eye' | 'suggest' | 'pencil' }[] =
  */
 export function App() {
   const [mode, setMode] = useState<Mode>('view');
-  const [src, setSrc] = useState(initialSrc);
-  const [title, setTitle] = useState(() => initialSrc() === DEFAULT_PDF ? 'EmbedPDF sample' : 'Untitled document');
+  const [src, setSrc] = useState<string | null>(initialSrc);
+  const [title, setTitle] = useState('');
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
   const [signing, setSigning] = useState(false);
@@ -96,7 +97,7 @@ export function App() {
   // The old src is pushed to the version undo stack (not revoked) so Ctrl+Z can
   // restore it. Any pending redo history is discarded (new branch).
   const onDocumentReplaced = (bytes: Uint8Array) => {
-    undoStack.current.push(srcRef.current);
+    if (srcRef.current) undoStack.current.push(srcRef.current);
     clearStack(redoStack);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const blob = new Blob([buffer], { type: 'application/pdf' });
@@ -109,7 +110,7 @@ export function App() {
   const versionUndo = () => {
     const prev = undoStack.current.pop();
     if (!prev) return;
-    redoStack.current.push(srcRef.current);
+    if (srcRef.current) redoStack.current.push(srcRef.current);
     objectUrl.current = prev.startsWith('blob:') ? prev : null;
     setSrc(prev);
     setDirty(true);
@@ -119,7 +120,7 @@ export function App() {
   const versionRedo = () => {
     const next = redoStack.current.pop();
     if (!next) return;
-    undoStack.current.push(srcRef.current);
+    if (srcRef.current) undoStack.current.push(srcRef.current);
     objectUrl.current = next.startsWith('blob:') ? next : null;
     setSrc(next);
     setDirty(true);
@@ -208,8 +209,10 @@ export function App() {
     setSrc(url);
     setTitle(file.name.replace(/\.pdf$/i, ''));
     setDirty(false);
+    setMode('view');
   };
   const download = async () => {
+    if (!src) return;
     // A clean save to disk supersedes the recovery snapshot.
     cancelSnapshot();
     void clearSnapshot();
@@ -242,10 +245,10 @@ export function App() {
       icon: <Icon name="menu" size={18} />,
       items: [
         { label: 'Open…', shortcut: '⌘O', onSelect: () => { if (confirmDiscard()) fileRef.current?.click(); } },
-        { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); clearStack(undoStack); clearStack(redoStack); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); } } },
+        { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); clearStack(undoStack); clearStack(redoStack); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); setMode('view'); } } },
         { divider: true },
         { label: 'Download', shortcut: '⌘S', onSelect: download },
-        { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => window.open(src, '_blank') },
+        { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => src && window.open(src, '_blank') },
         { divider: true },
         { label: 'Digitally sign…', onSelect: () => setSigning(true) },
         { label: 'Watermark / Header / Bates…', onSelect: () => setPageFurniture(true) },
@@ -262,7 +265,7 @@ export function App() {
       const k = e.key.toLowerCase();
       if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
-      else if (k === 'p') { e.preventDefault(); window.open(src, '_blank'); }
+      else if (k === 'p') { e.preventDefault(); if (src) window.open(src, '_blank'); }
       else if (k === 'f' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) { e.preventDefault(); api.current?.openSearch(); }
       else if (k === 'z' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
         // Two-level undo: annotation history first, then document-version undo.
@@ -295,10 +298,12 @@ export function App() {
           <input
             className="appbar__title"
             value={title}
+            placeholder={src ? 'Untitled document' : 'No document open'}
             spellCheck={false}
             aria-label="Document name"
+            readOnly={!src}
             onChange={(e) => setTitle(e.target.value)}
-            onFocus={(e) => e.target.select()}
+            onFocus={(e) => src && e.target.select()}
           />
           {dirty && <span className="appbar__dirty" aria-label="Unsaved changes" title="Unsaved changes" />}
         </div>
@@ -313,18 +318,20 @@ export function App() {
             <Icon name="open" size={15} />
             <span>Open</span>
           </button>
-          <button
-            type="button"
-            className={`appbar__quick${dirty ? ' appbar__quick--save' : ''}`}
-            aria-label={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
-            title={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
-            onClick={download}
-          >
-            <Icon name="download" size={15} />
-            <span>{dirty ? 'Save' : 'Download'}</span>
-          </button>
-          <span className="appbar__sep" aria-hidden="true" />
-          <div className="modeseg" role="tablist" aria-label="Editing mode">
+          {src && (
+            <button
+              type="button"
+              className={`appbar__quick${dirty ? ' appbar__quick--save' : ''}`}
+              aria-label={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
+              title={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
+              onClick={download}
+            >
+              <Icon name="download" size={15} />
+              <span>{dirty ? 'Save' : 'Download'}</span>
+            </button>
+          )}
+          {src && <span className="appbar__sep" aria-hidden="true" />}
+          {src && <div className="modeseg" role="tablist" aria-label="Editing mode">
             {MODES.map(({ id, label, icon }) => (
               <button
                 key={id}
@@ -341,7 +348,7 @@ export function App() {
                 <span>{label}</span>
               </button>
             ))}
-          </div>
+          </div>}
           <button
             type="button"
             className="appbar__icon"
@@ -405,26 +412,53 @@ export function App() {
           if (file && confirmDiscard()) openFromFile(file);
         }}
       >
-        {dragOver && (
-          <div className="canvas__dropzone" aria-hidden="true">
-            <div className="canvas__dropzone-inner">
-              <Icon name="open" size={36} />
-              <span>Drop PDF to open</span>
+        {src ? (
+          <>
+            {dragOver && (
+              <div className="canvas__dropzone" aria-hidden="true">
+                <div className="canvas__dropzone-inner">
+                  <Icon name="open" size={36} />
+                  <span>Drop PDF to open</span>
+                </div>
+              </div>
+            )}
+            <CasualPdf
+              key={src}
+              src={src}
+              mode={mode}
+              onModeChange={setMode}
+              apiRef={api}
+              onEdited={markEdited}
+              onDocumentReplaced={onDocumentReplaced}
+              onUndo={() => { if (api.current?.canUndo()) api.current.undo(); else versionUndo(); }}
+              onRedo={() => { if (api.current?.canRedo()) api.current.redo(); else versionRedo(); }}
+              className="viewer"
+            />
+          </>
+        ) : (
+          <div className={`welcome${dragOver ? ' welcome--drag' : ''}`} aria-label="Welcome to Casual PDF">
+            <img src="/logo.svg" alt="" className="welcome__logo" width={56} height={56} />
+            <div className="welcome__hero">
+              <h1 className="welcome__title">Casual PDF</h1>
+              <p className="welcome__sub">High-fidelity PDF viewer &amp; editor</p>
+            </div>
+            <div className="welcome__dropzone" role="button" tabIndex={0} aria-label="Open PDF — click or drop a file"
+              onClick={() => fileRef.current?.click()}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
+              <Icon name="open" size={32} />
+              <span className="welcome__drop-label">Drop a PDF here</span>
+              <span className="welcome__drop-hint">or click to browse</span>
+            </div>
+            <div className="welcome__actions">
+              <button type="button" className="welcome__btn welcome__btn--primary" onClick={() => fileRef.current?.click()}>
+                Open PDF
+              </button>
+              <button type="button" className="welcome__btn" onClick={() => { setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); }}>
+                Try sample
+              </button>
             </div>
           </div>
         )}
-        <CasualPdf
-          key={src}
-          src={src}
-          mode={mode}
-          onModeChange={setMode}
-          apiRef={api}
-          onEdited={markEdited}
-          onDocumentReplaced={onDocumentReplaced}
-          onUndo={() => { if (api.current?.canUndo()) api.current.undo(); else versionUndo(); }}
-          onRedo={() => { if (api.current?.canRedo()) api.current.redo(); else versionRedo(); }}
-          className="viewer"
-        />
       </main>
 
       {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}
