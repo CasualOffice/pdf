@@ -211,6 +211,23 @@ export function App() {
     setDirty(false);
     setMode('view');
   };
+  // Open a print-ready blob in a new tab so the browser's native print dialog
+  // can be used. Bakes annotations first (same as Download) so annotations
+  // are included. Revokes the URL after 30 s (enough for the browser to load).
+  const printPdf = async () => {
+    if (!src) return;
+    const bytes = api.current ? await api.current.getBytes() : null;
+    if (bytes) {
+      const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const blob = new Blob([ab], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } else {
+      window.open(src, '_blank');
+    }
+  };
+
   const download = async () => {
     if (!src) return;
     // A clean save to disk supersedes the recovery snapshot.
@@ -247,11 +264,11 @@ export function App() {
         { label: 'Open…', shortcut: '⌘O', onSelect: () => { if (confirmDiscard()) fileRef.current?.click(); } },
         { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); clearStack(undoStack); clearStack(redoStack); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); setMode('view'); } } },
         { divider: true },
-        { label: 'Download', shortcut: '⌘S', onSelect: download },
-        { label: 'Print / open in new tab', shortcut: '⌘P', onSelect: () => src && window.open(src, '_blank') },
+        { label: 'Download', shortcut: '⌘S', disabled: !src, onSelect: download },
+        { label: 'Print / open in new tab', shortcut: '⌘P', disabled: !src, onSelect: () => { void printPdf(); } },
         { divider: true },
-        { label: 'Digitally sign…', onSelect: () => setSigning(true) },
-        { label: 'Watermark / Header / Bates…', onSelect: () => setPageFurniture(true) },
+        { label: 'Digitally sign…', disabled: !src, onSelect: () => setSigning(true) },
+        { label: 'Watermark / Header / Bates…', disabled: !src, onSelect: () => setPageFurniture(true) },
         { divider: true },
         { label: 'About Casual PDF', onSelect: () => setAbout(true) },
       ],
@@ -265,7 +282,7 @@ export function App() {
       const k = e.key.toLowerCase();
       if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
-      else if (k === 'p') { e.preventDefault(); if (src) window.open(src, '_blank'); }
+      else if (k === 'p') { e.preventDefault(); void printPdf(); }
       else if (k === 'f' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) { e.preventDefault(); api.current?.openSearch(); }
       else if (k === 'z' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
         // Two-level undo: annotation history first, then document-version undo.
@@ -282,6 +299,10 @@ export function App() {
         e.preventDefault();
         if (api.current?.canRedo()) api.current.redo();
         else if (redoStack.current.length > 0) versionRedo();
+      }
+      else if ((e.key === '?' || e.key === '/') && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+        e.preventDefault();
+        setAbout(true);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -479,9 +500,19 @@ export function App() {
               A high-fidelity PDF viewer &amp; editor — one PDFium engine across web and desktop, with annotation,
               e-signing, and granular rights.
             </p>
-            <p className="dialog__shortcuts">
-              <strong>Shortcuts</strong> — Open ⌘O · Save ⌘S · Find ⌘F · Undo ⌘Z · Redo ⌘⇧Z · Copy ⌘C · Paste ⌘V · Duplicate ⌘D · Select all ⌘A · Nudge ←↑↓→ (⇧ = bigger) · Tools: V H D T N R O A
-            </p>
+            <dl className="dialog__shortcuts">
+              <div><dt>Open</dt><dd>⌘O</dd></div>
+              <div><dt>Save / Download</dt><dd>⌘S</dd></div>
+              <div><dt>Print / open in tab</dt><dd>⌘P</dd></div>
+              <div><dt>Find</dt><dd>⌘F</dd></div>
+              <div><dt>Undo / Redo</dt><dd>⌘Z / ⌘⇧Z</dd></div>
+              <div><dt>Copy / Paste / Duplicate</dt><dd>⌘C / ⌘V / ⌘D</dd></div>
+              <div><dt>Select all</dt><dd>⌘A</dd></div>
+              <div><dt>Nudge (×10 with ⇧)</dt><dd>← ↑ ↓ →</dd></div>
+              <div><dt>Tools</dt><dd>V · H · D · T · N · R · O · A · S</dd></div>
+              <div><dt>Cancel / Deselect</dt><dd>Esc</dd></div>
+              <div><dt>Delete selected</dt><dd>⌫ Delete</dd></div>
+            </dl>
             <button ref={closeBtnRef} type="button" className="dialog__close" onClick={() => setAbout(false)}>
               Close
             </button>
