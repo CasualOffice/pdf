@@ -2395,7 +2395,12 @@ export function Viewer({
           </ZoomGestureWrapper>
           {editing && <PropertiesPanel documentId={documentId} />}
         </div>
-        <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
+        {/* The wrapper is in the normal flex flow so the viewport stops above
+            the bar — the absolutely-centred pill floats inside this reserved lane
+            without overlapping page content. */}
+        <div className="cpdf__bottomwrap">
+          <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
+        </div>
         {searchOpen && (
           <SearchPanel
             documentId={documentId}

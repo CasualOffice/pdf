@@ -474,11 +474,19 @@
 }
 
 /* ── Floating bottom view bar ───────────────────────────────────────────── */
+/* The wrapper is in the normal flex flow (below .cpdf__main) so the
+   viewport height never extends under the bar. The pill floats centred
+   inside this reserved lane — keeps the "floating" look without overlap. */
+.cpdf__bottomwrap {
+  position: relative;
+  height: 60px;
+  flex: none;
+}
 .cpdf__bottom {
   position: absolute;
-  bottom: var(--space-3, 14px);
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 20;
   display: flex;
   align-items: center;
