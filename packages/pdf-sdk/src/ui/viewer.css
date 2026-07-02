@@ -40,10 +40,13 @@
   background: var(--color-surface-raised, #fff);
   border-right: 1px solid var(--color-border, #e6e9ee);
   overflow-y: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong, #cdd3db) transparent;
 }
-.cpdf__rail::-webkit-scrollbar {
-  display: none;
+.cpdf__rail::-webkit-scrollbar { width: 4px; }
+.cpdf__rail::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong, #cdd3db);
+  border-radius: 4px;
 }
 .cpdf__rail-sep {
   width: 24px;
