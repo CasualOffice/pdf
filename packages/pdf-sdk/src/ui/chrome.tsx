@@ -2514,7 +2514,7 @@ export function Viewer({
                   : editNote
                     ? editNote
                     : textRunsReady
-                      ? 'Click any text to edit — Tab to jump between runs, Esc to cancel'
+                      ? 'Click any text to edit — Tab / Esc to navigate · ⌘Z undoes each edit'
                       : 'Analyzing text runs…'}
             </span>
             {(editError || editNote) && (
