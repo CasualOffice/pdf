@@ -737,7 +737,7 @@ function LeftRail({
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
-          <RailBtn icon="text-tool" label="Edit text" title="Edit existing text" active={textEditing} onClick={onToggleTextEdit} />
+          <RailBtn icon="text-tool" label="Edit text" title="Quick text edits — fix typos & short values (not a paragraph editor)" active={textEditing} onClick={onToggleTextEdit} />
           <RailBtn icon="image" label="Image" title="Insert an image" onClick={onInsertImage} />
           <RailBtn icon="redact" label="Redact" title="Redact (permanently remove regions)" active={redacting} onClick={onToggleRedact} />
           <RailBtn icon="sign" label="Sign" title="Add a signature" onClick={onSign} />
@@ -2197,7 +2197,7 @@ export function Viewer({
     setEditError(null);
     try {
       const { editTextRun } = await import('../textedit-pdfium');
-      const { bytes: out, substituted } = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText);
+      const { bytes: out, substituted, residual } = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText);
       // Use openDocumentBuffer (not onDocumentReplaced) so the Viewer stays mounted
       // and the user can keep editing without re-clicking the tool. The text layer
       // re-index via onDocumentReplaced is deferred to when they exit text-edit mode.
@@ -2212,8 +2212,16 @@ export function Viewer({
       textEditRedoStackRef.current = []; // new commit forks the redo branch
       editBytesRef.current = out; setEditBytes(out); // updated bytes for the next commit
       editDirtyRef.current = true;
-      // Let the user know when we silently swapped the font (subsetted or new glyphs).
-      setEditNote(substituted ? 'Font changed to a standard substitute (original was embedded/subsetted).' : null);
+      // Be honest about what an edit did: a font substitution changes the typeface,
+      // and a residual edit left the original glyphs in the file (not truly removed).
+      // Residual is the more serious disclosure, so it takes precedence.
+      setEditNote(
+        residual
+          ? 'The original text may still be present in the file. Text edit does not securely remove content — use Redaction for that.'
+          : substituted
+            ? 'Font changed to a standard substitute (the original font is embedded as a subset). Edits don’t reflow the paragraph.'
+            : null,
+      );
       onEdited?.();
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
@@ -2650,7 +2658,7 @@ export function Viewer({
                   : editNote
                     ? editNote
                     : textRunsReady
-                      ? 'Click any text to edit — Tab / Esc to navigate · ⌘Z undoes each edit'
+                      ? 'Quick text edits — click text to fix typos & short values · Tab / Esc · ⌘Z undo (typeface may change; no reflow)'
                       : 'Analyzing text runs…'}
             </span>
             {(editError || editNote) && (
