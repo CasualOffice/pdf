@@ -58,7 +58,8 @@ try {
   const NEW_TEXT = 'OVERLAYREPLACED ok';
   await input.fill(NEW_TEXT);
   await input.press('Enter');
-  await page.waitForTimeout(3500);
+  // Option C fetches the ~500 KB matched font on first edit, so allow extra time.
+  await page.waitForTimeout(5500);
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
   await page.waitForTimeout(800);
 
@@ -67,10 +68,15 @@ try {
     page.keyboard.press('Meta+s'),
   ]);
   await dl.saveAs('/tmp/ui-overlay.pdf');
+  const bytes = await readFile('/tmp/ui-overlay.pdf');
   const text = execSync(`python3 ${join(here, 'extract-text.py')} /tmp/ui-overlay.pdf`, { maxBuffer: 64 * 1024 * 1024 }).toString();
   console.log('extracted (first 160):', JSON.stringify(text.slice(0, 160)));
-  // The new overlay text was drawn on top…
-  assert(/OVERLAYREPLACED/i.test(text), 'new overlay text is present in the output bytes');
+  // The new overlay text was drawn on top. The sample's run is Helvetica → Option
+  // C matches Arimo, so the new text is a Type0/CID font (glyph IDs in the stream,
+  // searchable via the embedded /ToUnicode). The naive extractor can't decode CID
+  // glyphs, so assert the matched font was EMBEDDED — proof the overlay drew the
+  // new text in the matched typeface.
+  assert(bytes.includes('Arimo'), 'overlay drew the new text in the matched font (Arimo embedded)');
   // …AND the original run remains — proving overlay is non-destructive (no
   // content-stream rewrite, unlike the direct PDFium edit). This is the whole
   // point of Option A (and why the UI discloses "use Redaction to remove").

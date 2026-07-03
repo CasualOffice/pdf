@@ -234,6 +234,9 @@ export interface PdfTextRun {
    * visually new characters are introduced. Surfaced to the UI for a tooltip.
    */
   fontSubsetted: boolean;
+  /** Base family name, subset tag stripped (e.g. "Arial"). Used to match a
+   *  bundled metric-compatible font so an edit can keep the apparent typeface. */
+  fontBaseName: string;
 }
 
 /** List the text runs on a page. Adjacent PDFium text objects (which can be
@@ -354,6 +357,9 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
         fontItalic: italic,
         color: `rgb(${cr}, ${cg}, ${cb})`,
         fontSubsetted,
+        // Base family name with any subset tag stripped ("ABCDEF+Arial" → "Arial"),
+        // used to match a bundled metric-compatible font (see textedit-fonts.ts).
+        fontBaseName: name.replace(/^[A-Z]{6}\+/, ''),
       };
     });
   });

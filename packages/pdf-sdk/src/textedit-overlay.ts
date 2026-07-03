@@ -36,6 +36,10 @@ export interface OverlayStyle {
   fontItalic: boolean;
   /** CSS color string, e.g. "rgb(0,0,0)". */
   color: string;
+  /** Bytes of a bundled metric-compatible font (Option C). When present, the
+   *  overlay embeds this font (via pdf-lib + fontkit) so the edit keeps the
+   *  apparent typeface; otherwise it falls back to a standard-14 substitute. */
+  matchedFontBytes?: Uint8Array;
 }
 
 export interface OverlayOptions {
@@ -75,7 +79,7 @@ export async function buildOverlayEdit(
   newText: string,
   style: OverlayStyle,
   opts: OverlayOptions = {},
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; matched: boolean }> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const doc = await PDFDocument.load(src);
   const pages = doc.getPages();
@@ -97,12 +101,32 @@ export async function buildOverlayEdit(
     color: box,
   });
 
+  let matched = false;
   if (newText.length > 0) {
-    const font = await doc.embedFont(StandardFonts[standardFontName(style) as keyof typeof StandardFonts]);
+    let font;
+    if (style.matchedFontBytes) {
+      // Option C: embed the bundled metric-compatible font so the typeface is
+      // kept. subset:true can crash on some fonts (fontkit #1396) → retry full
+      // embed, then fall back to a standard font.
+      const fontkit = (await import('@pdf-lib/fontkit')).default;
+      doc.registerFontkit(fontkit);
+      try {
+        font = await doc.embedFont(style.matchedFontBytes, { subset: true });
+        matched = true;
+      } catch {
+        try {
+          font = await doc.embedFont(style.matchedFontBytes, { subset: false });
+          matched = true;
+        } catch {
+          font = await doc.embedFont(StandardFonts[standardFontName(style) as keyof typeof StandardFonts]);
+        }
+      }
+    } else {
+      font = await doc.embedFont(StandardFonts[standardFontName(style) as keyof typeof StandardFonts]);
+    }
     // The run bounds' bottom is the glyph bounding box bottom (below the
     // baseline by the descent). Lift the baseline by an approximate descent
-    // (~20% of size for the standard-14 faces) so the new text sits on the
-    // original baseline rather than riding low.
+    // (~20% of size) so the new text sits on the original baseline.
     const size = style.fontSizePt;
     page.drawText(newText, {
       x: rect.left,
@@ -113,5 +137,5 @@ export async function buildOverlayEdit(
     });
   }
 
-  return doc.save();
+  return { bytes: await doc.save(), matched };
 }

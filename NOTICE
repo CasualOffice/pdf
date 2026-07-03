@@ -11,3 +11,11 @@ for the full dependency/license inventory. No (A)GPL components are included.
 
 UI icons are Material Icons (Google), licensed under Apache-2.0 (in-policy),
 consumed via react-icons (MIT).
+
+Bundled fonts for metric-compatible text editing (docs/TEXT-EDITING.md, Option C)
+are licensed under the SIL Open Font License 1.1 (OFL-1.1), permitted for font
+assets per the 2026-07-04 extension of the project's dependency-license policy:
+  - Arimo (metric-compatible with Arial), Copyright The Arimo Project Authors —
+    packages/pdf-sdk/src/fonts/Arimo.ttf, Arimo-Italic.ttf; license text in
+    packages/pdf-sdk/src/fonts/OFL.txt.
+Font subsetting/embedding uses @pdf-lib/fontkit (MIT).
