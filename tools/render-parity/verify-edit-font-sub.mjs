@@ -43,7 +43,7 @@ try {
   await page.getByRole('tab', { name: 'Edit mode' }).click();
   await page.waitForTimeout(300);
 
-  await page.getByRole('button', { name: 'Edit existing text' }).click();
+  await page.getByRole('button', { name: /Quick text edits/ }).click();
   // Wait for text-run boxes (PDFium WASM loads from CDN first time).
   const run = page.getByRole('button', { name: /Edit text: The quick brown fox/ });
   await run.waitFor({ state: 'visible', timeout: 30000 });

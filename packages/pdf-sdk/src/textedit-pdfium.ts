@@ -368,6 +368,29 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
    or font data embedding is needed. The original object is emptied and a new
    object with the standard font is inserted (FPDFPage_RemoveObject crashes on
    these builds so we zero-out the original instead). */
+// The standard-14 fonts render via WinAnsi/CP1252 encoding only. When we
+// substitute a subset/embedded font with a standard one, any character outside
+// this repertoire (CJK, Arabic, Hebrew, most symbols/box-drawing) can't be shown
+// — PDFium encodes it as .notdef (tofu) or drops it, silently. These are the
+// codepoints CP1252 CAN represent beyond Latin-1 (smart quotes, dashes, euro, …).
+const WINANSI_HIGH = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152,
+  0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a,
+  0x0153, 0x017e, 0x0178,
+]);
+/** First character of `text` that a standard-14 (WinAnsi) font can't render, or null. */
+function firstUnencodable(text: string): string | null {
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    const ok =
+      cp === 0x09 || cp === 0x0a || cp === 0x0d ||
+      (cp >= 0x20 && cp <= 0x7e) ||
+      (cp >= 0xa0 && cp <= 0xff) ||
+      WINANSI_HIGH.has(cp);
+    if (!ok) return ch;
+  }
+  return null;
+}
 function pickStandardFont(flags: number, weight: number, name: string): string {
   const n = name.toLowerCase();
   const mono = (flags & FLAG_FIXED_PITCH) !== 0 || /courier|mono|consol/.test(n);
@@ -449,7 +472,7 @@ export async function editTextRun(
   objectIndex: number,
   objectIndices: number[],
   newText: string,
-): Promise<{ bytes: Uint8Array; substituted: boolean }> {
+): Promise<{ bytes: Uint8Array; substituted: boolean; residual: boolean }> {
   try {
     return await withPage(src, pageIndex, (p, doc, page, textPage) => {
       const m = p.pdfium;
@@ -481,6 +504,26 @@ export async function editTextRun(
       const isSubset = /^[A-Z]{6}\+/.test(name);
       const needsSubstitution = newChars.length > 0 || isSubset;
 
+      // Fail closed BEFORE mutating: if we'll substitute a standard font but the
+      // new text contains a character WinAnsi can't encode, PDFium would silently
+      // render tofu / drop it yet still report success. Refuse instead — nothing
+      // is saved (we throw before saveDoc), so the document is unchanged. (Pure
+      // deletion doesn't add characters, so it's exempt.)
+      if (needsSubstitution && newText.length > 0) {
+        const bad = firstUnencodable(newText);
+        if (bad) {
+          throw new Error(
+            `"${bad}" can't be shown in a substitute font, and the original font is embedded as a subset (its glyphs can't be extended here). The edit was not applied.`,
+          );
+        }
+      }
+
+      // True if any object was hidden by moving it off-page rather than truly
+      // cleared — its original glyphs remain in the output bytes (the space-clear
+      // path removes them; the off-page fallback does not). Surfaced so the UI can
+      // warn that text edit is NOT a secure removal tool — use Redaction for that.
+      let residual = false;
+
       // Suppress an object by replacing its text with a single space.
       // FPDFText_SetText("") aborts in the WASM build; a space is invisible but
       // keeps the object valid in the content stream.
@@ -488,6 +531,7 @@ export async function editTextRun(
       // false. Fallback: move the object far off-page so it never appears in
       // listTextRuns (filtered by the `left < -1000` guard) and isn't rendered.
       const moveOffPage = (o: number) => {
+        residual = true;
         const mtx = readMatrix(p, o);
         mtx[4] = -99999; // x translation
         mtx[5] = -99999; // y translation
@@ -541,14 +585,20 @@ export async function editTextRun(
         // `matrix` was captured before this — newObj is still placed correctly.
         const newObj = p.FPDFPageObj_CreateTextObj(doc, subFont, size);
         const wide = allocUtf16(p, newText);
-        try { p.FPDFText_SetText(newObj, wide); } finally { m._free(wide); }
+        try {
+          // Check the result (was ignored) — with the encodability guard above a
+          // false here means a genuine engine failure, not a silent bad glyph.
+          if (!p.FPDFText_SetText(newObj, wide)) throw new Error('Could not set the substituted text.');
+        } finally {
+          m._free(wide);
+        }
         setMatrix(p, newObj, matrix);
         p.FPDFPageObj_SetFillColor(newObj, color[0], color[1], color[2], color[3]);
         p.FPDFPage_InsertObject(page, newObj);
       }
 
       if (!p.FPDFPage_GenerateContent(page)) throw new Error('FPDFPage_GenerateContent failed.');
-      return { bytes: saveDoc(p, doc), substituted: needsSubstitution };
+      return { bytes: saveDoc(p, doc), substituted: needsSubstitution, residual };
     });
   } catch (e) {
     // If the WASM module aborted, its heap is unknown — reset the singleton so
