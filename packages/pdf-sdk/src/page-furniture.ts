@@ -82,6 +82,39 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: channel(0, 2), g: channel(2, 4), b: channel(4, 6) };
 }
 
+// pdf-lib's Page type isn't imported (lazy module); use a minimal structural type.
+interface PdfLibPage {
+  getMediaBox(): { x: number; y: number; width: number; height: number };
+  getRotation(): { angle: number };
+}
+
+/**
+ * Rotation-aware placement. Furniture is authored in "visual" space — the page
+ * as displayed, origin at the visual bottom-left, u→right, v→up — and mapped to
+ * pdf-lib's page (unrotated) space so text lands where the user sees the edge and
+ * reads upright, even on a `/Rotate`d or origin-shifted page.
+ *
+ * `vw`/`vh` are the visual (displayed) dimensions. `toPage(u,v)` maps a visual
+ * anchor to page-space (x,y). `rot` is the page rotation to add to any text angle
+ * (a 0° watermark becomes `rot`; a 45° watermark becomes `rot + 45`).
+ */
+function visualPlacer(page: PdfLibPage) {
+  const { x: ox, y: oy, width: W, height: H } = page.getMediaBox();
+  const rot = ((page.getRotation().angle % 360) + 360) % 360;
+  const swap = rot === 90 || rot === 270;
+  const vw = swap ? H : W;
+  const vh = swap ? W : H;
+  const toPage = (u: number, v: number): { x: number; y: number } => {
+    switch (rot) {
+      case 90: return { x: ox + (W - v), y: oy + u };
+      case 180: return { x: ox + (W - u), y: oy + (H - v) };
+      case 270: return { x: ox + v, y: oy + (H - u) };
+      default: return { x: ox + u, y: oy + v };
+    }
+  };
+  return { vw, vh, rot, toPage };
+}
+
 /** Stamp a diagonal text watermark on every (or selected) page. */
 export async function addWatermark(src: Uint8Array, opts: WatermarkOptions): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, degrees, rgb } = await import('pdf-lib');
@@ -97,16 +130,19 @@ export async function addWatermark(src: Uint8Array, opts: WatermarkOptions): Pro
   for (let i = 0; i < pages.length; i++) {
     if (pageSet && !pageSet.has(i)) continue;
     const page = pages[i];
-    const { width, height } = page.getSize();
+    const { vw, vh, rot, toPage } = visualPlacer(page);
     const textWidth = font.widthOfTextAtSize(opts.text, fontSize);
+    // Centered in visual space; text angle combines the requested diagonal with
+    // the page's own rotation so it reads consistently on rotated pages.
+    const { x, y } = toPage((vw - textWidth) / 2, (vh - fontSize) / 2);
     page.drawText(opts.text, {
-      x: (width - textWidth) / 2,
-      y: (height - fontSize) / 2,
+      x,
+      y,
       size: fontSize,
       font,
       color: rgb(r, g, b),
       opacity,
-      rotate: degrees(rotation),
+      rotate: degrees(rot + rotation),
     });
   }
 
@@ -115,7 +151,7 @@ export async function addWatermark(src: Uint8Array, opts: WatermarkOptions): Pro
 
 /** Add header and/or footer text to every page. Supports {page}, {pages}, {date}. */
 export async function addHeaderFooter(src: Uint8Array, opts: HeaderFooterOptions): Promise<Uint8Array> {
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const { PDFDocument, StandardFonts, rgb, degrees } = await import('pdf-lib');
   const doc = await PDFDocument.load(src);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontSize = opts.fontSize ?? 10;
@@ -126,28 +162,29 @@ export async function addHeaderFooter(src: Uint8Array, opts: HeaderFooterOptions
   for (let i = 0; i < pages.length; i++) {
     if (opts.skipFirstPage && i === 0) continue;
     const page = pages[i];
-    const { width, height } = page.getSize();
+    const { vw, vh, rot, toPage } = visualPlacer(page);
     const pageNum = i + 1;
 
-    const drawBand = (band: { left?: string; center?: string; right?: string }, y: number) => {
-      const half = width / 2;
-      if (band.left) {
-        const text = resolveTemplate(band.left, pageNum, total);
-        page.drawText(text, { x: margin, y, size: fontSize, font, color: rgb(0, 0, 0) });
-      }
+    // `v` is the vertical position in visual space; `u` is horizontal. drawText
+    // gets page-space coords + the page rotation so bands sit at the displayed
+    // top/bottom edges and read upright on rotated pages.
+    const drawBand = (band: { left?: string; center?: string; right?: string }, v: number) => {
+      const put = (text: string, u: number) => {
+        const { x, y } = toPage(u, v);
+        page.drawText(text, { x, y, size: fontSize, font, color: rgb(0, 0, 0), rotate: degrees(rot) });
+      };
+      if (band.left) put(resolveTemplate(band.left, pageNum, total), margin);
       if (band.center) {
         const text = resolveTemplate(band.center, pageNum, total);
-        const tw = font.widthOfTextAtSize(text, fontSize);
-        page.drawText(text, { x: half - tw / 2, y, size: fontSize, font, color: rgb(0, 0, 0) });
+        put(text, vw / 2 - font.widthOfTextAtSize(text, fontSize) / 2);
       }
       if (band.right) {
         const text = resolveTemplate(band.right, pageNum, total);
-        const tw = font.widthOfTextAtSize(text, fontSize);
-        page.drawText(text, { x: width - margin - tw, y, size: fontSize, font, color: rgb(0, 0, 0) });
+        put(text, vw - margin - font.widthOfTextAtSize(text, fontSize));
       }
     };
 
-    if (opts.header) drawBand(opts.header, height - margin);
+    if (opts.header) drawBand(opts.header, vh - margin);
     if (opts.footer) drawBand(opts.footer, margin - fontSize);
   }
 
@@ -156,7 +193,7 @@ export async function addHeaderFooter(src: Uint8Array, opts: HeaderFooterOptions
 
 /** Stamp sequential Bates numbers on every (or selected) page. */
 export async function addBatesNumbers(src: Uint8Array, opts: BatesOptions): Promise<Uint8Array> {
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const { PDFDocument, StandardFonts, rgb, degrees } = await import('pdf-lib');
   const doc = await PDFDocument.load(src);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontSize = opts.fontSize ?? 10;
@@ -175,16 +212,19 @@ export async function addBatesNumbers(src: Uint8Array, opts: BatesOptions): Prom
     // sequential numbers (start..start+N-1) rather than numbers with gaps.
     if (pageSet && !pageSet.has(i)) continue;
     const page = pages[i];
-    const { width, height } = page.getSize();
+    const { vw, vh, rot, toPage } = visualPlacer(page);
     const label = `${prefix}${String(counter).padStart(digits, '0')}`;
     const tw = font.widthOfTextAtSize(label, fontSize);
 
     const isTop = position.startsWith('top');
     const isRight = position.endsWith('right');
-    const x = isRight ? width - margin - tw : margin;
-    const y = isTop ? height - margin : margin - fontSize;
+    // Corner position in visual space, mapped to page space so the stamp lands
+    // at the displayed corner and reads upright on rotated pages.
+    const u = isRight ? vw - margin - tw : margin;
+    const v = isTop ? vh - margin : margin - fontSize;
+    const { x, y } = toPage(u, v);
 
-    page.drawText(label, { x, y, size: fontSize, font, color: rgb(0, 0, 0) });
+    page.drawText(label, { x, y, size: fontSize, font, color: rgb(0, 0, 0), rotate: degrees(rot) });
     counter++;
   }
 
