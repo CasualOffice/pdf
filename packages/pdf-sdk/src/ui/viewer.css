@@ -1136,8 +1136,18 @@
   z-index: 1;
   pointer-events: auto;
 }
-.cpdf__redactrect:hover .cpdf__redactrect-remove {
+.cpdf__redactrect:hover .cpdf__redactrect-remove,
+.cpdf__redactrect:focus-within .cpdf__redactrect-remove {
   display: block;
+}
+/* Keyboard focus: a visible ring on the layer and on a selected mark (WCAG 2.4.7). */
+.cpdf__redactlayer:focus-visible {
+  outline: 2px solid var(--color-accent, #3b82f6);
+  outline-offset: -2px;
+}
+.cpdf__redactrect:focus-visible {
+  outline: 2px solid #fff;
+  box-shadow: inset 0 0 0 1.5px var(--color-danger, #e5484d), 0 0 0 2px var(--color-accent, #3b82f6);
 }
 .cpdf__redactrect--draft {
   background: rgba(229, 72, 77, 0.2);
