@@ -434,6 +434,52 @@ async function flattenPage(blob: Blob, rects: { x: number; y: number; w: number;
   return new Uint8Array(await out.arrayBuffer());
 }
 
+/** Bake an overlay edit onto a rendered page: paint an opaque cover box over the
+ *  old run, then draw the new text on top, and return PNG bytes. Used by the
+ *  overlay "Secure (flatten)" path — the flattened page (built by buildRedactedPdf)
+ *  is an image, so the original glyphs are truly removed (not just covered).
+ *  All geometry is fractional (0–1, top-left origin), so it's resolution-agnostic. */
+async function flattenPageWithOverlay(
+  blob: Blob,
+  edit: {
+    x: number; y: number; w: number; h: number; // cover box (fractional, top-left)
+    baselineY: number; // text baseline y (fractional, top-left)
+    fontSizeFrac: number; // font size / page height
+    text: string;
+    fontFamily: string; // CSS family stack
+    fontWeight: number;
+    fontItalic: boolean;
+    color: string; // CSS color
+    bg: string; // CSS cover-box color
+  },
+): Promise<Uint8Array> {
+  const img = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    img.close();
+    throw new Error('overlay: no 2D canvas context');
+  }
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.drawImage(img, 0, 0);
+  img.close();
+  ctx.fillStyle = edit.bg;
+  ctx.fillRect(edit.x * W, edit.y * H, edit.w * W, edit.h * H);
+  if (edit.text.length > 0) {
+    const px = edit.fontSizeFrac * H;
+    ctx.font = `${edit.fontItalic ? 'italic ' : ''}${edit.fontWeight >= 600 ? 'bold ' : ''}${px}px ${edit.fontFamily}`;
+    ctx.fillStyle = edit.color;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(edit.text, edit.x * W, edit.baselineY * H);
+  }
+  const out: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
+  if (!out) throw new Error('overlay: canvas encode failed (page too large?)');
+  return new Uint8Array(await out.arrayBuffer());
+}
+
 /** Tier-2 text editing overlay (one per page). Lists the page's text runs from
  *  the current document bytes (PDFium), draws a clickable box over each, and on
  *  click opens an inline input that auto-commits on blur (click-outside = save).
@@ -1848,6 +1894,12 @@ export function Viewer({
   const [overlayMode, setOverlayMode] = useState(false);
   const overlayModeRef = useRef(false);
   overlayModeRef.current = overlayMode;
+  // Overlay "Secure (flatten)" sub-mode: rasterize the edited page so the covered
+  // original text is truly removed (reuses the redaction flatten). Only meaningful
+  // with overlayMode on. Trade-off: the edited page becomes an image.
+  const [overlayBake, setOverlayBake] = useState(false);
+  const overlayBakeRef = useRef(false);
+  overlayBakeRef.current = overlayBake;
   // Refs for editBytes/editDirty so the mode→view teardown effect can read
   // current values without listing them as deps (which would re-run the effect
   // on every commit and wipe in-progress edits).
@@ -2222,16 +2274,45 @@ export function Viewer({
         const runs = await listTextRuns(editBytesRef.current, pageIndex);
         const run = runs.find((r) => r.index === objectIndex);
         if (!run) throw new Error('Could not locate the text to edit.');
-        const { buildOverlayEdit } = await import('../textedit-overlay');
-        out = await buildOverlayEdit(
-          editBytesRef.current,
-          pageIndex,
-          { left: run.left, bottom: run.bottom, right: run.right, top: run.top },
-          newText,
-          { fontFamily: run.fontFamily, fontSizePt: run.fontSizePt, fontWeight: run.fontWeight, fontItalic: run.fontItalic, color: run.color },
-        );
-        substituted = true; // overlay always draws in a standard font
-        residual = true; // non-destructive: the original glyphs remain beneath the box
+        if (overlayBakeRef.current && renderCap) {
+          // Secure overlay: render the page, paint the cover box + new text on the
+          // canvas, and rebuild the page as an image (reusing the redaction flatten)
+          // — the original glyphs are rasterized away, not merely covered.
+          const size = docCap.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
+          if (!size) throw new Error('Could not read the page size for a secure edit.');
+          const blob = await renderCap.forDocument(documentId).renderPage({ pageIndex, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
+          if (!blob) throw new Error(`Could not render page ${pageIndex + 1} to bake the edit.`);
+          const pad = Math.max(0.5, run.fontSizePt * 0.06);
+          const png = await flattenPageWithOverlay(blob, {
+            x: (run.left - pad) / size.width,
+            y: (size.height - run.top - pad) / size.height,
+            w: (run.right - run.left + pad * 2) / size.width,
+            h: (run.top - run.bottom + pad * 2) / size.height,
+            baselineY: (size.height - (run.bottom + run.fontSizePt * 0.2)) / size.height,
+            fontSizeFrac: run.fontSizePt / size.height,
+            text: newText,
+            fontFamily: run.fontFamily,
+            fontWeight: run.fontWeight,
+            fontItalic: run.fontItalic,
+            color: run.color,
+            bg: 'white',
+          });
+          const { buildRedactedPdf } = await import('../redact');
+          out = await buildRedactedPdf(editBytesRef.current, [{ pageIndex, png }]);
+          substituted = true;
+          residual = false; // rasterized → the original text is truly removed
+        } else {
+          const { buildOverlayEdit } = await import('../textedit-overlay');
+          out = await buildOverlayEdit(
+            editBytesRef.current,
+            pageIndex,
+            { left: run.left, bottom: run.bottom, right: run.right, top: run.top },
+            newText,
+            { fontFamily: run.fontFamily, fontSizePt: run.fontSizePt, fontWeight: run.fontWeight, fontItalic: run.fontItalic, color: run.color },
+          );
+          substituted = true; // overlay always draws in a standard font
+          residual = true; // non-destructive: the original glyphs remain beneath the box
+        }
       } else {
         const { editTextRun } = await import('../textedit-pdfium');
         ({ bytes: out, substituted, residual } = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText));
@@ -2254,11 +2335,13 @@ export function Viewer({
       // and a residual edit left the original glyphs in the file (not truly removed).
       // Residual is the more serious disclosure, so it takes precedence.
       setEditNote(
-        residual
-          ? 'The original text may still be present in the file. Text edit does not securely remove content — use Redaction for that.'
-          : substituted
-            ? 'Font changed to a standard substitute (the original font is embedded as a subset). Edits don’t reflow the paragraph.'
-            : null,
+        overlayBakeRef.current
+          ? 'Secure edit applied — the original text was removed and this page is now a flattened image (its text is no longer selectable).'
+          : residual
+            ? 'The original text may still be present in the file. Text edit does not securely remove content — use Redaction, or the Secure toggle.'
+            : substituted
+              ? 'Font changed to a standard substitute (the original font is embedded as a subset). Edits don’t reflow the paragraph.'
+              : null,
       );
       onEdited?.();
     } catch (e) {
@@ -2718,6 +2801,22 @@ export function Viewer({
             >
               {overlayMode ? 'Overlay ✓' : 'Overlay'}
             </button>
+            {overlayMode && (
+              <button
+                type="button"
+                className="cpdf__btn"
+                aria-pressed={overlayBake}
+                disabled={editBusy}
+                title={
+                  overlayBake
+                    ? 'Secure ON: flattens the edited page to an image so the original text is truly removed (no longer selectable on that page).'
+                    : 'Secure OFF: the original text stays beneath the cover box (still extractable). Click to flatten & remove it.'
+                }
+                onClick={() => setOverlayBake((v) => !v)}
+              >
+                {overlayBake ? 'Secure ✓' : 'Secure'}
+              </button>
+            )}
             <button type="button" className="cpdf__btn" disabled={editBusy} onClick={() => toggleTextEdit()}>
               Done
             </button>
