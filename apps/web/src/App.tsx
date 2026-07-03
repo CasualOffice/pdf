@@ -11,7 +11,7 @@ import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoveryS
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
 
-type SignatureStatus = 'checking' | 'certified' | 'signed' | 'unsigned' | 'unknown';
+type SignatureStatus = 'certified' | 'signed' | 'unsigned' | 'unknown';
 
 function bytesInclude(bytes: Uint8Array, ascii: string): boolean {
   const needle = new TextEncoder().encode(ascii);
@@ -561,14 +561,12 @@ export function App() {
                     : 'Signature status could not be confirmed yet.'
               }
             >
-              {signatureStatus === 'checking'
-                ? 'Checking'
-                : signatureStatus === 'certified'
-                  ? 'Certified'
-                  : signatureStatus === 'signed'
-                    ? 'Signed'
-                    : signatureStatus === 'unsigned'
-                      ? 'Unsigned'
+              {signatureStatus === 'certified'
+                ? 'Certified'
+                : signatureStatus === 'signed'
+                  ? 'Signed'
+                  : signatureStatus === 'unsigned'
+                    ? 'Unsigned'
                     : 'Unknown'}
             </span>
           )}
