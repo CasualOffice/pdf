@@ -1840,6 +1840,14 @@ export function Viewer({
   const [editError, setEditError] = useState<string | null>(null);
   const [editNote, setEditNote] = useState<string | null>(null);
   const [textRunsReady, setTextRunsReady] = useState(false);
+  // Overlay-replace mode (docs/TEXT-EDITING.md, "Option A"): commit by covering
+  // the old run + drawing new text on top (pure pdf-lib) instead of rewriting the
+  // page content stream — no reflow/justification damage. Off by default (the
+  // direct PDFium edit keeps the text searchable/selectable). Ref so the async
+  // commit reads the latest value.
+  const [overlayMode, setOverlayMode] = useState(false);
+  const overlayModeRef = useRef(false);
+  overlayModeRef.current = overlayMode;
   // Refs for editBytes/editDirty so the mode→view teardown effect can read
   // current values without listing them as deps (which would re-run the effect
   // on every commit and wipe in-progress edits).
@@ -1862,8 +1870,16 @@ export function Viewer({
   const editBusyRef = useRef(false);
   editBusyRef.current = editBusy;
 
-  // H-4: clear text-edit error/note when a new document is opened.
-  useEffect(() => { setEditError(null); setEditNote(null); }, [documentId]);
+  // H-4: clear text-edit error/note when a NEW document is opened — but NOT on
+  // the documentId changes that every in-session text-edit commit causes
+  // (openDocumentBuffer), which would instantly wipe the note the commit just set
+  // (font-substitution / residual / overlay disclosures). Guard on textEditing.
+  useEffect(() => {
+    if (textEditingRef.current) return;
+    setEditError(null);
+    setEditNote(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId]);
 
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
@@ -2196,8 +2212,30 @@ export function Viewer({
     setEditBusy(true);
     setEditError(null);
     try {
-      const { editTextRun } = await import('../textedit-pdfium');
-      const { bytes: out, substituted, residual } = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText);
+      let out: Uint8Array;
+      let substituted: boolean;
+      let residual: boolean;
+      if (overlayModeRef.current) {
+        // Overlay-replace: derive the run's bounds + style from the current
+        // bytes, then cover + retype via pdf-lib (no content-stream rewrite).
+        const { listTextRuns } = await import('../textedit-pdfium');
+        const runs = await listTextRuns(editBytesRef.current, pageIndex);
+        const run = runs.find((r) => r.index === objectIndex);
+        if (!run) throw new Error('Could not locate the text to edit.');
+        const { buildOverlayEdit } = await import('../textedit-overlay');
+        out = await buildOverlayEdit(
+          editBytesRef.current,
+          pageIndex,
+          { left: run.left, bottom: run.bottom, right: run.right, top: run.top },
+          newText,
+          { fontFamily: run.fontFamily, fontSizePt: run.fontSizePt, fontWeight: run.fontWeight, fontItalic: run.fontItalic, color: run.color },
+        );
+        substituted = true; // overlay always draws in a standard font
+        residual = true; // non-destructive: the original glyphs remain beneath the box
+      } else {
+        const { editTextRun } = await import('../textedit-pdfium');
+        ({ bytes: out, substituted, residual } = await editTextRun(editBytesRef.current, pageIndex, objectIndex, objectIndices, newText));
+      }
       // Use openDocumentBuffer (not onDocumentReplaced) so the Viewer stays mounted
       // and the user can keep editing without re-clicking the tool. The text layer
       // re-index via onDocumentReplaced is deferred to when they exit text-edit mode.
@@ -2666,6 +2704,20 @@ export function Viewer({
                 <Icon name="close" size={16} />
               </button>
             )}
+            <button
+              type="button"
+              className="cpdf__btn"
+              aria-pressed={overlayMode}
+              disabled={editBusy}
+              title={
+                overlayMode
+                  ? 'Overlay mode ON: covers the old text and retypes on top — no reflow/spacing damage, but the original stays beneath (use Redaction to remove).'
+                  : 'Direct mode: rewrites the text object (stays searchable) but substitutes the font and can disturb line spacing. Click for Overlay mode.'
+              }
+              onClick={() => setOverlayMode((v) => !v)}
+            >
+              {overlayMode ? 'Overlay ✓' : 'Overlay'}
+            </button>
             <button type="button" className="cpdf__btn" disabled={editBusy} onClick={() => toggleTextEdit()}>
               Done
             </button>
