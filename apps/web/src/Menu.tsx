@@ -26,7 +26,12 @@ export interface MenuDef {
 
 export function MenuBar({ menus }: { menus: MenuDef[] }) {
   const [open, setOpen] = useState<number | null>(null);
+  // Tracks whether the last open was via keyboard, so we only pull focus into the
+  // dropdown for keyboard users (a mouse hover-switch shouldn't steal focus).
+  const keyboardOpenRef = useRef(false);
   const ref = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     if (open === null) return;
@@ -37,24 +42,65 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
+  // Move focus onto the first enabled item when a menu opens via keyboard.
+  useEffect(() => {
+    if (open === null || !keyboardOpenRef.current) return;
+    menuItems()[0]?.focus();
+  }, [open]);
+
+  const menuItems = () =>
+    Array.from(dropdownRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? []);
+
+  const openMenu = (i: number, viaKeyboard: boolean) => {
+    keyboardOpenRef.current = viaKeyboard;
+    setOpen(i);
+  };
+  const closeToTrigger = (i: number) => {
+    setOpen(null);
+    triggerRefs.current[i]?.focus();
+  };
+
+  const onTriggerKeyDown = (e: React.KeyboardEvent, i: number) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); openMenu(i, true); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); openMenu(i, true); }
+    else if (e.key === 'ArrowRight' && menus.length > 1) { e.preventDefault(); openMenu((i + 1) % menus.length, true); }
+    else if (e.key === 'ArrowLeft' && menus.length > 1) { e.preventDefault(); openMenu((i - 1 + menus.length) % menus.length, true); }
+  };
+
+  const onDropdownKeyDown = (e: React.KeyboardEvent, i: number) => {
+    const items = menuItems();
+    if (e.key === 'Escape') { e.preventDefault(); closeToTrigger(i); return; }
+    if (e.key === 'Tab') { setOpen(null); return; } // let focus leave naturally
+    if (!items.length) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(idx + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(idx - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'ArrowRight' && menus.length > 1) { e.preventDefault(); openMenu((i + 1) % menus.length, true); }
+    else if (e.key === 'ArrowLeft' && menus.length > 1) { e.preventDefault(); openMenu((i - 1 + menus.length) % menus.length, true); }
+  };
+
   return (
-    <div className="menubar" ref={ref} onKeyDown={(e) => e.key === 'Escape' && setOpen(null)}>
+    <div className="menubar" ref={ref}>
       {menus.map((m, i) => (
         <div className="menubar__menu" key={m.label}>
           <button
             type="button"
+            ref={(el) => { triggerRefs.current[i] = el; }}
             className={m.icon ? 'menubar__btn menubar__btn--icon' : 'menubar__btn'}
             data-open={open === i ? 'true' : undefined}
             aria-haspopup="menu"
             aria-expanded={open === i}
             aria-label={m.label}
-            onClick={() => setOpen(open === i ? null : i)}
-            onMouseEnter={() => open !== null && setOpen(i)}
+            onClick={() => (open === i ? setOpen(null) : openMenu(i, false))}
+            onKeyDown={(e) => onTriggerKeyDown(e, i)}
+            onMouseEnter={() => open !== null && openMenu(i, false)}
           >
             {m.icon ?? m.label}
           </button>
           {open === i && (
-            <div className="menubar__dropdown" role="menu" aria-label={m.label}>
+            <div className="menubar__dropdown" role="menu" aria-label={m.label} ref={dropdownRef} onKeyDown={(e) => onDropdownKeyDown(e, i)}>
               {m.items.map((it, j) =>
                 it.divider ? (
                   <div className="menubar__divider" key={j} role="separator" />
