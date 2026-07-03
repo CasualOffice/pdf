@@ -434,6 +434,51 @@ async function flattenPage(blob: Blob, rects: { x: number; y: number; w: number;
   return new Uint8Array(await out.arrayBuffer());
 }
 
+/** Sample the page background just OUTSIDE a box (fractional, top-left) so an
+ *  overlay cover box blends with the page. Reads a ring of points around the box
+ *  and returns the per-channel median (robust to stray glyph pixels in the ring),
+ *  or null if sampling isn't possible. */
+function sampleBg(
+  ctx: CanvasRenderingContext2D,
+  box: { x: number; y: number; w: number; h: number },
+  W: number,
+  H: number,
+): [number, number, number] | null {
+  const bx = box.x * W, by = box.y * H, bw = box.w * W, bh = box.h * H;
+  const m = Math.max(2, Math.round(bh * 0.4)); // ring margin outside the box
+  const cx = (x: number) => Math.min(W - 1, Math.max(0, Math.round(x)));
+  const cy = (y: number) => Math.min(H - 1, Math.max(0, Math.round(y)));
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= 12; i++) { const fx = bx + (bw * i) / 12; pts.push([fx, by - m], [fx, by + bh + m]); }
+  for (let i = 0; i <= 8; i++) { const fy = by + (bh * i) / 8; pts.push([bx - m, fy], [bx + bw + m, fy]); }
+  const rs: number[] = [], gs: number[] = [], bs: number[] = [];
+  for (const [x, y] of pts) {
+    let d: Uint8ClampedArray;
+    try { d = ctx.getImageData(cx(x), cy(y), 1, 1).data; } catch { return null; }
+    if (d[3] === 0) continue;
+    rs.push(d[0]); gs.push(d[1]); bs.push(d[2]);
+  }
+  if (rs.length < 4) return null;
+  const med = (a: number[]) => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
+  return [med(rs), med(gs), med(bs)];
+}
+
+/** Render a page Blob to a scratch canvas and sample the background around `box`. */
+async function sampleBgFromBlob(blob: Blob, box: { x: number; y: number; w: number; h: number }): Promise<[number, number, number] | null> {
+  const img = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    return sampleBg(ctx, box, canvas.width, canvas.height);
+  } finally {
+    img.close();
+  }
+}
+
 /** Bake an overlay edit onto a rendered page: paint an opaque cover box over the
  *  old run, then draw the new text on top, and return PNG bytes. Used by the
  *  overlay "Secure (flatten)" path — the flattened page (built by buildRedactedPdf)
@@ -466,7 +511,10 @@ async function flattenPageWithOverlay(
   const H = canvas.height;
   ctx.drawImage(img, 0, 0);
   img.close();
-  ctx.fillStyle = edit.bg;
+  // Sample the surrounding background so the cover box blends (fall back to the
+  // caller's `bg`). Sample BEFORE painting the box.
+  const sampled = sampleBg(ctx, edit, W, H);
+  ctx.fillStyle = sampled ? `rgb(${sampled[0]}, ${sampled[1]}, ${sampled[2]})` : edit.bg;
   ctx.fillRect(edit.x * W, edit.y * H, edit.w * W, edit.h * H);
   if (edit.text.length > 0) {
     const px = edit.fontSizeFrac * H;
@@ -2302,6 +2350,26 @@ export function Viewer({
           substituted = true;
           residual = false; // rasterized → the original text is truly removed
         } else {
+          // Best-effort: render the page and sample the background so the cover
+          // box blends on non-white pages (falls back to white in buildOverlayEdit).
+          let bgColor: [number, number, number] | undefined;
+          const size = docCap.getDocument(documentId)?.pages?.[pageIndex]?.size as { width: number; height: number } | undefined;
+          if (renderCap && size) {
+            try {
+              const blob = await renderCap.forDocument(documentId).renderPage({ pageIndex, options: { scaleFactor: 1, withAnnotations: true } }).toPromise();
+              const pad = Math.max(0.5, run.fontSizePt * 0.06);
+              if (blob) {
+                bgColor = (await sampleBgFromBlob(blob, {
+                  x: (run.left - pad) / size.width,
+                  y: (size.height - run.top - pad) / size.height,
+                  w: (run.right - run.left + pad * 2) / size.width,
+                  h: (run.top - run.bottom + pad * 2) / size.height,
+                })) ?? undefined;
+              }
+            } catch {
+              /* sampling is best-effort — fall back to white */
+            }
+          }
           const { buildOverlayEdit } = await import('../textedit-overlay');
           out = await buildOverlayEdit(
             editBytesRef.current,
@@ -2309,6 +2377,7 @@ export function Viewer({
             { left: run.left, bottom: run.bottom, right: run.right, top: run.top },
             newText,
             { fontFamily: run.fontFamily, fontSizePt: run.fontSizePt, fontWeight: run.fontWeight, fontItalic: run.fontItalic, color: run.color },
+            bgColor ? { bgColor } : undefined,
           );
           substituted = true; // overlay always draws in a standard font
           residual = true; // non-destructive: the original glyphs remain beneath the box
