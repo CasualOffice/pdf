@@ -245,7 +245,7 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       const obj = p.FPDFPage_GetObject(page, i);
       if (p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) continue;
       const text = readObjText(p, textPage, obj);
-      if (!text.trim()) continue;
+      if (!text) continue;
       const fl = m._malloc(16);
       p.FPDFPageObj_GetBounds(obj, fl, fl + 4, fl + 8, fl + 12);
       const f = new Float32Array(m.HEAPU8.buffer, fl, 4);
@@ -267,11 +267,13 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       return a.left - b.left;
     });
 
-    // Group adjacent objects into logical runs (word/line level).
+    // Group adjacent objects into logical runs (line level). Many PDFs split a
+    // sentence into per-word or per-glyph objects; be generous about normal word
+    // spacing, but still avoid jumping across columns.
     // Two objects merge when:
-    //  • their baselines are within 25% of the taller character's height (same line)
-    //  • the horizontal gap is < 3× font height, capped at 72pt (1") to handle
-    //    word spacing at any size without merging across column gaps
+    //  • their baselines are within ~35% of the taller character's height (same line)
+    //  • the horizontal gap is within a line-scale threshold, capped at 240pt to
+    //    handle large title/heading word spacing without merging columns
     //  • overlap ≤ 50% of height (tolerate kerning but not two separate words)
     const groups: Obj[][] = [];
     for (const o of objs) {
@@ -280,9 +282,9 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       if (last) {
         const prev = last[last.length - 1];
         const prevH = prev.top - prev.bottom;
-        const sameLine = Math.abs(prev.bottom - o.bottom) < Math.max(prevH, h) * 0.25;
+        const sameLine = Math.abs(prev.bottom - o.bottom) < Math.max(prevH, h) * 0.35;
         const hGap = o.left - prev.right;
-        const maxGap = Math.min(Math.max(prevH, h) * 3, 72);
+        const maxGap = Math.min(Math.max(Math.max(prevH, h) * 10, 48), 240);
         if (sameLine && hGap < maxGap && hGap >= -h * 0.5) {
           last.push(o);
           continue;
@@ -291,7 +293,19 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       groups.push([o]);
     }
 
-    return groups.map((g) => {
+    const logicalGroups = groups.filter((g) => g.some((o) => o.text.length > 0));
+
+    const groupText = (g: Obj[]) =>
+      g.map((o, i) => {
+        if (i === 0) return o.text;
+        const prev = g[i - 1];
+        const h = Math.max(prev.top - prev.bottom, o.top - o.bottom);
+        const gap = o.left - prev.right;
+        const needsSpace = gap > h * 0.45 && !/\s$/.test(prev.text) && !/^\s/.test(o.text);
+        return `${needsSpace ? ' ' : ''}${o.text}`;
+      }).join('');
+
+    return logicalGroups.map((g) => {
       // Extract font metadata from the primary (first) object for display.
       const primaryObj = p.FPDFPage_GetObject(page, g[0].index);
       const font = primaryObj ? p.FPDFTextObj_GetFont(primaryObj) : 0;
@@ -323,7 +337,7 @@ export async function listTextRuns(src: Uint8Array, pageIndex: number): Promise<
       return {
         index: g[0].index,
         indices: g.map((o) => o.index),
-        text: g.map((o) => o.text).join(''),
+        text: groupText(g),
         left: Math.min(...g.map((o) => o.left)),
         bottom: Math.min(...g.map((o) => o.bottom)),
         right: Math.max(...g.map((o) => o.right)),
@@ -449,7 +463,7 @@ export async function editTextRun(
       const isSubset = /^[A-Z]{6}\+/.test(name);
       const needsSubstitution = newChars.length > 0 || isSubset;
 
-      // Suppress a secondary object by replacing its text with a single space.
+      // Suppress an object by replacing its text with a single space.
       // FPDFText_SetText("") aborts in the WASM build; a space is invisible but
       // keeps the object valid in the content stream.
       // For subsetted fonts the space glyph is often absent → SetText returns
@@ -461,21 +475,29 @@ export async function editTextRun(
         mtx[5] = -99999; // y translation
         setMatrix(p, o, mtx);
       };
-      const suppress = (idx: number) => {
-        if (idx === objectIndex) return;
-        const o = p.FPDFPage_GetObject(page, idx);
+      const suppressObj = (o: number) => {
         if (!o || p.FPDFPageObj_GetType(o) !== FPDF_PAGEOBJ_TEXT) return;
         const sp = allocUtf16(p, ' ');
         const ok = p.FPDFText_SetText(o, sp);
         m._free(sp);
         if (!ok) moveOffPage(o);
       };
+      const suppress = (idx: number) => {
+        if (idx === objectIndex) return;
+        const o = p.FPDFPage_GetObject(page, idx);
+        if (!o || p.FPDFPageObj_GetType(o) !== FPDF_PAGEOBJ_TEXT) return;
+        suppressObj(o);
+      };
 
       // Zero out every secondary object in the group first so no ghost text
       // from per-character objects lingers after the primary is replaced.
       for (const idx of objectIndices) suppress(idx);
 
-      if (!needsSubstitution) {
+      if (newText.length === 0) {
+        // Deleting all text in the run: suppress the primary too. Calling
+        // FPDFText_SetText("") is not reliable in this WASM build.
+        suppressObj(obj);
+      } else if (!needsSubstitution) {
         // Keep original font — all chars already present and font is not subsetted.
         const wide = allocUtf16(p, newText);
         try {

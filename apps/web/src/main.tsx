@@ -3,8 +3,8 @@
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-// Certified PDF signing (@signpdf + node-forge, via @casualoffice/pdf) operates
-// on Node Buffers; expose a Buffer global before anything imports the SDK.
+// Certified PDF signing runs through the wasm Rust core; expose a Buffer global
+// before anything imports the SDK because other SDK paths still expect it.
 import { Buffer } from 'buffer';
 if (!(globalThis as { Buffer?: unknown }).Buffer) (globalThis as { Buffer?: unknown }).Buffer = Buffer;
 import './desk-bridge-bootstrap';

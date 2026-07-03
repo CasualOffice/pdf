@@ -19,6 +19,10 @@
     "./page-furniture": {
       "types": "./src/page-furniture.ts",
       "import": "./src/page-furniture.ts"
+    },
+    "./merge": {
+      "types": "./src/merge.ts",
+      "import": "./src/merge.ts"
     }
   },
   "scripts": {

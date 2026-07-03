@@ -17,6 +17,10 @@ crate-type = ["cdylib", "rlib"]
 # off to stay wasm-clean. (lopdf is MIT — locked decision #4.)
 [dependencies]
 lopdf = { version = "0.36", default-features = false }
+cms = "0.3.0-pre.2"
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 
 # PDFium binding lives on native targets for Phase 0. The browser gets the same
 # engine via PDFium-WASM (EmbedPDF) today; wiring this crate's own pdfium calls
@@ -27,7 +31,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
 # lopdf's (always-on) encryption pulls rand → getrandom; on wasm that needs the
 # browser crypto backend. Paired with the getrandom_backend rustflag in
 # ../../.cargo/config.toml. Runs in the worker, which has crypto.getRandomValues.
 getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }

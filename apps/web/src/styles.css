@@ -38,6 +38,9 @@ body {
 .recoverybar__text {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .recoverybar__btn {
   flex: none;
@@ -104,6 +107,105 @@ body {
   outline-offset: 0;
   background: var(--color-surface, #fff);
 }
+.appbar__dirty {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning, #f5a623);
+  flex: none;
+  margin-left: -4px;
+}
+.appbar__sigstatus {
+  flex: none;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--color-border, #d4d7dd);
+  border-radius: 6px;
+  color: var(--color-text-secondary, #555);
+  background: var(--color-surface, #fff);
+  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
+}
+.appbar__sigstatus[data-state='certified'],
+.appbar__sigstatus[data-state='signed'] {
+  color: var(--color-success, #16794c);
+  border-color: color-mix(in srgb, var(--color-success, #16794c) 35%, var(--color-border, #d4d7dd));
+  background: color-mix(in srgb, var(--color-success, #16794c) 8%, var(--color-surface, #fff));
+}
+.appbar__sigstatus[data-state='unknown'],
+.appbar__sigstatus[data-state='checking'] {
+  color: var(--color-text-tertiary, #777);
+}
+
+/* Quick-action pill buttons (Open / Download) visible in the app bar. */
+.appbar__quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border, #d4d7dd);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface-raised, #fff);
+  color: var(--color-text-secondary, #444);
+  font: 500 13px/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  white-space: nowrap;
+}
+.appbar__quick:hover {
+  background: var(--color-hover, rgba(0,0,0,0.04));
+  color: var(--color-text, #111);
+  border-color: var(--color-border-strong, #bbc1cb);
+}
+.appbar__quick:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 2px;
+}
+.appbar__quick--save {
+  background: var(--color-accent-soft, rgba(70,90,255,0.1));
+  color: var(--color-accent, #4658ff);
+  border-color: var(--color-accent, #4658ff);
+}
+.appbar__quick--save:hover {
+  background: var(--color-accent, #4658ff);
+  color: #fff;
+  border-color: var(--color-accent, #4658ff);
+}
+
+/* Vertical separator between quick buttons and mode control. */
+.appbar__sep {
+  width: 1px;
+  height: 22px;
+  background: var(--color-divider, rgba(0,0,0,0.1));
+  flex: none;
+}
+
+@media (max-width: 600px) {
+  .appbar__quick span { display: none; }
+  .appbar__quick { padding: 0 8px; }
+  .appbar__sep { display: none; }
+  .appbar__sigstatus { display: none; }
+  .appbar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .appbar__left {
+    flex: 0 1 auto;
+  }
+  .appbar__title {
+    display: none;
+  }
+  .appbar__actions {
+    gap: 4px;
+  }
+  .appbar__avatar {
+    display: none;
+  }
+}
+
 .appbar__actions {
   display: flex;
   align-items: center;
@@ -275,9 +377,129 @@ body {
 .canvas {
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 .viewer {
   height: 100%;
+}
+
+/* ── Welcome screen (shown when no document is open) ────────────────────── */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  gap: 24px;
+  text-align: center;
+}
+.welcome__logo {
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+.welcome__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.welcome__title {
+  margin: 0;
+  font: 700 28px/1.2 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1b1c1f);
+}
+.welcome__sub {
+  margin: 0;
+  font: 14px/1.5 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text-secondary, #6b7280);
+}
+.welcome__dropzone {
+  width: 100%;
+  max-width: 420px;
+  padding: 44px 32px;
+  border: 2px dashed var(--color-border, #d4d7dd);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--color-text-secondary, #6b7280);
+  transition: border-color 120ms, background 120ms, color 120ms;
+  user-select: none;
+}
+.welcome__dropzone:hover,
+.welcome--drag .welcome__dropzone {
+  border-color: var(--color-accent, #4658ff);
+  background: rgba(70, 88, 255, 0.05);
+  color: var(--color-accent, #4658ff);
+}
+.welcome__drop-label {
+  font: 600 15px/1.4 var(--font-sans, system-ui, sans-serif);
+}
+.welcome__drop-hint {
+  font: 13px/1.4 var(--font-sans, system-ui, sans-serif);
+  opacity: 0.75;
+}
+.welcome__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.welcome__btn {
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid var(--color-border, #d4d7dd);
+  border-radius: 10px;
+  background: var(--color-surface-raised, #fff);
+  color: var(--color-text, #1b1c1f);
+  font: 500 14px/1.4 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms;
+}
+.welcome__btn:hover {
+  background: var(--color-surface-hover, #f1f3f6);
+}
+.welcome__btn--primary {
+  border-color: transparent;
+  background: var(--color-primary, #2d8cff);
+  color: #fff;
+}
+.welcome__btn--primary:hover {
+  background: var(--color-primary-strong, #1f6fd6);
+}
+[data-theme='dark'] .welcome__btn {
+  background: var(--color-surface-raised, #1f2128);
+}
+[data-theme='dark'] .welcome__btn:hover {
+  background: var(--color-surface-hover, #2c2f38);
+}
+
+/* Drag-and-drop: full-canvas overlay while a PDF is held over the window. */
+.canvas__dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(70, 88, 255, 0.1);
+  border: 3px dashed var(--color-accent, #4658ff);
+  border-radius: 14px;
+  pointer-events: none;
+}
+.canvas__dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 40px;
+  background: var(--color-surface-raised, #fff);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  color: var(--color-accent, #4658ff);
+  font: 700 16px/1.3 var(--font-sans, system-ui, sans-serif);
 }
 
 /* ── About dialog ───────────────────────────────────────────────────────── */
@@ -291,7 +513,7 @@ body {
   background: var(--color-scrim, rgba(0, 0, 0, 0.45));
 }
 .dialog {
-  width: 360px;
+  width: 400px;
   max-width: calc(100% - 32px);
   padding: 28px 24px;
   text-align: center;
@@ -311,8 +533,34 @@ body {
 }
 .dialog__shortcuts {
   margin: 0 0 18px;
+  text-align: left;
+  font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  border: 1px solid var(--color-border, #e0e3e8);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dialog__shortcuts > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-border, #e0e3e8);
+}
+.dialog__shortcuts > div:last-child { border-bottom: none; }
+.dialog__shortcuts > div:nth-child(even) { background: var(--color-surface-strip, #f7f8fa); }
+.dialog__shortcuts dt {
   color: var(--color-text-secondary, #555);
-  font: 400 12px/1.5 var(--font-sans, system-ui, sans-serif);
+}
+.dialog__shortcuts dd {
+  margin: 0;
+  font: 600 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  color: var(--color-text, #111);
+  white-space: nowrap;
+  background: var(--color-surface-raised, #fff);
+  border: 1px solid var(--color-border, #d0d3d8);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 .dialog__close {
   height: 36px;

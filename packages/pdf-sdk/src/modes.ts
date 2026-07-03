@@ -63,6 +63,11 @@ export interface CasualPdfApi {
   setTool(toolId: string | null): void;
   /** Open the in-viewer find/search bar. */
   openSearch(): void;
+  /** Open the visible signature flow: draw/type a signature, then click a page
+   *  to place it. The host should switch to edit mode before calling this. */
+  openSignature(): void;
+  /** True when the document already has a visible signature annotation. */
+  hasVisibleSignature(): boolean;
   /** Current document bytes (annotations/signatures baked in) for the host to
    *  post-process — e.g. apply a certified digital signature. Null if export
    *  isn't ready. */
