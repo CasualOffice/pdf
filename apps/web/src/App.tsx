@@ -8,6 +8,7 @@ import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
 import { PageFurnitureDialog } from './PageFurnitureDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
+import { isDesktop } from './desk-bridge-bootstrap';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
 
@@ -100,6 +101,10 @@ export function App() {
   const insertFileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
+  // True inside the Casual Office desktop shell (?desk=1). Routes Open/Save and
+  // the initial document load through the native Tauri bridge instead of the
+  // browser file picker / <a download>. A no-op in a plain browser.
+  const desktop = isDesktop();
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef(title);
   titleRef.current = title;
@@ -127,8 +132,53 @@ export function App() {
   };
 
   // Crash recovery (UX-I5): on load, offer to restore the last unsaved session.
+  // Skipped on desktop — there the native shell owns crash recovery (its sidecar);
+  // wiring the web bytes-snapshot to __deskApp__ recovery is a follow-up.
   useEffect(() => {
+    if (desktop) return;
     void loadSnapshot().then((s) => { if (s) setRecovery(s); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Desktop: load the file the shell bound to this window (?file=) via the native
+  // bridge (chunked read), bypassing the welcome screen. Runs once on mount.
+  useEffect(() => {
+    if (!desktop) return;
+    const bridge = window.__deskApp__;
+    if (!bridge?.filePath) { bridge?.dismissBoot(); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const buf = await bridge.loadDocument();
+        if (cancelled) return;
+        const url = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }));
+        objectUrl.current = url;
+        setSrc(url);
+        setTitle(bridge.filePath!.split(/[/\\]/).pop()!.replace(/\.pdf$/i, ''));
+        setMode('view');
+        setDirty(false);
+      } catch (e) {
+        console.error('desktop load failed', e);
+      } finally {
+        bridge.dismissBoot();
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Desktop: follow the shell's theme (initial ?theme= + live deskapp:theme events).
+  useEffect(() => {
+    if (!desktop) return;
+    const initial = window.__deskApp__?.theme;
+    if (initial) setDark(initial === 'dark');
+    const onTheme = (e: Event) => {
+      const resolved = (e as CustomEvent<{ resolved?: 'light' | 'dark' }>).detail?.resolved;
+      if (resolved) setDark(resolved === 'dark');
+    };
+    window.addEventListener('deskapp:theme', onTheme);
+    return () => window.removeEventListener('deskapp:theme', onTheme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Autosave: debounce a full-bytes snapshot after edits settle (2.5s idle), so
@@ -140,6 +190,7 @@ export function App() {
     }
   };
   const scheduleSnapshot = () => {
+    if (desktop) return; // desktop recovery uses the native sidecar (follow-up), not IndexedDB
     cancelSnapshot();
     snapshotTimer.current = window.setTimeout(async () => {
       snapshotTimer.current = null;
@@ -152,6 +203,7 @@ export function App() {
   };
   const markEdited = () => {
     setDirty(true);
+    if (desktop) window.__deskApp__?.setDirty(true);
     scheduleSnapshot();
   };
   // Routes bytes from destructive ops (redaction, organize, text-edit) through a
@@ -177,8 +229,7 @@ export function App() {
     if (srcRef.current) pushVersion(redoStack, srcRef.current);
     objectUrl.current = prev.startsWith('blob:') ? prev : null;
     setSrc(prev);
-    setDirty(true);
-    scheduleSnapshot(); // snapshot the restored state after viewer remounts
+    markEdited(); // marks dirty, propagates to the desktop shell, and snapshots (web)
   };
 
   const versionRedo = () => {
@@ -187,8 +238,7 @@ export function App() {
     if (srcRef.current) pushVersion(undoStack, srcRef.current);
     objectUrl.current = next.startsWith('blob:') ? next : null;
     setSrc(next);
-    setDirty(true);
-    scheduleSnapshot();
+    markEdited(); // marks dirty, propagates to the desktop shell, and snapshots (web)
   };
 
   useEffect(() => cancelSnapshot, []);
@@ -281,6 +331,10 @@ export function App() {
   // are included. Revokes the URL after 30 s (enough for the browser to load).
   const printPdf = async () => {
     if (!src) return;
+    // Print via a browser tab is a web-only path — in the Tauri shell a blob: URL
+    // won't resolve in an external browser and would leak a savable PDF tab that
+    // bypasses native Save. Native print-to-PDF is a follow-up; no-op for now.
+    if (desktop) return;
     // Open the tab synchronously inside the click gesture — deferring window.open
     // until after `await getBytes()` puts it outside the gesture, where pop-up
     // blockers silently block it. We navigate the already-open tab once ready.
@@ -305,7 +359,16 @@ export function App() {
     }
   };
 
+  // On desktop, "downloading" a produced file (signed PDF, etc.) must not use a
+  // browser <a download> (forbidden in the shell) — route it through the native
+  // Save-As dialog instead. In a browser this is the normal anchor download.
   const downloadBlob = (blob: Blob, filename: string) => {
+    if (desktop && window.__deskApp__) {
+      void blob.arrayBuffer().then((buf) => window.__deskApp__!.saveAs(filename, buf)).catch((e) => {
+        console.error('desktop saveAs failed', e);
+      });
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -318,6 +381,20 @@ export function App() {
 
   const download = async () => {
     if (!src) return;
+    // Desktop: Save writes the current bytes back to the bound file path (atomic,
+    // chunked) via the native bridge — never a browser download.
+    if (desktop && window.__deskApp__) {
+      try {
+        const bytes = await api.current?.getBytes();
+        if (!bytes?.byteLength) throw new Error('Could not read the current document.');
+        const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        const saved = await window.__deskApp__.save(buf);
+        if (saved) setDirty(false);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
     // A clean save to disk supersedes the recovery snapshot.
     cancelSnapshot();
     void clearSnapshot();
@@ -333,6 +410,17 @@ export function App() {
     } catch {
       window.open(src, '_blank');
     }
+  };
+
+  // Open a document. On desktop this goes through the native picker and spawns a
+  // new document window (the shell's one-window-per-file model); in a browser it
+  // opens the hidden file input (after the unsaved-changes guard).
+  const openDocument = () => {
+    if (desktop && window.__deskApp__) {
+      void window.__deskApp__.openFile();
+      return;
+    }
+    if (confirmDiscard()) fileRef.current?.click();
   };
 
   const signDocument = async () => {
@@ -472,11 +560,11 @@ export function App() {
       label: 'Menu',
       icon: <Icon name="menu" size={18} />,
       items: [
-        { label: 'Open…', shortcut: '⌘O', onSelect: () => { if (confirmDiscard()) fileRef.current?.click(); } },
+        { label: 'Open…', shortcut: '⌘O', onSelect: openDocument },
         { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); clearStack(undoStack); clearStack(redoStack); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); setMode('view'); } } },
         { divider: true },
-        { label: dirty ? 'Download changes' : 'Download', shortcut: '⌘S', disabled: !src, onSelect: download },
-        { label: 'Print / open in new tab', shortcut: '⌘P', disabled: !src, onSelect: () => { void printPdf(); } },
+        { label: desktop ? 'Save' : (dirty ? 'Download changes' : 'Download'), shortcut: '⌘S', disabled: !src, onSelect: download },
+        { label: desktop ? 'Print' : 'Print / open in new tab', shortcut: '⌘P', disabled: !src || desktop, onSelect: () => { void printPdf(); } },
         { divider: true },
         { label: 'Insert PDF…', disabled: !src, onSelect: () => insertFileRef.current?.click() },
         { divider: true },
@@ -500,9 +588,9 @@ export function App() {
       }
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
-      if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
-      else if (k === 's') { e.preventDefault(); download(); }
-      else if (k === 'p') { e.preventDefault(); void printPdf(); }
+      if (k === 'o') { e.preventDefault(); openDocument(); }
+      else if (k === 's') { e.preventDefault(); void download(); }
+      else if (k === 'p' && !desktop) { e.preventDefault(); void printPdf(); }
       else if (k === 'f' && !isTyping) { e.preventDefault(); api.current?.openSearch(); }
       else if (k === 'z' && !isTyping) {
         // Two-level undo: annotation history first, then document-version undo.
@@ -577,7 +665,7 @@ export function App() {
             className="appbar__quick"
             aria-label="Open PDF (⌘O)"
             title="Open PDF (⌘O)"
-            onClick={() => { if (confirmDiscard()) fileRef.current?.click(); }}
+            onClick={openDocument}
           >
             <Icon name="open" size={15} />
             <span>Open</span>
@@ -586,12 +674,12 @@ export function App() {
             <button
               type="button"
               className={`appbar__quick${dirty ? ' appbar__quick--save' : ''}`}
-              aria-label={dirty ? 'Download changes (⌘S)' : 'Download (⌘S)'}
-              title={dirty ? 'Download changes (⌘S)' : 'Download (⌘S)'}
-              onClick={download}
+              aria-label={desktop ? 'Save (⌘S)' : dirty ? 'Download changes (⌘S)' : 'Download (⌘S)'}
+              title={desktop ? 'Save (⌘S)' : dirty ? 'Download changes (⌘S)' : 'Download (⌘S)'}
+              onClick={() => void download()}
             >
               <Icon name="download" size={15} />
-              <span>{dirty ? 'Download changes' : 'Download'}</span>
+              <span>{desktop ? 'Save' : dirty ? 'Download changes' : 'Download'}</span>
             </button>
           )}
           {src && <span className="appbar__sep" aria-hidden="true" />}
