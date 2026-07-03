@@ -15,6 +15,7 @@
 
 // Pure-Rust structure ops (lopdf) — compile on BOTH native and wasm32, no PDFium.
 pub mod redact;
+pub mod sign;
 pub mod textedit;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -65,6 +66,7 @@ pub use native::{bind_pdfium, page_count, render_first_page_png};
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use crate::redact::{redact_pdf, FracRect, PageRects};
+    use crate::sign::sign_pdf;
     use wasm_bindgen::prelude::*;
 
     /// Build identifier — proves the same crate compiles to wasm32. The PDFium
@@ -146,6 +148,26 @@ mod wasm {
     ) -> Result<Vec<u8>, JsValue> {
         move_text_run(pdf, page_index, run_id, dx, dy)
             .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Apply a detached PDF signature as an incremental update.
+    #[wasm_bindgen]
+    pub fn sign_pdf_wasm(
+        pdf: &[u8],
+        signer_name: &str,
+        reason: &str,
+        location: Option<String>,
+        contact_info: Option<String>,
+    ) -> Result<Vec<u8>, JsValue> {
+        console_error_panic_hook::set_once();
+        sign_pdf(
+            pdf,
+            signer_name,
+            reason,
+            location.as_deref(),
+            contact_info.as_deref(),
+        )
+        .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 

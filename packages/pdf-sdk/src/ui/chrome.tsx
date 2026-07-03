@@ -499,7 +499,7 @@ function TextEditLayer({
     nextRun: PdfTextRun | null,
   ) => {
     suppressBlurRef.current = true;
-    if (text.trim() && text !== original) {
+    if (text !== original) {
       if (editBusy) {
         pendingCommitRef.current = [pageIndex, index, indices, text];
       } else {
@@ -554,7 +554,7 @@ function TextEditLayer({
               // Always commit on blur (whether moving to another run or clicking outside).
               // When clicking another run, onBlur fires first; that button's onClick will
               // activate it — so we just need to commit and NOT call setActive(null).
-              if (active.text.trim() && active.text !== r.text) {
+              if (active.text !== r.text) {
                 if (editBusy) {
                   // A commit is already in-flight — queue this one so it's not
                   // silently dropped. pendingCommitRef is flushed by the useEffect
@@ -1816,6 +1816,7 @@ export function Viewer({
   const docCapRef = useRef(docCap);
   docCapRef.current = docCap;
   const { provides: sigCap } = useSignatureCapability();
+  const signaturePlacement = useActivePlacement(documentId);
   const { rotation: viewRotation, provides: rotateApi } = useRotate(documentId);
   const { state: fs } = useFullscreen();
   // Internal clipboard for copy/paste of annotations (stores annotation objects).
@@ -1915,6 +1916,21 @@ export function Viewer({
       },
       setTool: (id) => annoApi?.setActiveTool(id),
       openSearch: () => setSearchOpen(true),
+      openSignature: () => {
+        annoApi?.setActiveTool(null);
+        annoApi?.deselectAnnotation();
+        setPendingImage(null);
+        setRedacting(false);
+        setTextEditing(false);
+        setSigning(true);
+      },
+      hasVisibleSignature: () => {
+        const anns = annoApi?.getAnnotations() ?? [];
+        return anns.some((a) => {
+          const toolId = annoApi?.findToolForAnnotation(a.object)?.id ?? null;
+          return toolId === 'signatureStamp' || toolId === 'signatureInk';
+        });
+      },
       getBytes: async () => {
         if (!exportCap) return null;
         const ab = await exportCap.saveAsCopy().toPromise();
@@ -2442,7 +2458,7 @@ export function Viewer({
               />
             </Viewport>
           </ZoomGestureWrapper>
-          {editing && <PropertiesPanel documentId={documentId} />}
+          {editing && !signaturePlacement && <PropertiesPanel documentId={documentId} />}
         </div>
         {/* The wrapper is in the normal flex flow so the viewport stops above
             the bar — the absolutely-centred pill floats inside this reserved lane

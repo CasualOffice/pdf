@@ -29,6 +29,11 @@ export function move_text_run_wasm(pdf: Uint8Array, page_index: number, run_id: 
  */
 export function redact_pdf_wasm(pdf: Uint8Array, spec: Float64Array): Uint8Array;
 
+/**
+ * Apply a detached PDF signature as an incremental update.
+ */
+export function sign_pdf_wasm(pdf: Uint8Array, signer_name: string, reason: string, location?: string | null, contact_info?: string | null): Uint8Array;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -38,10 +43,11 @@ export interface InitOutput {
     readonly list_text_runs_wasm: (a: number, b: number, c: number) => [number, number, number, number];
     readonly move_text_run_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly redact_pdf_wasm: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly sign_pdf_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;

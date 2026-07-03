@@ -3,12 +3,59 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
+import { signPdf } from '@casualoffice/pdf/sign';
 import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
 import { PageFurnitureDialog } from './PageFurnitureDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
+
+type SignatureStatus = 'checking' | 'certified' | 'signed' | 'unsigned' | 'unknown';
+
+function bytesInclude(bytes: Uint8Array, ascii: string): boolean {
+  const needle = new TextEncoder().encode(ascii);
+  outer:
+  for (let i = 0; i <= bytes.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (bytes[i + j] !== needle[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+function hasPdfSignature(bytes: Uint8Array): boolean {
+  return (
+    bytesInclude(bytes, '/ByteRange') &&
+    bytesInclude(bytes, '/Contents') &&
+    (bytesInclude(bytes, '/Type/Sig') ||
+      bytesInclude(bytes, '/Type /Sig') ||
+      bytesInclude(bytes, '/SigFlags'))
+  );
+}
+
+function hasVisibleSignatureBytes(bytes: Uint8Array): boolean {
+  return (
+    bytesInclude(bytes, '/Subtype/Stamp') ||
+    bytesInclude(bytes, '/Subtype /Stamp') ||
+    bytesInclude(bytes, '/Type/Annot') ||
+    bytesInclude(bytes, '/Type /Annot')
+  );
+}
+
+function titleFromSrc(value: string | null): string {
+  if (!value) return '';
+  if (value.startsWith('blob:')) return 'Untitled document';
+  try {
+    const url = new URL(value, typeof window === 'undefined' ? 'http://localhost' : window.location.href);
+    const last = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
+    return (last || url.hostname || 'PDF document').replace(/\.pdf$/i, '') || 'PDF document';
+  } catch {
+    const last = value.split(/[\\/]/).filter(Boolean).pop() || value;
+    return decodeURIComponent(last).replace(/\.pdf$/i, '') || 'PDF document';
+  }
+}
 
 // Returns the URL from ?src= param, or null (welcome screen) when none is set.
 function initialSrc(): string | null {
@@ -34,12 +81,15 @@ const MODES: { id: Mode; label: string; icon: 'eye' | 'suggest' | 'pencil' }[] =
 export function App() {
   const [mode, setMode] = useState<Mode>('view');
   const [src, setSrc] = useState<string | null>(initialSrc);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(() => titleFromSrc(initialSrc()));
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
-  const [signing, setSigning] = useState(false);
+  const [certSigning, setCertSigning] = useState(false);
+  const [signBusy, setSignBusy] = useState(false);
+  const [pendingVisibleSignature, setPendingVisibleSignature] = useState(false);
   const [pageFurniture, setPageFurniture] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [signatureStatus, setSignatureStatus] = useState<SignatureStatus>('unknown');
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -229,6 +279,17 @@ export function App() {
     }
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
   const download = async () => {
     if (!src) return;
     // A clean save to disk supersedes the recovery snapshot.
@@ -242,18 +303,45 @@ export function App() {
     try {
       const res = await fetch(src);
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = /\.pdf$/i.test(title) ? title : `${title}.pdf`;
-      // Append to the DOM (Firefox requires it) and revoke after the click is
-      // dispatched, not synchronously (which can cancel the download).
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      downloadBlob(blob, /\.pdf$/i.test(title) ? title : `${title}.pdf`);
     } catch {
       window.open(src, '_blank');
+    }
+  };
+
+  const signDocument = async () => {
+    if (!src) return;
+    if (signBusy) return;
+    setSignBusy(true);
+    try {
+      let bytes = await api.current?.getBytes();
+      if (!bytes) {
+        const res = await fetch(src);
+        bytes = new Uint8Array(await res.arrayBuffer());
+      }
+      if (!bytes) throw new Error('Could not read the current document.');
+      const signed = await signPdf({
+        pdf: bytes,
+        signerName: title || 'Casual PDF Signer',
+        reason: 'Signed in Casual PDF',
+      });
+      cancelSnapshot();
+      void clearSnapshot();
+      const buffer = signed.buffer.slice(signed.byteOffset, signed.byteOffset + signed.byteLength) as ArrayBuffer;
+      revokeObjectUrl();
+      const blob = new Blob([buffer], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      objectUrl.current = url;
+      setSrc(url);
+      setDirty(false);
+      clearStack(undoStack);
+      clearStack(redoStack);
+      downloadBlob(blob, /\.pdf$/i.test(title) ? title : `${title}.signed.pdf`);
+    } catch (e) {
+      console.error('Sign document failed', e);
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSignBusy(false);
     }
   };
 
@@ -288,6 +376,70 @@ export function App() {
     }
   };
 
+  const addVisibleSignature = () => {
+    setPendingVisibleSignature(true);
+    setMode('edit');
+  };
+
+  useEffect(() => {
+    if (!pendingVisibleSignature) return;
+    let cancelled = false;
+    const tryOpen = (remaining: number) => {
+      if (cancelled) return;
+      if (mode === 'edit' && api.current) {
+        api.current.openSignature();
+        setPendingVisibleSignature(false);
+        return;
+      }
+      if (remaining > 0) window.setTimeout(() => tryOpen(remaining - 1), 50);
+    };
+    tryOpen(40);
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingVisibleSignature, mode]);
+
+  useEffect(() => {
+    if (!src) {
+      setSignatureStatus('unknown');
+      return;
+    }
+    let cancelled = false;
+    setSignatureStatus('unsigned');
+    const withTimeout = async <T,>(promise: Promise<T> | undefined, ms: number): Promise<T | null> => {
+      if (!promise) return null;
+      return await Promise.race([
+        promise.then((value) => value ?? null).catch(() => null),
+        new Promise<null>((resolve) => window.setTimeout(() => resolve(null), ms)),
+      ]);
+    };
+    const check = async () => {
+      for (let i = 0; i < 4 && !cancelled; i++) {
+        try {
+          const bytes = await withTimeout(api.current?.getBytes(), 500);
+          if (bytes?.byteLength) {
+            if (hasPdfSignature(bytes)) {
+              if (!cancelled) setSignatureStatus('certified');
+              return;
+            }
+            if (hasVisibleSignatureBytes(bytes)) {
+              if (!cancelled) setSignatureStatus('signed');
+              return;
+            }
+            return;
+          }
+        } catch {
+          /* retry while the viewer is still initializing */
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
+      }
+    };
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, [src, dirty, mode]);
+
   const menus: MenuDef[] = [
     {
       label: 'Menu',
@@ -296,12 +448,13 @@ export function App() {
         { label: 'Open…', shortcut: '⌘O', onSelect: () => { if (confirmDiscard()) fileRef.current?.click(); } },
         { label: 'Open sample', onSelect: () => { if (confirmDiscard()) { revokeObjectUrl(); clearStack(undoStack); clearStack(redoStack); setSrc(DEFAULT_PDF); setTitle('EmbedPDF sample'); setDirty(false); setMode('view'); } } },
         { divider: true },
-        { label: 'Download', shortcut: '⌘S', disabled: !src, onSelect: download },
+        { label: dirty ? 'Download changes' : 'Download', shortcut: '⌘S', disabled: !src, onSelect: download },
         { label: 'Print / open in new tab', shortcut: '⌘P', disabled: !src, onSelect: () => { void printPdf(); } },
         { divider: true },
         { label: 'Insert PDF…', disabled: !src, onSelect: () => insertFileRef.current?.click() },
         { divider: true },
-        { label: 'Digitally sign…', disabled: !src, onSelect: () => setSigning(true) },
+        { label: 'Add visible signature…', disabled: !src, onSelect: addVisibleSignature },
+        { label: 'Sign document…', disabled: !src, onSelect: () => setCertSigning(true) },
         { label: 'Watermark / Header / Bates…', disabled: !src, onSelect: () => setPageFurniture(true) },
         { divider: true },
         { label: 'About Casual PDF', onSelect: () => setAbout(true) },
@@ -312,13 +465,19 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
+      const isTyping = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+      if ((e.key === '?' || e.key === '/') && !isTyping && !(e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setAbout(true);
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
       if (k === 'o') { e.preventDefault(); if (confirmDiscard()) fileRef.current?.click(); }
       else if (k === 's') { e.preventDefault(); download(); }
       else if (k === 'p') { e.preventDefault(); void printPdf(); }
-      else if (k === 'f' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) { e.preventDefault(); api.current?.openSearch(); }
-      else if (k === 'z' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+      else if (k === 'f' && !isTyping) { e.preventDefault(); api.current?.openSearch(); }
+      else if (k === 'z' && !isTyping) {
         // Two-level undo: annotation history first, then document-version undo.
         e.preventDefault();
         if (e.shiftKey) {
@@ -329,12 +488,12 @@ export function App() {
           else if (undoStack.current.length > 0) versionUndo();
         }
       }
-      else if (k === 'y' && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+      else if (k === 'y' && !isTyping) {
         e.preventDefault();
         if (api.current?.canRedo()) api.current.redo();
         else if (redoStack.current.length > 0) versionRedo();
       }
-      else if ((e.key === '?' || e.key === '/') && !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+      else if ((e.key === '?' || e.key === '/') && !isTyping) {
         e.preventDefault();
         setAbout(true);
       }
@@ -361,6 +520,31 @@ export function App() {
             onFocus={(e) => src && e.target.select()}
           />
           {dirty && <span className="appbar__dirty" aria-label="Unsaved changes" title="Unsaved changes" />}
+          {src && (
+            <span
+              className="appbar__sigstatus"
+              data-state={signatureStatus}
+              title={
+                signatureStatus === 'certified'
+                  ? 'This PDF contains a cryptographic signature dictionary.'
+                  : signatureStatus === 'signed'
+                    ? 'This PDF contains a visible signature annotation.'
+                    : signatureStatus === 'unsigned'
+                      ? 'No signature was detected.'
+                    : 'Signature status could not be confirmed yet.'
+              }
+            >
+              {signatureStatus === 'checking'
+                ? 'Checking'
+                : signatureStatus === 'certified'
+                  ? 'Certified'
+                  : signatureStatus === 'signed'
+                    ? 'Signed'
+                    : signatureStatus === 'unsigned'
+                      ? 'Unsigned'
+                    : 'Unknown'}
+            </span>
+          )}
         </div>
         <div className="appbar__actions">
           <button
@@ -377,12 +561,12 @@ export function App() {
             <button
               type="button"
               className={`appbar__quick${dirty ? ' appbar__quick--save' : ''}`}
-              aria-label={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
-              title={dirty ? 'Download — unsaved changes (⌘S)' : 'Download (⌘S)'}
+              aria-label={dirty ? 'Download changes (⌘S)' : 'Download (⌘S)'}
+              title={dirty ? 'Download changes (⌘S)' : 'Download (⌘S)'}
               onClick={download}
             >
               <Icon name="download" size={15} />
-              <span>{dirty ? 'Save' : 'Download'}</span>
+              <span>{dirty ? 'Download changes' : 'Download'}</span>
             </button>
           )}
           {src && <span className="appbar__sep" aria-hidden="true" />}
@@ -527,7 +711,14 @@ export function App() {
         )}
       </main>
 
-      {signing && <SignDialog api={api.current} title={title} onClose={() => setSigning(false)} />}
+      {certSigning && (
+        <SignDialog
+          onClose={() => setCertSigning(false)}
+          onAddVisibleSignature={addVisibleSignature}
+          onSignDocument={signDocument}
+          busy={signBusy}
+        />
+      )}
       {pageFurniture && (
         <PageFurnitureDialog
           api={api.current}

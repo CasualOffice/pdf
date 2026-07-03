@@ -116,6 +116,28 @@ body {
   flex: none;
   margin-left: -4px;
 }
+.appbar__sigstatus {
+  flex: none;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--color-border, #d4d7dd);
+  border-radius: 6px;
+  color: var(--color-text-secondary, #555);
+  background: var(--color-surface, #fff);
+  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
+}
+.appbar__sigstatus[data-state='certified'],
+.appbar__sigstatus[data-state='signed'] {
+  color: var(--color-success, #16794c);
+  border-color: color-mix(in srgb, var(--color-success, #16794c) 35%, var(--color-border, #d4d7dd));
+  background: color-mix(in srgb, var(--color-success, #16794c) 8%, var(--color-surface, #fff));
+}
+.appbar__sigstatus[data-state='unknown'],
+.appbar__sigstatus[data-state='checking'] {
+  color: var(--color-text-tertiary, #777);
+}
 
 /* Quick-action pill buttons (Open / Download) visible in the app bar. */
 .appbar__quick {
@@ -165,6 +187,23 @@ body {
   .appbar__quick span { display: none; }
   .appbar__quick { padding: 0 8px; }
   .appbar__sep { display: none; }
+  .appbar__sigstatus { display: none; }
+  .appbar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .appbar__left {
+    flex: 0 1 auto;
+  }
+  .appbar__title {
+    display: none;
+  }
+  .appbar__actions {
+    gap: 4px;
+  }
+  .appbar__avatar {
+    display: none;
+  }
 }
 
 .appbar__actions {
