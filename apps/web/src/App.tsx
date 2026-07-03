@@ -11,7 +11,7 @@ import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoveryS
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
 
-type SignatureStatus = 'checking' | 'certified' | 'signed' | 'unsigned' | 'unknown';
+type SignatureStatus = 'certified' | 'signed' | 'unsigned' | 'unknown';
 
 function bytesInclude(bytes: Uint8Array, ascii: string): boolean {
   const needle = new TextEncoder().encode(ascii);
@@ -35,12 +35,15 @@ function hasPdfSignature(bytes: Uint8Array): boolean {
   );
 }
 
+// A *visible* signature is a stamp annotation, not a cryptographic signature.
+// Detect only stamp subtypes here — NOT the generic `/Type/Annot`, which every
+// PDF with a link/form field/comment carries and would falsely badge as signed.
+// (This still can't distinguish a signature stamp from an inserted-image stamp;
+// the reliable trust signal is hasPdfSignature, the certified badge.)
 function hasVisibleSignatureBytes(bytes: Uint8Array): boolean {
   return (
     bytesInclude(bytes, '/Subtype/Stamp') ||
-    bytesInclude(bytes, '/Subtype /Stamp') ||
-    bytesInclude(bytes, '/Type/Annot') ||
-    bytesInclude(bytes, '/Type /Annot')
+    bytesInclude(bytes, '/Subtype /Stamp')
   );
 }
 
@@ -112,6 +115,16 @@ export function App() {
     stack.current.forEach(revokeUrl);
     stack.current = [];
   };
+  // Bound the version history so a long redact/organize/text-edit session can't
+  // grow blob-URL memory without limit. Evicted (oldest) URLs are revoked.
+  const MAX_VERSIONS = 20;
+  const pushVersion = (stack: { current: string[] }, url: string) => {
+    stack.current.push(url);
+    while (stack.current.length > MAX_VERSIONS) {
+      const dropped = stack.current.shift();
+      if (dropped) revokeUrl(dropped);
+    }
+  };
 
   // Crash recovery (UX-I5): on load, offer to restore the last unsaved session.
   useEffect(() => {
@@ -148,7 +161,7 @@ export function App() {
   // The old src is pushed to the version undo stack (not revoked) so Ctrl+Z can
   // restore it. Any pending redo history is discarded (new branch).
   const onDocumentReplaced = (bytes: Uint8Array) => {
-    if (srcRef.current) undoStack.current.push(srcRef.current);
+    if (srcRef.current) pushVersion(undoStack, srcRef.current);
     clearStack(redoStack);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const blob = new Blob([buffer], { type: 'application/pdf' });
@@ -161,7 +174,7 @@ export function App() {
   const versionUndo = () => {
     const prev = undoStack.current.pop();
     if (!prev) return;
-    if (srcRef.current) redoStack.current.push(srcRef.current);
+    if (srcRef.current) pushVersion(redoStack, srcRef.current);
     objectUrl.current = prev.startsWith('blob:') ? prev : null;
     setSrc(prev);
     setDirty(true);
@@ -171,7 +184,7 @@ export function App() {
   const versionRedo = () => {
     const next = redoStack.current.pop();
     if (!next) return;
-    if (srcRef.current) undoStack.current.push(srcRef.current);
+    if (srcRef.current) pushVersion(undoStack, srcRef.current);
     objectUrl.current = next.startsWith('blob:') ? next : null;
     setSrc(next);
     setDirty(true);
@@ -255,6 +268,7 @@ export function App() {
     revokeObjectUrl();
     clearStack(undoStack);
     clearStack(redoStack);
+    setRecovery(null); // dismiss any stale recovery banner from the prior session
     const url = URL.createObjectURL(file);
     objectUrl.current = url;
     setSrc(url);
@@ -267,15 +281,27 @@ export function App() {
   // are included. Revokes the URL after 30 s (enough for the browser to load).
   const printPdf = async () => {
     if (!src) return;
-    const bytes = api.current ? await api.current.getBytes() : null;
-    if (bytes) {
-      const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-      const blob = new Blob([ab], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
-    } else {
-      window.open(src, '_blank');
+    // Open the tab synchronously inside the click gesture — deferring window.open
+    // until after `await getBytes()` puts it outside the gesture, where pop-up
+    // blockers silently block it. We navigate the already-open tab once ready.
+    const win = window.open('', '_blank');
+    if (!win) {
+      alert('Your browser blocked the print tab. Allow pop-ups for this site, or use Download instead.');
+      return;
+    }
+    try {
+      const bytes = api.current ? await api.current.getBytes() : null;
+      if (bytes) {
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        const blob = new Blob([ab], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        win.location.href = url;
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      } else {
+        win.location.href = src;
+      }
+    } catch {
+      win.location.href = src; // fall back to the raw source on a bake failure
     }
   };
 
@@ -337,6 +363,7 @@ export function App() {
       clearStack(undoStack);
       clearStack(redoStack);
       downloadBlob(blob, /\.pdf$/i.test(title) ? title : `${title}.signed.pdf`);
+      setCertSigning(false); // success → dismiss the dialog (kept open on error to retry)
     } catch (e) {
       console.error('Sign document failed', e);
       alert(e instanceof Error ? e.message : String(e));
@@ -516,7 +543,7 @@ export function App() {
             spellCheck={false}
             aria-label="Document name"
             readOnly={!src}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => { setTitle(e.target.value); if (src) markEdited(); }}
             onFocus={(e) => src && e.target.select()}
           />
           {dirty && <span className="appbar__dirty" aria-label="Unsaved changes" title="Unsaved changes" />}
@@ -534,14 +561,12 @@ export function App() {
                     : 'Signature status could not be confirmed yet.'
               }
             >
-              {signatureStatus === 'checking'
-                ? 'Checking'
-                : signatureStatus === 'certified'
-                  ? 'Certified'
-                  : signatureStatus === 'signed'
-                    ? 'Signed'
-                    : signatureStatus === 'unsigned'
-                      ? 'Unsigned'
+              {signatureStatus === 'certified'
+                ? 'Certified'
+                : signatureStatus === 'signed'
+                  ? 'Signed'
+                  : signatureStatus === 'unsigned'
+                    ? 'Unsigned'
                     : 'Unknown'}
             </span>
           )}

@@ -47,7 +47,16 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment-retry.outputs.page_url }}
     steps:
+      # actions/deploy-pages occasionally hits a transient Pages backend error
+      # ("Deployment failed, try again later.") that fails within seconds of the
+      # deployment API call, unrelated to the build. Retry once before failing
+      # the job. Dependency-free (no third-party retry action) on purpose.
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Retry deployment (transient Pages backend failures)
+        if: steps.deployment.outcome == 'failure'
+        id: deployment-retry
         uses: actions/deploy-pages@v4

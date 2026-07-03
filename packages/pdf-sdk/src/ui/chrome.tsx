@@ -280,22 +280,30 @@ const pctStyle = (r: { x: number; y: number; w: number; h: number }) => ({
 /** Drag-to-mark redaction regions on a page. Captures fractional rects from its
  *  own bounding box (independent of EmbedPDF's pointer/coord system) and draws
  *  the committed + in-progress marks as red boxes. Each mark has an ✕ button
- *  (visible on hover) to remove it individually. Applying the marks rasterizes
- *  + flattens the page (see redact.ts). */
+ *  (visible on hover/focus) to remove it individually. Applying the marks
+ *  rasterizes + flattens the page (see redact.ts).
+ *
+ *  Fully keyboard-operable (WCAG 2.2): the layer is focusable — Enter/Space adds
+ *  a centered mark and focuses it; a focused mark moves with the arrow keys
+ *  (Shift = larger step), resizes with +/−, and deletes with Delete/Backspace. */
 function RedactionLayer({
   pageIndex,
   redactions,
   onAdd,
+  onUpdate,
   onRemove,
 }: {
   pageIndex: number;
   redactions: RedactRect[];
-  onAdd: (r: Omit<RedactRect, 'id'>) => void;
+  onAdd: (r: Omit<RedactRect, 'id'>) => number;
+  onUpdate: (mark: RedactRect) => void;
   onRemove: (mark: RedactRect) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Id of a just-created mark to move keyboard focus onto after it renders.
+  const [focusId, setFocusId] = useState<number | null>(null);
   const frac = (clientX: number, clientY: number) => {
     const b = ref.current!.getBoundingClientRect();
     return { x: clamp01((clientX - b.left) / b.width), y: clamp01((clientY - b.top) / b.height) };
@@ -307,11 +315,52 @@ function RedactionLayer({
     h: Math.abs(a.y - b.y),
   });
   const mine = redactions.filter((r) => r.pageIndex === pageIndex);
+
+  useEffect(() => {
+    if (focusId == null) return;
+    ref.current?.querySelector<HTMLElement>(`[data-mark-id="${focusId}"]`)?.focus();
+    setFocusId(null);
+  }, [focusId, mine.length]);
+
+  // Keep a mark inside the page and above a minimum size (fractional coords).
+  const clampPos = (p: number, size: number) => Math.min(Math.max(0, p), Math.max(0, 1 - size));
+  const moveMark = (r: RedactRect, dx: number, dy: number): RedactRect => ({
+    ...r, x: clampPos(r.x + dx, r.w), y: clampPos(r.y + dy, r.h),
+  });
+  const resizeMark = (r: RedactRect, d: number): RedactRect => ({
+    ...r,
+    w: Math.min(Math.max(0.01, r.w + d), 1 - r.x),
+    h: Math.min(Math.max(0.01, r.h + d), 1 - r.y),
+  });
+  const onMarkKey = (e: React.KeyboardEvent, r: RedactRect) => {
+    const step = e.shiftKey ? 0.1 : 0.01;
+    switch (e.key) {
+      case 'ArrowLeft': e.preventDefault(); onUpdate(moveMark(r, -step, 0)); break;
+      case 'ArrowRight': e.preventDefault(); onUpdate(moveMark(r, step, 0)); break;
+      case 'ArrowUp': e.preventDefault(); onUpdate(moveMark(r, 0, -step)); break;
+      case 'ArrowDown': e.preventDefault(); onUpdate(moveMark(r, 0, step)); break;
+      case '+': case '=': e.preventDefault(); onUpdate(resizeMark(r, 0.02)); break;
+      case '-': case '_': e.preventDefault(); onUpdate(resizeMark(r, -0.02)); break;
+      case 'Delete': case 'Backspace': e.preventDefault(); onRemove(r); break;
+    }
+  };
+
   return (
     <div
       ref={ref}
       className="cpdf__redactlayer"
+      tabIndex={0}
+      role="group"
+      aria-label={`Redaction marks, page ${pageIndex + 1}. Press Enter to add a mark. With a mark focused, use arrow keys to move, plus and minus to resize, and Delete to remove.`}
+      onKeyDown={(e) => {
+        // Only the layer itself (not a focused child mark) creates a new mark.
+        if (e.target === ref.current && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          setFocusId(onAdd({ pageIndex, x: 0.3, y: 0.425, w: 0.4, h: 0.15 }));
+        }
+      }}
       onPointerDown={(e) => {
+        if (e.target !== ref.current) return; // clicking a mark shouldn't start a new draft
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
         start.current = frac(e.clientX, e.clientY);
         setDraft({ ...start.current, w: 0, h: 0 });
@@ -331,12 +380,22 @@ function RedactionLayer({
       }}
     >
       {mine.map((r) => (
-        <div key={r.id} className="cpdf__redactrect" style={pctStyle(r)}>
+        <div
+          key={r.id}
+          data-mark-id={r.id}
+          className="cpdf__redactrect"
+          style={pctStyle(r)}
+          tabIndex={0}
+          role="button"
+          aria-label={`Redaction mark. Arrow keys move, plus and minus resize, Delete removes.`}
+          onKeyDown={(e) => onMarkKey(e, r)}
+        >
           <button
             type="button"
             className="cpdf__redactrect-remove"
             aria-label="Remove redaction mark"
             title="Remove this mark"
+            tabIndex={-1}
             // Stop the pointer from starting a new drag on the parent layer.
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onRemove(r); }}
@@ -1042,10 +1101,12 @@ function BottomBar({
   documentId,
   searchOpen,
   onToggleSearch,
+  redacting,
 }: {
   documentId: string;
   searchOpen: boolean;
   onToggleSearch: () => void;
+  redacting?: boolean;
 }) {
   const { state: zoom, provides: zoomApi } = useZoom(documentId);
   const { state: scroll, provides: scrollApi } = useScroll(documentId);
@@ -1110,7 +1171,7 @@ function BottomBar({
       </div>
       <span className="cpdf__sep" aria-hidden="true" />
       <div className="cpdf__group">
-        <IconButton icon="rotate" label="Rotate" onClick={() => rotateApi?.rotateForward()} />
+        <IconButton icon="rotate" label={redacting ? 'Rotate (disabled while redacting)' : 'Rotate'} disabled={redacting} onClick={() => rotateApi?.rotateForward()} />
         <IconButton icon="spread" label="Two-page spread" active={spreadMode !== SpreadMode.None} onClick={() => spreadApi?.setSpreadMode(spreadMode === SpreadMode.None ? SpreadMode.Odd : SpreadMode.None)} />
         <IconButton
           icon="scroll-h"
@@ -1148,6 +1209,13 @@ function SearchPanel({
   const resultsRef = useRef(state?.results);
   resultsRef.current = state?.results;
   useEffect(() => inputRef.current?.focus(), []);
+  // Clear match highlights when the find bar closes (this panel unmounts).
+  // The SearchLayer is mounted per-page unconditionally, so without stopSearch
+  // the last query's highlights stay painted after dismiss. Ref so the unmount
+  // cleanup calls the latest capability without re-running on every provides change.
+  const providesRef = useRef(provides);
+  providesRef.current = provides;
+  useEffect(() => () => providesRef.current?.stopSearch(), []);
   // Search as you type (debounced) so results appear without pressing Enter.
   useEffect(() => {
     if (!provides) return;
@@ -1983,25 +2051,57 @@ export function Viewer({
     annoApi?.setActiveTool(null); // select mode → the placer's pointer handler is live
     annoApi?.deselectAnnotation();
     setRedacting(false);
+    deactivateTextEdit();
     setPendingImage({ data, mimeType, w, h });
   };
 
+  // Full text-edit teardown: flush dirty edits (fires onDocumentReplaced so the
+  // host re-indexes the text layer), release the byte snapshot, and clear the
+  // per-session undo/redo stacks. Shared by toggleTextEdit's exit branch and by
+  // the other editors that must be mutually exclusive with text edit (redact,
+  // image, sign, organize) so activating one can't leave text-edit stacked
+  // underneath it (two placement banners, leaked editBytes).
+  const deactivateTextEdit = () => {
+    if (!textEditing) return;
+    if (editDirtyRef.current && editBytesRef.current && onDocumentReplacedRef.current) {
+      onDocumentReplacedRef.current(editBytesRef.current);
+    }
+    setTextEditing(false);
+    editBytesRef.current = null; setEditBytes(null);
+    editDirtyRef.current = false;
+    setTextRunsReady(false);
+    textEditUndoStackRef.current = [];
+    textEditRedoStackRef.current = [];
+  };
+
+  // Close every inline editing tool. Used when opening a modal editor (Sign /
+  // Organize) so those are mutually exclusive with the inline tools too.
+  const closeInlineEditors = () => {
+    annoApi?.setActiveTool(null);
+    annoApi?.deselectAnnotation();
+    setRedacting(false);
+    setPendingImage(null);
+    deactivateTextEdit();
+  };
+
   // Redaction: toggle marking mode (mutually exclusive with annotation tools /
-  // image placement), and apply — rasterize + flatten each marked page.
+  // image placement / text edit), and apply — rasterize + flatten each marked page.
   const toggleRedact = () => {
-    setRedacting((v) => {
-      const next = !v;
-      if (next) {
-        annoApi?.setActiveTool(null);
-        annoApi?.deselectAnnotation();
-        setPendingImage(null);
-        setRedactError(null);
-        // Redaction works in the page's native orientation so captured marks and
-        // the rendered bitmap share one coordinate space. Reset any view rotation.
-        rotateApi?.setRotation(Rotation.Degree0);
-      }
-      return next;
-    });
+    if (redacting) {
+      setRedacting(false);
+      return;
+    }
+    // Side effects run outside a state updater (updaters must stay pure — React
+    // StrictMode double-invokes them, which would fire onDocumentReplaced twice).
+    annoApi?.setActiveTool(null);
+    annoApi?.deselectAnnotation();
+    setPendingImage(null);
+    deactivateTextEdit();
+    setRedactError(null);
+    // Redaction works in the page's native orientation so captured marks and
+    // the rendered bitmap share one coordinate space. Reset any view rotation.
+    rotateApi?.setRotation(Rotation.Degree0);
+    setRedacting(true);
   };
   const SCALE = 2; // render scale for flattened pages (2× for crisp output)
   // Redaction = rasterize-and-flatten (the secure default; immune to the
@@ -2060,19 +2160,11 @@ export function Viewer({
   // snapshot, reload the result, and keep the snapshot current for further edits.
   const toggleTextEdit = async () => {
     if (textEditing) {
-      // Fire onDocumentReplaced only when edits were made so the host can swap
-      // the src to a new Blob URL — this triggers EmbedPDF to re-index the text
-      // layer (search/selection fix). In-session commits used openDocumentBuffer
-      // (no remount) so the re-index is deferred to here.
-      if (editDirtyRef.current && editBytesRef.current && onDocumentReplacedRef.current) {
-        onDocumentReplacedRef.current(editBytesRef.current);
-      }
-      setTextEditing(false);
-      editBytesRef.current = null; setEditBytes(null);
-      editDirtyRef.current = false;
-      setTextRunsReady(false);
-      textEditUndoStackRef.current = [];
-      textEditRedoStackRef.current = [];
+      // deactivateTextEdit fires onDocumentReplaced when edits were made so the
+      // host swaps src to a new Blob URL — triggering EmbedPDF to re-index the
+      // text layer (search/selection fix). In-session commits used
+      // openDocumentBuffer (no remount) so the re-index is deferred to here.
+      deactivateTextEdit();
       return;
     }
     if (!exportCap) return;
@@ -2088,8 +2180,19 @@ export function Viewer({
     editBytesRef.current = bytes; setEditBytes(bytes);
     setTextEditing(true);
   };
+  // Synchronous in-flight guard (set/cleared immediately, unlike the async
+  // editBusy state) + a one-slot queue so a commit that arrives while another is
+  // running is deferred, never dropped. The child's editBusy *prop* can lag a
+  // render behind, so it may call onCommit directly mid-commit; this catches it.
+  const commitInFlightRef = useRef(false);
+  const pendingParentCommitRef = useRef<[number, number, number[], string] | null>(null);
   const commitTextEdit = async (pageIndex: number, objectIndex: number, objectIndices: number[], newText: string) => {
-    if (!editBytesRef.current || !docCap || editBusy) return;
+    if (!editBytesRef.current || !docCap) return;
+    if (commitInFlightRef.current) {
+      pendingParentCommitRef.current = [pageIndex, objectIndex, objectIndices, newText];
+      return;
+    }
+    commitInFlightRef.current = true;
     setEditBusy(true);
     setEditError(null);
     try {
@@ -2115,7 +2218,15 @@ export function Viewer({
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Edit failed — the document is unchanged.');
     } finally {
+      commitInFlightRef.current = false;
       setEditBusy(false);
+      // Flush a commit that queued while this one ran (chain directly — don't rely
+      // on the not-yet-rendered editBusy state clearing).
+      const queued = pendingParentCommitRef.current;
+      if (queued) {
+        pendingParentCommitRef.current = null;
+        void commitTextEdit(...queued);
+      }
     }
   };
 
@@ -2279,9 +2390,13 @@ export function Viewer({
     });
   }, [annoApi, onEdited]);
 
-  // Keyboard: editing shortcuts (ignored while typing in a field).
+  // Keyboard: annotation editing shortcuts (ignored while typing in a field).
+  // Suppressed while a non-annotation editing surface owns the page (redaction,
+  // image placement, text edit) — otherwise ⌘A / Delete / tool letters would
+  // mutate annotations hidden under those overlays. Deps include the flags so the
+  // listener detaches the moment one of those surfaces activates.
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || redacting || pendingImage || textEditing) return;
     // Clone an annotation shifted by (dx,dy) with a fresh id, so pasted/dup'd
     // copies are visible (not stacked) and each is its own createAnnotation
     // command → individually undoable (importAnnotations folds into the prior
@@ -2389,7 +2504,7 @@ export function Viewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editing, annoApi, annoCap, history]);
+  }, [editing, redacting, pendingImage, textEditing, annoApi, annoCap, history]);
 
   return (
     <AnnotationRendererProvider>
@@ -2398,7 +2513,7 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         <div className="cpdf__main">
-          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => setOrganizing(true)} onSign={() => setSigning(true)} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
+          {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => { closeInlineEditors(); setOrganizing(true); }} onSign={() => { closeInlineEditors(); setSigning(true); }} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
@@ -2449,7 +2564,12 @@ export function Viewer({
                       <RedactionLayer
                         pageIndex={pageIndex}
                         redactions={redactions}
-                        onAdd={(r) => setRedactions((prev) => [...prev, { ...r, id: nextRedactId() }])}
+                        onAdd={(r) => {
+                          const id = nextRedactId();
+                          setRedactions((prev) => [...prev, { ...r, id }]);
+                          return id;
+                        }}
+                        onUpdate={(mark) => setRedactions((prev) => prev.map((r) => (r.id === mark.id ? mark : r)))}
                         onRemove={(mark) => setRedactions((prev) => prev.filter((r) => r.id !== mark.id))}
                       />
                     )}
@@ -2464,7 +2584,7 @@ export function Viewer({
             the bar — the absolutely-centred pill floats inside this reserved lane
             without overlapping page content. */}
         <div className="cpdf__bottomwrap">
-          <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} />
+          <BottomBar documentId={documentId} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen((v) => !v)} redacting={redacting} />
         </div>
         {searchOpen && (
           <SearchPanel

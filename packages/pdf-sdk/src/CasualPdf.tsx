@@ -58,7 +58,20 @@ function makeVisualOrderEngine(engine: any): any {
       origWait((geo: { runs: Run[]; [k: string]: unknown }) => {
         const remapped = sortAndRemapGeo(geo);
         let docMap = geoCache.get(doc.id);
-        if (!docMap) { docMap = new Map(); geoCache.set(doc.id, docMap); }
+        if (!docMap) {
+          // Bound the cache — each openDocumentBuffer/reload (text-edit commit,
+          // redaction, organize) mints a fresh doc.id, so without eviction this
+          // Map grows for the whole session. Drop the oldest documents' geometry
+          // (never the one being cached now) when a new document appears.
+          const MAX_DOCS = 4;
+          while (geoCache.size >= MAX_DOCS) {
+            const oldest = geoCache.keys().next().value;
+            if (oldest === undefined || oldest === doc.id) break;
+            geoCache.delete(oldest);
+          }
+          docMap = new Map();
+          geoCache.set(doc.id, docMap);
+        }
         docMap.set(page.index, remapped);
         onOk(remapped);
       }, onErr);

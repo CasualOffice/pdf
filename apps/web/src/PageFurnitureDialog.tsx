@@ -25,6 +25,13 @@ export function PageFurnitureDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Stable refs so the mount effect runs once — `onClose`/`busy` change identity
+  // on parent re-render and would otherwise re-run the effect and steal focus.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   // Watermark state
   const [wmText, setWmText] = useState('DRAFT');
@@ -51,13 +58,39 @@ export function PageFurnitureDialog({
   const [bFontSize, setBFontSize] = useState(10);
 
   useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
     firstRef.current?.focus();
+    const focusables = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) { e.preventDefault(); onClose(); }
+      if (e.key === 'Escape' && !busyRef.current) {
+        e.preventDefault();
+        onCloseRef.current();
+      } else if (e.key === 'Tab') {
+        const f = focusables();
+        if (!f.length) return;
+        const first = f[0];
+        const last = f[f.length - 1];
+        const active = document.activeElement as HTMLElement;
+        if (e.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, busy]);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (opener && opener !== document.body && opener.isConnected) opener.focus();
+    };
+  }, []);
 
   const apply = async () => {
     setError(null);
@@ -109,10 +142,12 @@ export function PageFurnitureDialog({
   return (
     <div className="dialog__scrim" role="presentation" onClick={() => !busy && onClose()}>
       <div
+        ref={dialogRef}
         className="dialog dialog--form pf-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Page furniture"
+        aria-busy={busy || undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="signdlg__head">
