@@ -85,12 +85,17 @@ async function ensurePdfium(): Promise<Pdfium> {
   if (!modulePromise) {
     // Fetch the locally-bundled WASM. The render engine already fetched this
     // same URL so the browser HTTP cache serves it instantly on the second call.
-    modulePromise = (async () => {
+    const p = (async () => {
       const wasmBinary = new Uint8Array(await (await fetch(pdfiumWasmUrl)).arrayBuffer());
       const wrapped = (await init({ wasmBinary } as Parameters<typeof init>[0])) as unknown as Pdfium;
       wrapped.PDFiumExt_Init();
       return wrapped;
     })();
+    modulePromise = p;
+    // On init failure (fetch/instantiate), clear the cached *rejected* promise so
+    // the next call retries instead of returning the same rejection forever.
+    // Guard by identity so we never null out a newer in-flight attempt.
+    p.catch(() => { if (modulePromise === p) modulePromise = null; });
   }
   return modulePromise;
 }
@@ -451,7 +456,20 @@ export async function editTextRun(
       const obj = p.FPDFPage_GetObject(page, objectIndex);
       if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) throw new Error('Selected object is not editable text.');
       const origText = readObjText(p, textPage, obj);
-      const newChars = [...newText].filter((c) => !origText.includes(c));
+      // A logical run can span multiple text objects (objectIndices). Compare the
+      // new text against the WHOLE run's characters, not just the primary object,
+      // so a char that already exists elsewhere in the run isn't flagged "new" and
+      // needlessly forces a standard-font substitution (fidelity loss).
+      const runText =
+        objectIndices.length > 1
+          ? objectIndices
+              .map((oi) => {
+                const o = p.FPDFPage_GetObject(page, oi);
+                return o && p.FPDFPageObj_GetType(o) === FPDF_PAGEOBJ_TEXT ? readObjText(p, textPage, o) : '';
+              })
+              .join('')
+          : origText;
+      const newChars = [...newText].filter((c) => !runText.includes(c));
 
       const font = p.FPDFTextObj_GetFont(obj);
       const flags = font ? p.FPDFFont_GetFlags(font) : 0;

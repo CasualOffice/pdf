@@ -4,8 +4,13 @@
 /**
  * Phase 5 — Page furniture: watermark, header/footer, and Bates numbering,
  * implemented via pdf-lib (already in the write-side stack). Each function
- * receives the current document bytes and options, and returns new bytes as an
- * incremental update (append-only so existing annotations/signatures survive).
+ * receives the current document bytes and options and returns new bytes.
+ *
+ * NOTE: pdf-lib's save() performs a FULL rewrite, not an incremental/append-only
+ * update. Existing page content and annotations are preserved, but any
+ * pre-existing cryptographic signature is INVALIDATED (its /ByteRange no longer
+ * matches the rewritten file). Apply page furniture before signing, not after.
+ * (Same caveat applies to redact.ts and merge.ts, which also rewrite via pdf-lib.)
  *
  * pdf-lib is lazy-imported so the ~430 KB chunk only loads when this module is
  * first used (same pattern as redact.ts and sign.ts).
@@ -64,12 +69,17 @@ export interface BatesOptions {
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const h = hex.replace('#', '');
-  return {
-    r: parseInt(h.slice(0, 2), 16) / 255,
-    g: parseInt(h.slice(2, 4), 16) / 255,
-    b: parseInt(h.slice(4, 6), 16) / 255,
+  // Tolerate malformed input: strip non-hex chars, expand 3-digit shorthand
+  // (#abc → #aabbcc), pad short values, and treat unparseable channels as 0 —
+  // never emit NaN (which would silently corrupt the pdf-lib rgb() call).
+  let h = hex.replace(/[^0-9a-fA-F]/g, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length < 6) h = h.padEnd(6, '0');
+  const channel = (a: number, b: number) => {
+    const v = parseInt(h.slice(a, b), 16);
+    return Number.isNaN(v) ? 0 : v / 255;
   };
+  return { r: channel(0, 2), g: channel(2, 4), b: channel(4, 6) };
 }
 
 /** Stamp a diagonal text watermark on every (or selected) page. */
@@ -161,7 +171,9 @@ export async function addBatesNumbers(src: Uint8Array, opts: BatesOptions): Prom
   let counter = start;
 
   for (let i = 0; i < pages.length; i++) {
-    if (pageSet && !pageSet.has(i)) { counter++; continue; }
+    // Skip unselected pages WITHOUT advancing the counter, so stamped pages get
+    // sequential numbers (start..start+N-1) rather than numbers with gaps.
+    if (pageSet && !pageSet.has(i)) continue;
     const page = pages[i];
     const { width, height } = page.getSize();
     const label = `${prefix}${String(counter).padStart(digits, '0')}`;

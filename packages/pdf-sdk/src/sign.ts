@@ -14,10 +14,15 @@ import wasmUrl from './wasm/casual_pdf_core_bg.wasm?url';
 let ready: Promise<void> | null = null;
 function ensureInit(): Promise<void> {
   if (!ready) {
-    ready = (async () => {
+    const p = (async () => {
       const wasmBinary = new Uint8Array(await (await fetch(wasmUrl)).arrayBuffer());
       initSync(wasmBinary);
     })();
+    ready = p;
+    // On init failure clear the cached rejected promise so a later signPdf call
+    // retries instead of rejecting forever with the original error. Guard by
+    // identity so a newer in-flight attempt is never nulled out.
+    p.catch(() => { if (ready === p) ready = null; });
   }
   return ready;
 }
