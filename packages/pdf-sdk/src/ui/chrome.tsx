@@ -2370,16 +2370,29 @@ export function Viewer({
               /* sampling is best-effort — fall back to white */
             }
           }
+          // Option C: match a bundled metric-compatible font (Arimo for
+          // Arial/Helvetica) so the edit keeps the apparent typeface instead of a
+          // generic standard-14 substitute. Best-effort — falls back on any error.
+          let matchedFontBytes: Uint8Array | undefined;
+          try {
+            const { matchFont, fetchFontBytes } = await import('../textedit-fonts');
+            const m = matchFont(run.fontBaseName, run.fontItalic);
+            if (m) matchedFontBytes = await fetchFontBytes(m.url);
+          } catch {
+            /* fall back to the standard substitute */
+          }
           const { buildOverlayEdit } = await import('../textedit-overlay');
-          out = await buildOverlayEdit(
+          const overlayResult = await buildOverlayEdit(
             editBytesRef.current,
             pageIndex,
             { left: run.left, bottom: run.bottom, right: run.right, top: run.top },
             newText,
-            { fontFamily: run.fontFamily, fontSizePt: run.fontSizePt, fontWeight: run.fontWeight, fontItalic: run.fontItalic, color: run.color },
+            { fontFamily: run.fontFamily, fontSizePt: run.fontSizePt, fontWeight: run.fontWeight, fontItalic: run.fontItalic, color: run.color, matchedFontBytes },
             bgColor ? { bgColor } : undefined,
           );
-          substituted = true; // overlay always draws in a standard font
+          out = overlayResult.bytes;
+          // Typeface is PRESERVED when a bundled font matched → not a substitution.
+          substituted = !overlayResult.matched;
           residual = true; // non-destructive: the original glyphs remain beneath the box
         }
       } else {
