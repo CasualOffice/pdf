@@ -47,6 +47,10 @@ export interface DeskApp {
   saveAs(suggestedName: string, bytes: ArrayBuffer, baselineSeq?: number): Promise<string | null>;
   /** Native open dialog → spawn a new document window for the picked file. */
   openFile(): Promise<void>;
+  /** Resolve an installed system font by family/weight/italic → its face bytes,
+   *  or null if none installed / a TrueType Collection. Used by text editing to
+   *  embed the genuine local typeface (best fidelity). */
+  resolveSystemFont(family: string, weight: number, italic: boolean): Promise<Uint8Array | null>;
   /** Signal unsaved state to the shell (drives the close-guard prompt). */
   setDirty(dirty: boolean): void;
   /** Monotonic edit counter, so an in-flight save can detect a mid-write edit. */
@@ -214,6 +218,25 @@ declare global {
       const path = (await inv('pick_open_document')) as string | null;
       if (!path) return;
       await inv('open_document_window', { kind: 'pdf', filePath: path });
+    },
+
+    async resolveSystemFont(family: string, weight: number, italic: boolean): Promise<Uint8Array | null> {
+      try {
+        // The command returns the face file as base64 (Option<String>) — base64
+        // avoids the large-Vec<u8>-over-JSON truncation the chunked reader dodges.
+        const b64 = (await inv('resolve_system_font', {
+          family,
+          weight: weight >= 600 ? 700 : 400,
+          italic,
+        })) as string | null;
+        if (!b64) return null;
+        const bin = atob(b64);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        return u8;
+      } catch {
+        return null;
+      }
     },
 
     setDirty(dirty: boolean): void {

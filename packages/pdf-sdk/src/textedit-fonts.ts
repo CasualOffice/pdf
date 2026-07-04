@@ -167,3 +167,96 @@ export async function fetchFontBytes(url: string): Promise<Uint8Array> {
   if (!res.ok) throw new Error(`font fetch failed: ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
 }
+
+// ── Unicode coverage + fallback ─────────────────────────────────────────────
+// The bundled/GF matched faces already cover Latin, Cyrillic, Greek and common
+// symbols, but NOT CJK (Han/Kana/Hangul). When the typed text has characters the
+// matched (or standard-14) font can't render, fall back to a broad Noto face so
+// the edit shows real glyphs instead of tofu — Noto Sans for most scripts, Noto
+// Sans SC for CJK. Both OFL-1.1, fetched on demand (NOTICE covers this).
+const NOTO_SANS = gf('ofl/notosans/NotoSans[wdth,wght].ttf');
+const NOTO_SANS_SC = gf('ofl/notosanssc/NotoSansSC[wght].ttf');
+// CJK unified ideographs + Hiragana/Katakana + Hangul + CJK symbols/fullwidth.
+const CJK_RE = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/;
+
+/** Does `fontBytes` have a glyph for every (non-space) char in `text`? (fontkit) */
+async function covers(fontBytes: Uint8Array, text: string): Promise<boolean> {
+  try {
+    const fontkit = (await import('@pdf-lib/fontkit')).default;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const f = fontkit.create(fontBytes as any) as any;
+    for (const ch of text) {
+      const cp = ch.codePointAt(0)!;
+      if (cp === 0x20 || cp === 0x09 || cp === 0x0a || cp === 0x0d) continue;
+      const has = typeof f.hasGlyphForCodePoint === 'function' ? f.hasGlyphForCodePoint(cp) : true;
+      if (!has) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface ResolvedFont {
+  bytes: Uint8Array;
+  name: string;
+  /** true = the run's own/matched typeface (kept); false = a Unicode fallback. */
+  typefacePreserved: boolean;
+}
+
+/**
+ * Resolve the best embeddable font for editing `text` in a run's face:
+ *   1. the genuine installed system font (desktop only, via the bridge),
+ *   2. the bundled / Google-Font metric-compatible match,
+ *   3. a broad Noto fallback when 1–2 don't cover the typed characters and the
+ *      text needs it (`needsUnicode`) — so CJK / uncommon scripts still render.
+ * Each candidate is coverage-checked before use. Returns null to fall back to the
+ * standard-14 substitute (Latin/WinAnsi only) — unchanged for plain-Latin text.
+ */
+export async function resolveEditFont(
+  baseName: string,
+  weight: number,
+  italic: boolean,
+  text: string,
+  needsUnicode: boolean,
+): Promise<ResolvedFont | null> {
+  // 1. Desktop: the genuine installed face (best fidelity), if the shell exposes it.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const desk = (globalThis as any).__deskApp__;
+    if (desk?.resolveSystemFont) {
+      const bytes: Uint8Array | null = await desk.resolveSystemFont(baseName, weight, italic);
+      if (bytes && bytes.length > 0 && (await covers(bytes, text))) {
+        return { bytes, name: baseName, typefacePreserved: true };
+      }
+    }
+  } catch {
+    /* fall through to bundled/GF */
+  }
+
+  // 2. Bundled / Google Font metric-compatible match.
+  const m = matchFont(baseName, weight, italic);
+  if (m) {
+    try {
+      const bytes = await fetchFontBytes(m.url);
+      if (await covers(bytes, text)) return { bytes, name: m.name, typefacePreserved: true };
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // 3. Unicode fallback (only when the text actually needs one).
+  if (needsUnicode) {
+    const cjk = CJK_RE.test(text);
+    try {
+      const bytes = await fetchFontBytes(cjk ? NOTO_SANS_SC : NOTO_SANS);
+      if (await covers(bytes, text)) {
+        return { bytes, name: cjk ? 'Noto Sans SC' : 'Noto Sans', typefacePreserved: false };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  return null;
+}

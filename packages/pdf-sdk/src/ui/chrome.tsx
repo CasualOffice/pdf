@@ -2315,7 +2315,13 @@ export function Viewer({
       let out: Uint8Array;
       let substituted: boolean;
       let residual: boolean;
-      if (overlayModeRef.current) {
+      // The direct (PDFium) path can only encode WinAnsi — it fails closed on
+      // CJK / non-Latin text. Route such edits through the overlay path, which
+      // embeds a covering font (matched, or a Noto fallback) so Unicode renders.
+      const { firstUnencodable } = await import('../textedit-pdfium');
+      const needsUnicode = firstUnencodable(newText) != null;
+      const autoOverlayForUnicode = needsUnicode && !overlayModeRef.current;
+      if (overlayModeRef.current || needsUnicode) {
         // Overlay-replace: derive the run's bounds + style from the current
         // bytes, then cover + retype via pdf-lib (no content-stream rewrite).
         const { listTextRuns } = await import('../textedit-pdfium');
@@ -2375,9 +2381,9 @@ export function Viewer({
           // generic standard-14 substitute. Best-effort — falls back on any error.
           let matchedFontBytes: Uint8Array | undefined;
           try {
-            const { matchFont, fetchFontBytes } = await import('../textedit-fonts');
-            const m = matchFont(run.fontBaseName, run.fontWeight, run.fontItalic);
-            if (m) matchedFontBytes = await fetchFontBytes(m.url);
+            const { resolveEditFont } = await import('../textedit-fonts');
+            const rf = await resolveEditFont(run.fontBaseName, run.fontWeight, run.fontItalic, newText, needsUnicode);
+            if (rf) matchedFontBytes = rf.bytes;
           } catch {
             /* fall back to the standard substitute */
           }
@@ -2417,13 +2423,15 @@ export function Viewer({
       // and a residual edit left the original glyphs in the file (not truly removed).
       // Residual is the more serious disclosure, so it takes precedence.
       setEditNote(
-        overlayBakeRef.current
-          ? 'Secure edit applied — the original text was removed and this page is now a flattened image (its text is no longer selectable).'
-          : residual
-            ? 'The original text may still be present in the file. Text edit does not securely remove content — use Redaction, or the Secure toggle.'
-            : substituted
-              ? 'Font changed to a standard substitute (the original font is embedded as a subset). Edits don’t reflow the paragraph.'
-              : null,
+        autoOverlayForUnicode
+          ? 'Non-Latin / Unicode text was placed as an overlay in a covering font. The original text remains beneath — use Redaction or the Secure toggle to remove it.'
+          : overlayBakeRef.current
+            ? 'Secure edit applied — the original text was removed and this page is now a flattened image (its text is no longer selectable).'
+            : residual
+              ? 'The original text may still be present in the file. Text edit does not securely remove content — use Redaction, or the Secure toggle.'
+              : substituted
+                ? 'Font changed to a standard substitute (the original font is embedded as a subset). Edits don’t reflow the paragraph.'
+                : null,
       );
       onEdited?.();
     } catch (e) {
