@@ -385,7 +385,7 @@ const WINANSI_HIGH = new Set([
   0x0153, 0x017e, 0x0178,
 ]);
 /** First character of `text` that a standard-14 (WinAnsi) font can't render, or null. */
-function firstUnencodable(text: string): string | null {
+export function firstUnencodable(text: string): string | null {
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
     const ok =
