@@ -25,7 +25,7 @@ assets per the 2026-07-04 extension of the project's dependency-license policy:
     Copyright the respective Project Authors —
     packages/pdf-sdk/src/fonts/{Tinos,Cousine,Caladea}-{Regular,Bold,Italic,BoldItalic}.ttf;
     license text in packages/pdf-sdk/src/fonts/OFL-{Tinos,Cousine,Caladea}.txt.
-In addition to the bundled faces above, text editing can resolve ~18 common
+In addition to the bundled faces above, text editing can resolve ~30 common
 Google Fonts (Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, …) by fetching
 their TTF on demand from the google/fonts repository via the jsdelivr CDN, plus
 Noto Sans and Noto Sans SC as broad Unicode / CJK fallbacks. These are likewise

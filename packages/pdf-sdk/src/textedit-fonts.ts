@@ -23,7 +23,7 @@
  *     (all static, full regular/bold/italic/bold-italic).
  * Verdana/Georgia have no clean metric-compatible open match → standard fallback.
  *
- * Beyond the bundled set, `matchFont` also resolves ~18 common **Google Fonts**
+ * Beyond the bundled set, `matchFont` also resolves ~30 common **Google Fonts**
  * (Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, …) by fetching their TTF
  * on demand from jsdelivr (OFL-1.1), so an edit to a document that actually uses
  * one of those keeps its real typeface. See GOOGLE_FAMILIES below.
@@ -138,6 +138,21 @@ const GOOGLE_FAMILIES: FamilyEntry[] = [
   { test: /^dmsans$/, name: 'DM Sans', faces: { regular: gf('ofl/dmsans/DMSans[opsz,wght].ttf') } },
   { test: /^notoserif$/, name: 'Noto Serif', faces: { regular: gf('ofl/notoserif/NotoSerif[wdth,wght].ttf') } },
   { test: /^merriweather$/, name: 'Merriweather', faces: { regular: gf('ofl/merriweather/Merriweather[opsz,wdth,wght].ttf') } },
+  // Monospace — code / technical documents. (The only bundled monospace is
+  // Cousine, for Courier; these cover the popular code faces.)
+  { test: /^robotomono$/, name: 'Roboto Mono', faces: { regular: gf('ofl/robotomono/RobotoMono[wght].ttf'), italic: gf('ofl/robotomono/RobotoMono-Italic[wght].ttf') } },
+  { test: /^jetbrainsmono$/, name: 'JetBrains Mono', faces: { regular: gf('ofl/jetbrainsmono/JetBrainsMono[wght].ttf'), italic: gf('ofl/jetbrainsmono/JetBrainsMono-Italic[wght].ttf') } },
+  { test: /^sourcecodepro$/, name: 'Source Code Pro', faces: { regular: gf('ofl/sourcecodepro/SourceCodePro[wght].ttf') } },
+  { test: /^ibmplexmono$/, name: 'IBM Plex Mono', faces: { regular: gf('ofl/ibmplexmono/IBMPlexMono-Regular.ttf') } },
+  { test: /^spacemono$/, name: 'Space Mono', faces: { regular: gf('ofl/spacemono/SpaceMono-Regular.ttf') } },
+  // More common sans families.
+  { test: /^firasans$/, name: 'Fira Sans', faces: { regular: gf('ofl/firasans/FiraSans-Regular.ttf') } },
+  { test: /^manrope$/, name: 'Manrope', faces: { regular: gf('ofl/manrope/Manrope[wght].ttf') } },
+  { test: /^karla$/, name: 'Karla', faces: { regular: gf('ofl/karla/Karla[wght].ttf') } },
+  { test: /^librefranklin$/, name: 'Libre Franklin', faces: { regular: gf('ofl/librefranklin/LibreFranklin[wght].ttf') } },
+  { test: /^titilliumweb$/, name: 'Titillium Web', faces: { regular: gf('ofl/titilliumweb/TitilliumWeb-Regular.ttf') } },
+  { test: /^barlow$/, name: 'Barlow', faces: { regular: gf('ofl/barlow/Barlow-Regular.ttf') } },
+  { test: /^mukta$/, name: 'Mukta', faces: { regular: gf('ofl/mukta/Mukta-Regular.ttf') } },
 ];
 
 function pickFace(fam: FamilyEntry, weight: number, italic: boolean): FontMatch {
