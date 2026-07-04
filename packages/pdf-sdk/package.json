@@ -16,6 +16,10 @@
       "types": "./src/sign.ts",
       "import": "./src/sign.ts"
     },
+    "./verify": {
+      "types": "./src/verify.ts",
+      "import": "./src/verify.ts"
+    },
     "./page-furniture": {
       "types": "./src/page-furniture.ts",
       "import": "./src/page-furniture.ts"
