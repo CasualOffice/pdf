@@ -210,7 +210,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
       createPluginRegistration(SelectionPluginPackage),
       // width drives the virtualized row geometry; keep it in sync with the CSS
       // so thumbnails keep page aspect (not square) and rows don't overlap.
-      createPluginRegistration(ThumbnailPluginPackage, { width: 180, gap: 16, labelHeight: 24, imagePadding: 6, paddingY: 8 }),
+      createPluginRegistration(ThumbnailPluginPackage, { width: 132, gap: 6, labelHeight: 18, imagePadding: 3, paddingY: 4 }),
       createPluginRegistration(BookmarkPluginPackage),
       createPluginRegistration(HistoryPluginPackage),
       createPluginRegistration(AnnotationPluginPackage),
