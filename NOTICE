@@ -21,4 +21,8 @@ assets per the 2026-07-04 extension of the project's dependency-license policy:
   - Carlito (metric-compatible with Calibri), Copyright The Carlito Project
     Authors — packages/pdf-sdk/src/fonts/Carlito-{Regular,Bold,Italic,BoldItalic}.ttf;
     license text in packages/pdf-sdk/src/fonts/OFL-Carlito.txt.
+  - Tinos (Times New Roman), Cousine (Courier New), Caladea (Cambria) —
+    Copyright the respective Project Authors —
+    packages/pdf-sdk/src/fonts/{Tinos,Cousine,Caladea}-{Regular,Bold,Italic,BoldItalic}.ttf;
+    license text in packages/pdf-sdk/src/fonts/OFL-{Tinos,Cousine,Caladea}.txt.
 Font subsetting/embedding uses @pdf-lib/fontkit (MIT).
