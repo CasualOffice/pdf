@@ -25,6 +25,17 @@ await new Promise((r) => server.listen(8175,'127.0.0.1',r));
 const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const browser = await chromium.launch({ ...(existsSync(mac)?{executablePath:mac}:{}), headless: true });
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+// OFFLINE (CI-safe): the app fetches Roboto from jsdelivr at runtime; serve a tiny
+// vendored Latin subset (fixtures/roboto-latin-test.ttf, keeps the "Roboto" name)
+// so the gate is deterministic + needs no network. Regenerate with:
+//   python3 -m fontTools.subset <Roboto[wdth,wght].ttf> --unicodes=U+0020-007E \
+//     --output-file=fixtures/roboto-latin-test.ttf --no-hinting --drop-tables+=GSUB,GPOS
+const robotoFont = await readFile(join(fixtures, 'roboto-latin-test.ttf'));
+await page.route('**/ofl/roboto/**', (route) => route.fulfill({
+  status: 200,
+  headers: { 'access-control-allow-origin': '*', 'content-type': 'font/ttf' },
+  body: robotoFont,
+}));
 const errors = []; page.on('pageerror', (e) => errors.push(String(e)));
 let failed = false; const assert = (c,m) => { console.log(`${c?'PASS':'FAIL'}: ${m}`); if(!c) failed = true; };
 try {
@@ -39,7 +50,7 @@ try {
   const input = page.locator('.cpdf__textedit-input');
   await input.waitFor({ state: 'visible', timeout: 5000 });
   await input.fill('Edited Roboto run'); await input.press('Enter');
-  await page.waitForTimeout(6500); // fetch Roboto from jsdelivr + embed
+  await page.waitForTimeout(5000); // edit + embed (font is a local intercept now)
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
   await page.waitForTimeout(600);
   const [dl] = await Promise.all([ page.waitForEvent('download', { timeout: 20000 }), page.keyboard.press('Meta+s') ]);
