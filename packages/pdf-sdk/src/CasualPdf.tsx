@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 
 // ── Visual-order geometry patch ──────────────────────────────────────────────
 // PDFium enumerates text chars in content-stream order, which frequently
@@ -181,6 +181,22 @@ import type { CasualPdfProps } from './modes';
  * plugins, driven by the floating toolbar in ./ui/chrome. The annotation
  * overlay, suggest-mode review, and collab binding layer on in Phases 2–3.
  */
+/**
+ * Keeps the Viewer mounted across in-session document swaps. A text-edit or
+ * redact commit reloads the document via `openDocumentBuffer`, which mints a NEW
+ * documentId and briefly flips `isLoaded` to false. Without this latch the
+ * loading spinner would replace the Viewer and REMOUNT it — resetting its
+ * text-edit session, per-commit undo stacks, and active tool. Once the first
+ * document has loaded we always render the Viewer (React reuses the instance
+ * across the changing documentId prop, preserving its state); the spinner shows
+ * only on the very first load.
+ */
+function ViewerHost({ isLoaded, loading, children }: { isLoaded: boolean; loading: ReactNode; children: ReactNode }) {
+  const everLoaded = useRef(false);
+  if (isLoaded) everLoaded.current = true;
+  return <>{everLoaded.current ? children : loading}</>;
+}
+
 export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, onUndo, onRedo, className, style }: CasualPdfProps) {
   const { engine, isLoading, error } = usePdfiumEngine();
 
@@ -264,13 +280,18 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
                     <span className="cpdf__status-title">Couldn’t open this PDF</span>
                     <span className="cpdf__status-sub">It may be corrupt, password-protected, or not a PDF.</span>
                   </div>
-                ) : isLoaded ? (
-                  <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} engine={patchedEngine} />
                 ) : (
-                  <div className="cpdf__status">
-                    <span className="cpdf__spinner" aria-hidden="true" />
-                    <span className="cpdf__status-title">Loading document…</span>
-                  </div>
+                  <ViewerHost
+                    isLoaded={isLoaded}
+                    loading={
+                      <div className="cpdf__status">
+                        <span className="cpdf__spinner" aria-hidden="true" />
+                        <span className="cpdf__status-title">Loading document…</span>
+                      </div>
+                    }
+                  >
+                    <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} engine={patchedEngine} />
+                  </ViewerHost>
                 )
               }
             </DocumentContent>
