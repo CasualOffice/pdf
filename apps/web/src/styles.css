@@ -60,11 +60,11 @@ body {
 }
 .recoverybar__btn--primary {
   border-color: transparent;
-  background: var(--color-primary, #2d8cff);
-  color: #fff;
+  background: var(--color-accent, #4658ff);
+  color: var(--color-text-on-accent, #fff);
 }
 .recoverybar__btn--primary:hover {
-  background: var(--color-primary-strong, #1f6fd6);
+  background: color-mix(in srgb, var(--color-accent, #4658ff) 88%, #000);
 }
 
 /* ── Slim top app bar ───────────────────────────────────────────────────── */
@@ -465,11 +465,13 @@ body {
 }
 .welcome__btn--primary {
   border-color: transparent;
-  background: var(--color-primary, #2d8cff);
-  color: #fff;
+  /* Match the editor's primary actions (Edit / Sign / Close) — one accent, not
+     a separate blue — for a consistent brand colour. */
+  background: var(--color-accent, #4658ff);
+  color: var(--color-text-on-accent, #fff);
 }
 .welcome__btn--primary:hover {
-  background: var(--color-primary-strong, #1f6fd6);
+  background: color-mix(in srgb, var(--color-accent, #4658ff) 88%, #000);
 }
 [data-theme='dark'] .welcome__btn {
   background: var(--color-surface-raised, #1f2128);
