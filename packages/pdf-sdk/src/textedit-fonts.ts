@@ -16,28 +16,74 @@
  * assets by the 2026-07-04 extension of locked decision #4. They're imported as
  * hashed URL assets and fetched on demand, so they never enter the main bundle.
  *
- * PR1 covers Arial/Helvetica → Arimo. Weight is not yet differentiated (the
- * bundled Arimo is a variable font embedded at its default ~Regular weight);
- * per-weight static instances are a follow-up. Further families
- * (Tinos/Cousine/Carlito/Caladea) land in PR2.
+ * Families:
+ *   - Arial / Helvetica → Arimo (variable — only regular + italic bundled; bold
+ *     falls back to regular pending static instances).
+ *   - Calibri → Carlito (static, full regular/bold/italic/bold-italic).
+ * More families (Tinos/Cousine/Caladea → Times/Courier/Cambria) are follow-ups.
  */
 import arimoUrl from './fonts/Arimo.ttf?url';
 import arimoItalicUrl from './fonts/Arimo-Italic.ttf?url';
+import carlitoUrl from './fonts/Carlito-Regular.ttf?url';
+import carlitoBoldUrl from './fonts/Carlito-Bold.ttf?url';
+import carlitoItalicUrl from './fonts/Carlito-Italic.ttf?url';
+import carlitoBoldItalicUrl from './fonts/Carlito-BoldItalic.ttf?url';
 
 export interface FontMatch {
-  /** Hashed asset URL of the matched font. */
+  /** Hashed asset URL of the matched font (style already resolved). */
   url: string;
   /** Display name of the matched family (for tooltips / notes). */
   name: string;
 }
 
-/** Match a run's base font name (subset tag already stripped) to a bundled
- *  metric-compatible font, or null when there's no confident match. */
-export function matchFont(baseName: string, italic: boolean): FontMatch | null {
+/** Per-family bundled faces. Missing styles gracefully fall back (bold→regular). */
+interface FamilyFaces {
+  regular: string;
+  bold?: string;
+  italic?: string;
+  boldItalic?: string;
+}
+interface FamilyEntry {
+  /** Match against the normalized (lowercased, letters-only) base font name. */
+  test: RegExp;
+  name: string;
+  faces: FamilyFaces;
+}
+
+const FAMILIES: FamilyEntry[] = [
+  {
+    // Arial / Helvetica / ArialMT — Arimo is metric-compatible with Arial.
+    test: /arial|helvetica|arimo/,
+    name: 'Arimo',
+    faces: { regular: arimoUrl, italic: arimoItalicUrl },
+  },
+  {
+    // Calibri — Carlito is metric-compatible with Calibri (Word's default face).
+    test: /calibri|carlito/,
+    name: 'Carlito',
+    faces: {
+      regular: carlitoUrl,
+      bold: carlitoBoldUrl,
+      italic: carlitoItalicUrl,
+      boldItalic: carlitoBoldItalicUrl,
+    },
+  },
+];
+
+/** Match a run's base font name (subset tag already stripped) + weight + italic
+ *  to a bundled metric-compatible face, or null when there's no confident match. */
+export function matchFont(baseName: string, weight: number, italic: boolean): FontMatch | null {
   const n = baseName.toLowerCase().replace(/[^a-z]/g, '');
-  // Arial / Helvetica / ArialMT → Arimo (Croscore; metric-compatible with Arial).
-  if (/(^|.)arial|helvetica|^arimo/.test(n)) {
-    return { url: italic ? arimoItalicUrl : arimoUrl, name: 'Arimo' };
+  for (const fam of FAMILIES) {
+    if (!fam.test.test(n)) continue;
+    const bold = weight >= 600;
+    const f = fam.faces;
+    const url =
+      (bold && italic && f.boldItalic) ||
+      (bold && f.bold) ||
+      (italic && f.italic) ||
+      f.regular;
+    return { url, name: fam.name };
   }
   return null;
 }
