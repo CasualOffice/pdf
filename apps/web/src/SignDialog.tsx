@@ -92,14 +92,14 @@ export function SignDialog({
         </p>
 
         <div className="signdlg__actions">
-          <button type="button" className="signdlg__btn" onClick={onClose} disabled={busy}>
-            Cancel
+          <button ref={primaryRef} type="button" className="signdlg__btn signdlg__btn--primary" onClick={signNow} disabled={busy} aria-live="polite">
+            {busy ? 'Signing…' : 'Sign and download'}
           </button>
           <button type="button" className="signdlg__btn" onClick={continueToSignature} disabled={busy}>
             Add visible signature
           </button>
-          <button ref={primaryRef} type="button" className="signdlg__btn signdlg__btn--primary" onClick={signNow} disabled={busy} aria-live="polite">
-            {busy ? 'Signing…' : 'Sign and download'}
+          <button type="button" className="signdlg__btn" onClick={onClose} disabled={busy}>
+            Cancel
           </button>
         </div>
       </div>
