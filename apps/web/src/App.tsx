@@ -6,6 +6,7 @@ import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf
 import { signPdf } from '@casualoffice/pdf/sign';
 import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
+import { SignatureInfoDialog } from './SignatureInfoDialog';
 import { PageFurnitureDialog } from './PageFurnitureDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 import { isDesktop } from './desk-bridge-bootstrap';
@@ -88,6 +89,7 @@ export function App() {
   const [title, setTitle] = useState(() => titleFromSrc(initialSrc()));
   const [dark, setDark] = useState(false);
   const [about, setAbout] = useState(false);
+  const [sigInfo, setSigInfo] = useState(false);
   const [certSigning, setCertSigning] = useState(false);
   const [signBusy, setSignBusy] = useState(false);
   const [pendingVisibleSignature, setPendingVisibleSignature] = useState(false);
@@ -635,27 +637,28 @@ export function App() {
             onFocus={(e) => src && e.target.select()}
           />
           {dirty && <span className="appbar__dirty" aria-label="Unsaved changes" title="Unsaved changes" />}
-          {src && (
+          {src && (signatureStatus === 'certified' || signatureStatus === 'signed') && (
+            <button
+              type="button"
+              className="appbar__sigstatus"
+              data-state={signatureStatus}
+              onClick={() => setSigInfo(true)}
+              title="View signature details & verification"
+            >
+              {signatureStatus === 'certified' ? 'Certified' : 'Signed'}
+            </button>
+          )}
+          {src && (signatureStatus === 'unsigned' || signatureStatus === 'unknown') && (
             <span
               className="appbar__sigstatus"
               data-state={signatureStatus}
               title={
-                signatureStatus === 'certified'
-                  ? 'This PDF contains a cryptographic signature dictionary.'
-                  : signatureStatus === 'signed'
-                    ? 'This PDF contains a visible signature annotation.'
-                    : signatureStatus === 'unsigned'
-                      ? 'No signature was detected.'
-                    : 'Signature status could not be confirmed yet.'
+                signatureStatus === 'unsigned'
+                  ? 'No signature was detected.'
+                  : 'Signature status could not be confirmed yet.'
               }
             >
-              {signatureStatus === 'certified'
-                ? 'Certified'
-                : signatureStatus === 'signed'
-                  ? 'Signed'
-                  : signatureStatus === 'unsigned'
-                    ? 'Unsigned'
-                    : 'Unknown'}
+              {signatureStatus === 'unsigned' ? 'Unsigned' : 'Unknown'}
             </span>
           )}
         </div>
@@ -837,6 +840,18 @@ export function App() {
           api={api.current}
           onDocumentReplaced={onDocumentReplaced}
           onClose={() => setPageFurniture(false)}
+        />
+      )}
+      {sigInfo && (
+        <SignatureInfoDialog
+          // Verify the PRISTINE loaded bytes, not api.getBytes() — a PDFium
+          // re-export shifts byte offsets and breaks the byte-exact /ByteRange.
+          getBytes={async () => {
+            if (!src) return null;
+            const r = await fetch(src);
+            return new Uint8Array(await r.arrayBuffer());
+          }}
+          onClose={() => setSigInfo(false)}
         />
       )}
 

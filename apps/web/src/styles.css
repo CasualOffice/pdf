@@ -139,6 +139,19 @@ body {
 .appbar__sigstatus[data-state='checking'] {
   color: var(--color-text-tertiary, #777);
 }
+/* When it carries a signature it becomes a button (opens the details dialog). */
+button.appbar__sigstatus {
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter 120ms ease;
+}
+button.appbar__sigstatus:hover {
+  filter: brightness(0.96);
+}
+button.appbar__sigstatus:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 2px;
+}
 
 /* Quick-action pill buttons (Open / Download) visible in the app bar. */
 .appbar__quick {
@@ -697,6 +710,74 @@ body {
 .signdlg__btn:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+/* ── Signature details / verification dialog ────────────────────────────── */
+.signinfo__head {
+  margin-bottom: 12px;
+}
+.signinfo__card {
+  border: 1px solid var(--color-border, #e0e3e8);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.signinfo__verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 13px/1.3 var(--font-sans, system-ui, sans-serif);
+  margin-bottom: 12px;
+}
+.signinfo__verdict-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.signinfo__verdict--ok { color: var(--color-success, #16794c); }
+.signinfo__verdict--ok .signinfo__verdict-dot { background: var(--color-success, #16794c); }
+.signinfo__verdict--bad { color: var(--color-danger, #c0392b); }
+.signinfo__verdict--bad .signinfo__verdict-dot { background: var(--color-danger, #c0392b); }
+.signinfo__rows {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.signinfo__rows > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.signinfo__rows dt {
+  flex: none;
+  color: var(--color-text-secondary, #555);
+  font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif);
+}
+.signinfo__rows dd {
+  margin: 0;
+  text-align: right;
+  color: var(--color-text, #111);
+  font: 500 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  word-break: break-word;
+}
+.signinfo__note {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-surface-strip, #f5f6f8);
+  color: var(--color-text-secondary, #555);
+  font: 400 12px/1.5 var(--font-sans, system-ui, sans-serif);
+}
+.signinfo__note--warn {
+  background: var(--color-warning-soft, #fff4d6);
+  color: var(--color-text, #4a3b12);
+}
+.signinfo__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 /* ── Page Furniture dialog ─────────────────────────────────────────────── */
