@@ -51,6 +51,7 @@ body {
   background: var(--color-surface-raised, #fff);
   color: inherit;
   font: inherit;
+  white-space: nowrap;
   font-weight: 600;
   cursor: pointer;
 }
@@ -454,7 +455,8 @@ body {
   border-radius: 10px;
   background: var(--color-surface-raised, #fff);
   color: var(--color-text, #1b1c1f);
-  font: 500 14px/1.4 var(--font-sans, system-ui, sans-serif);
+  font: 500 14px/1 var(--font-sans, system-ui, sans-serif);
+  white-space: nowrap;
   cursor: pointer;
   transition: background 100ms, border-color 100ms;
 }
@@ -666,18 +668,20 @@ body {
 }
 .signdlg__actions {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 10px;
 }
 .signdlg__btn {
-  height: 36px;
+  width: 100%;
+  height: 42px;
   padding: 0 18px;
   border: 1px solid var(--color-border, #d8dce4);
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-md, 10px);
   background: var(--color-surface-raised, #fff);
   color: var(--color-text, #1b1c1f);
   font: 600 14px/1 var(--font-sans, system-ui, sans-serif);
+  white-space: nowrap;
   cursor: pointer;
 }
 .signdlg__btn:hover:not(:disabled) {
