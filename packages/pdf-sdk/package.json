@@ -27,6 +27,10 @@
     "./merge": {
       "types": "./src/merge.ts",
       "import": "./src/merge.ts"
+    },
+    "./extract": {
+      "types": "./src/extract.ts",
+      "import": "./src/extract.ts"
     }
   },
   "scripts": {
