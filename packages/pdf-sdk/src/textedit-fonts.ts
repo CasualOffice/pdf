@@ -22,6 +22,11 @@
  *   - Calibri → Carlito, Times → Tinos, Courier → Cousine, Cambria → Caladea
  *     (all static, full regular/bold/italic/bold-italic).
  * Verdana/Georgia have no clean metric-compatible open match → standard fallback.
+ *
+ * Beyond the bundled set, `matchFont` also resolves ~18 common **Google Fonts**
+ * (Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, …) by fetching their TTF
+ * on demand from jsdelivr (OFL-1.1), so an edit to a document that actually uses
+ * one of those keeps its real typeface. See GOOGLE_FAMILIES below.
  */
 import arimoUrl from './fonts/Arimo.ttf?url';
 import arimoItalicUrl from './fonts/Arimo-Italic.ttf?url';
@@ -101,21 +106,58 @@ const FAMILIES: FamilyEntry[] = [
   },
 ];
 
+// ── Dynamic Google Fonts (curated) ──────────────────────────────────────────
+// When no BUNDLED metric-compatible family matches, resolve the run's font from a
+// curated set of common Google Fonts, fetched on demand from jsdelivr (the
+// google/fonts repo, OFL-1.1). This dramatically widens coverage (Roboto, Open
+// Sans, Lato, Montserrat, Poppins, Inter, …) without shipping the fonts. Paths
+// are verified exact (GF's real filenames are inconsistent — static vs [wght] vs
+// [wdth,wght] vs [opsz,wght]); variable-only families expose regular (+ italic
+// where a separate variable file exists), so bold falls back to regular like the
+// bundled Arimo. No new dependency — reuses fetchFontBytes; a fetch failure just
+// degrades to the standard substitute (the caller already try/catches).
+const GF = 'https://cdn.jsdelivr.net/gh/google/fonts@main/';
+const gf = (p: string) => GF + p.replace(/\[/g, '%5B').replace(/\]/g, '%5D');
+
+const GOOGLE_FAMILIES: FamilyEntry[] = [
+  { test: /^roboto$/, name: 'Roboto', faces: { regular: gf('ofl/roboto/Roboto[wdth,wght].ttf'), italic: gf('ofl/roboto/Roboto-Italic[wdth,wght].ttf') } },
+  { test: /^opensans$/, name: 'Open Sans', faces: { regular: gf('ofl/opensans/OpenSans[wdth,wght].ttf'), italic: gf('ofl/opensans/OpenSans-Italic[wdth,wght].ttf') } },
+  { test: /^lato$/, name: 'Lato', faces: { regular: gf('ofl/lato/Lato-Regular.ttf'), bold: gf('ofl/lato/Lato-Bold.ttf'), italic: gf('ofl/lato/Lato-Italic.ttf'), boldItalic: gf('ofl/lato/Lato-BoldItalic.ttf') } },
+  { test: /^montserrat$/, name: 'Montserrat', faces: { regular: gf('ofl/montserrat/Montserrat[wght].ttf'), italic: gf('ofl/montserrat/Montserrat-Italic[wght].ttf') } },
+  { test: /^poppins$/, name: 'Poppins', faces: { regular: gf('ofl/poppins/Poppins-Regular.ttf'), bold: gf('ofl/poppins/Poppins-Bold.ttf'), italic: gf('ofl/poppins/Poppins-Italic.ttf'), boldItalic: gf('ofl/poppins/Poppins-BoldItalic.ttf') } },
+  { test: /^inter$/, name: 'Inter', faces: { regular: gf('ofl/inter/Inter[opsz,wght].ttf') } },
+  { test: /^raleway$/, name: 'Raleway', faces: { regular: gf('ofl/raleway/Raleway[wght].ttf'), italic: gf('ofl/raleway/Raleway-Italic[wght].ttf') } },
+  { test: /^nunito$/, name: 'Nunito', faces: { regular: gf('ofl/nunito/Nunito[wght].ttf'), italic: gf('ofl/nunito/Nunito-Italic[wght].ttf') } },
+  { test: /^notosans$/, name: 'Noto Sans', faces: { regular: gf('ofl/notosans/NotoSans[wdth,wght].ttf') } },
+  { test: /^worksans$/, name: 'Work Sans', faces: { regular: gf('ofl/worksans/WorkSans[wght].ttf'), italic: gf('ofl/worksans/WorkSans-Italic[wght].ttf') } },
+  { test: /^sourcesans/, name: 'Source Sans 3', faces: { regular: gf('ofl/sourcesans3/SourceSans3[wght].ttf'), italic: gf('ofl/sourcesans3/SourceSans3-Italic[wght].ttf') } },
+  { test: /^playfairdisplay$/, name: 'Playfair Display', faces: { regular: gf('ofl/playfairdisplay/PlayfairDisplay[wght].ttf'), italic: gf('ofl/playfairdisplay/PlayfairDisplay-Italic[wght].ttf') } },
+  { test: /^ubuntu$/, name: 'Ubuntu', faces: { regular: gf('ufl/ubuntu/Ubuntu-Regular.ttf'), bold: gf('ufl/ubuntu/Ubuntu-Bold.ttf'), italic: gf('ufl/ubuntu/Ubuntu-Italic.ttf'), boldItalic: gf('ufl/ubuntu/Ubuntu-BoldItalic.ttf') } },
+  { test: /^oswald$/, name: 'Oswald', faces: { regular: gf('ofl/oswald/Oswald[wght].ttf') } },
+  { test: /^rubik$/, name: 'Rubik', faces: { regular: gf('ofl/rubik/Rubik[wght].ttf'), italic: gf('ofl/rubik/Rubik-Italic[wght].ttf') } },
+  { test: /^dmsans$/, name: 'DM Sans', faces: { regular: gf('ofl/dmsans/DMSans[opsz,wght].ttf') } },
+  { test: /^notoserif$/, name: 'Noto Serif', faces: { regular: gf('ofl/notoserif/NotoSerif[wdth,wght].ttf') } },
+  { test: /^merriweather$/, name: 'Merriweather', faces: { regular: gf('ofl/merriweather/Merriweather[opsz,wdth,wght].ttf') } },
+];
+
+function pickFace(fam: FamilyEntry, weight: number, italic: boolean): FontMatch {
+  const bold = weight >= 600;
+  const f = fam.faces;
+  const url =
+    (bold && italic && f.boldItalic) ||
+    (bold && f.bold) ||
+    (italic && f.italic) ||
+    f.regular;
+  return { url, name: fam.name };
+}
+
 /** Match a run's base font name (subset tag already stripped) + weight + italic
- *  to a bundled metric-compatible face, or null when there's no confident match. */
+ *  to a bundled metric-compatible face, then (widening coverage) to a curated
+ *  Google Font fetched on demand. Returns null when there's no confident match. */
 export function matchFont(baseName: string, weight: number, italic: boolean): FontMatch | null {
   const n = baseName.toLowerCase().replace(/[^a-z]/g, '');
-  for (const fam of FAMILIES) {
-    if (!fam.test.test(n)) continue;
-    const bold = weight >= 600;
-    const f = fam.faces;
-    const url =
-      (bold && italic && f.boldItalic) ||
-      (bold && f.bold) ||
-      (italic && f.italic) ||
-      f.regular;
-    return { url, name: fam.name };
-  }
+  for (const fam of FAMILIES) if (fam.test.test(n)) return pickFace(fam, weight, italic);
+  for (const fam of GOOGLE_FAMILIES) if (fam.test.test(n)) return pickFace(fam, weight, italic);
   return null;
 }
 
