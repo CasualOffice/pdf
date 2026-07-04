@@ -53,7 +53,7 @@ import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { useRenderCapability } from '@embedpdf/plugin-render/react';
 import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
-import type { Mode, CasualPdfApi } from '../modes';
+import type { Mode, CasualPdfApi, OutlineNode } from '../modes';
 import type { PdfTextRun } from '../textedit-pdfium';
 import './viewer.css';
 
@@ -1985,8 +1985,9 @@ export function Viewer({
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
-  const { state: docScroll } = useScroll(documentId);
+  const { state: docScroll, provides: scrollProvides } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
+  const { provides: bookmarkCap } = useBookmarkCapability();
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
@@ -1999,6 +2000,12 @@ export function Viewer({
   // access the latest docCap without listing it as an effect dependency.
   const docCapRef = useRef(docCap);
   docCapRef.current = docCap;
+  // Refs so the imperative apiRef methods (below) read the latest scroll/bookmark
+  // capabilities without rebuilding the API on every scroll-state change.
+  const scrollProvidesRef = useRef(scrollProvides);
+  scrollProvidesRef.current = scrollProvides;
+  const bookmarkCapRef = useRef(bookmarkCap);
+  bookmarkCapRef.current = bookmarkCap;
   const { provides: sigCap } = useSignatureCapability();
   const signaturePlacement = useActivePlacement(documentId);
   const { rotation: viewRotation, provides: rotateApi } = useRotate(documentId);
@@ -2120,11 +2127,36 @@ export function Viewer({
         const ab = await exportCap.saveAsCopy().toPromise();
         return ab ? new Uint8Array(ab) : null;
       },
+      // ── Read / navigation surface (Phase A0 — AI DocOps tool bridge) ─────────
+      pageCount: () => docCapRef.current?.getDocument(documentId)?.pages?.length ?? 0,
+      gotoPage: (pageIndex) => scrollProvidesRef.current?.scrollToPage({ pageNumber: Math.max(1, pageIndex + 1) }),
+      getOutline: async () => {
+        const scope = bookmarkCapRef.current?.forDocument(documentId);
+        if (!scope) return [];
+        const res = await scope.getBookmarks().toPromise();
+        const map = (nodes: Bookmark[]): OutlineNode[] =>
+          nodes.map((bm) => ({
+            title: bm.title,
+            pageIndex:
+              bm.target?.type === 'destination' && bm.target.destination
+                ? bm.target.destination.pageIndex
+                : null,
+            children: bm.children?.length ? map(bm.children) : [],
+          }));
+        return map((res?.bookmarks ?? []) as Bookmark[]);
+      },
+      extractText: async (pageIndex) => {
+        if (!exportCap) return null;
+        const ab = await exportCap.saveAsCopy().toPromise();
+        if (!ab) return null;
+        const { extractPageText } = await import('../extract');
+        return extractPageText(new Uint8Array(ab), pageIndex);
+      },
     };
     return () => {
       if (apiRef) apiRef.current = null;
     };
-  }, [apiRef, annoApi, history, exportCap, setSearchOpen]);
+  }, [apiRef, annoApi, history, exportCap, setSearchOpen, documentId]);
 
   // Preload PDFium WASM as soon as the user enters Edit/Suggest mode so
   // the "Edit text" tool has no perceptible delay on first click.

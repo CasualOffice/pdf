@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CSSProperties, MutableRefObject } from 'react';
+import type { PageText } from './extract';
 
 /**
  * Interaction mode — what the user may do. Orthogonal to collab (single-user vs
@@ -72,6 +73,26 @@ export interface CasualPdfApi {
    *  post-process — e.g. apply a certified digital signature. Null if export
    *  isn't ready. */
   getBytes(): Promise<Uint8Array | null>;
+
+  // ── Read / navigation surface (Phase A0 — the AI DocOps tool bridge) ────────
+  /** Total page count, or 0 before the document is ready. */
+  pageCount(): number;
+  /** Scroll the viewer to a zero-based page index. */
+  gotoPage(pageIndex: number): void;
+  /** The document outline/bookmarks, flattened to `{ title, pageIndex, children }`
+   *  (empty when the PDF has none). */
+  getOutline(): Promise<OutlineNode[]>;
+  /** Canonical text-with-coordinates for a page — the AI grounding / citation
+   *  primitive (see `extract.ts`). Null if export isn't ready. */
+  extractText(pageIndex: number): Promise<PageText | null>;
+}
+
+/** A node in the document outline returned by {@link CasualPdfApi.getOutline}. */
+export interface OutlineNode {
+  title: string;
+  /** Destination page (zero-based), or null for a non-page target. */
+  pageIndex: number | null;
+  children: OutlineNode[];
 }
 
 export interface CasualPdfProps {
