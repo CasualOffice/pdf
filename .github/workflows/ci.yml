@@ -125,12 +125,12 @@ jobs:
           path: tools/render-parity/out/
 
   # Editor feature regression suite — the verify-*.mjs Playwright drivers
-  # (annotate/redact/autosave, text editing + matched fonts, real signing +
+  # (annotate/redact/autosave, text editing + matched/Google fonts, real signing +
   # OpenSSL external validation, viewer-mount persistence, Unicode/CJK editing).
-  # Gated on has_web only (no native/rust needed). The UNICODE driver is offline
-  # (it route-intercepts jsdelivr and serves a tiny vendored CJK subset). The
-  # GOOGLE-FONT driver stays a manual gate — it still fetches from jsdelivr at
-  # runtime (network → CI-flaky). Everything here is deterministic + offline.
+  # Gated on has_web only (no native/rust needed). The UNICODE and GOOGLE-FONT
+  # drivers are offline: each route-intercepts its jsdelivr font request and serves
+  # a tiny vendored subset (CJK / Latin), so everything here is deterministic +
+  # needs no network.
   editor-tests:
     needs: detect
     if: needs.detect.outputs.has_web == 'true'
@@ -164,6 +164,7 @@ jobs:
             verify-textedit-optionc \
             verify-textedit-persist \
             verify-textedit-unicode \
+            verify-textedit-googlefont \
             verify-signature-details \
             verify-signature-openssl; do
             echo "::group::$t"
