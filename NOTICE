@@ -34,4 +34,9 @@ Noto Sans and Noto Sans SC as broad Unicode / CJK fallbacks. These are likewise
 SIL Open Font License 1.1 (OFL-1.1) and are not redistributed in this repository —
 they are fetched at runtime only when a document actually uses one.
 
+A tiny subset of Noto Sans SC (OFL-1.1, Copyright The Noto Project Authors) is
+vendored as a TEST fixture only — tools/render-parity/fixtures/noto-cjk-test.ttf
+(~5 KB, covering just the glyphs the Unicode text-editing test types). It is not
+part of the shipped application.
+
 Font subsetting/embedding uses @pdf-lib/fontkit (MIT).
