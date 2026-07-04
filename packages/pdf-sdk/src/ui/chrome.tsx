@@ -2376,7 +2376,7 @@ export function Viewer({
           let matchedFontBytes: Uint8Array | undefined;
           try {
             const { matchFont, fetchFontBytes } = await import('../textedit-fonts');
-            const m = matchFont(run.fontBaseName, run.fontItalic);
+            const m = matchFont(run.fontBaseName, run.fontWeight, run.fontItalic);
             if (m) matchedFontBytes = await fetchFontBytes(m.url);
           } catch {
             /* fall back to the standard substitute */

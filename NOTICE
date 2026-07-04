@@ -18,4 +18,7 @@ assets per the 2026-07-04 extension of the project's dependency-license policy:
   - Arimo (metric-compatible with Arial), Copyright The Arimo Project Authors —
     packages/pdf-sdk/src/fonts/Arimo.ttf, Arimo-Italic.ttf; license text in
     packages/pdf-sdk/src/fonts/OFL.txt.
+  - Carlito (metric-compatible with Calibri), Copyright The Carlito Project
+    Authors — packages/pdf-sdk/src/fonts/Carlito-{Regular,Bold,Italic,BoldItalic}.ttf;
+    license text in packages/pdf-sdk/src/fonts/OFL-Carlito.txt.
 Font subsetting/embedding uses @pdf-lib/fontkit (MIT).
