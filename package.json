@@ -6,7 +6,8 @@
     "dev": "pnpm --filter @casual-pdf/web dev",
     "build": "pnpm -r build",
     "build:web": "pnpm --filter @casual-pdf/web build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test:unit": "node --experimental-transform-types --test tools/render-parity/*.test.ts"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
