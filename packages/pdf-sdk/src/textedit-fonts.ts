@@ -16,11 +16,12 @@
  * assets by the 2026-07-04 extension of locked decision #4. They're imported as
  * hashed URL assets and fetched on demand, so they never enter the main bundle.
  *
- * Families:
+ * Families (the common Office/Windows default set):
  *   - Arial / Helvetica → Arimo (variable — only regular + italic bundled; bold
  *     falls back to regular pending static instances).
- *   - Calibri → Carlito (static, full regular/bold/italic/bold-italic).
- * More families (Tinos/Cousine/Caladea → Times/Courier/Cambria) are follow-ups.
+ *   - Calibri → Carlito, Times → Tinos, Courier → Cousine, Cambria → Caladea
+ *     (all static, full regular/bold/italic/bold-italic).
+ * Verdana/Georgia have no clean metric-compatible open match → standard fallback.
  */
 import arimoUrl from './fonts/Arimo.ttf?url';
 import arimoItalicUrl from './fonts/Arimo-Italic.ttf?url';
@@ -28,6 +29,18 @@ import carlitoUrl from './fonts/Carlito-Regular.ttf?url';
 import carlitoBoldUrl from './fonts/Carlito-Bold.ttf?url';
 import carlitoItalicUrl from './fonts/Carlito-Italic.ttf?url';
 import carlitoBoldItalicUrl from './fonts/Carlito-BoldItalic.ttf?url';
+import tinosUrl from './fonts/Tinos-Regular.ttf?url';
+import tinosBoldUrl from './fonts/Tinos-Bold.ttf?url';
+import tinosItalicUrl from './fonts/Tinos-Italic.ttf?url';
+import tinosBoldItalicUrl from './fonts/Tinos-BoldItalic.ttf?url';
+import cousineUrl from './fonts/Cousine-Regular.ttf?url';
+import cousineBoldUrl from './fonts/Cousine-Bold.ttf?url';
+import cousineItalicUrl from './fonts/Cousine-Italic.ttf?url';
+import cousineBoldItalicUrl from './fonts/Cousine-BoldItalic.ttf?url';
+import caladeaUrl from './fonts/Caladea-Regular.ttf?url';
+import caladeaBoldUrl from './fonts/Caladea-Bold.ttf?url';
+import caladeaItalicUrl from './fonts/Caladea-Italic.ttf?url';
+import caladeaBoldItalicUrl from './fonts/Caladea-BoldItalic.ttf?url';
 
 export interface FontMatch {
   /** Hashed asset URL of the matched font (style already resolved). */
@@ -67,6 +80,24 @@ const FAMILIES: FamilyEntry[] = [
       italic: carlitoItalicUrl,
       boldItalic: carlitoBoldItalicUrl,
     },
+  },
+  {
+    // Times New Roman / Times — Tinos is metric-compatible.
+    test: /timesnewroman|times|tinos/,
+    name: 'Tinos',
+    faces: { regular: tinosUrl, bold: tinosBoldUrl, italic: tinosItalicUrl, boldItalic: tinosBoldItalicUrl },
+  },
+  {
+    // Courier New / Courier — Cousine is metric-compatible.
+    test: /couriernew|courier|cousine/,
+    name: 'Cousine',
+    faces: { regular: cousineUrl, bold: cousineBoldUrl, italic: cousineItalicUrl, boldItalic: cousineBoldItalicUrl },
+  },
+  {
+    // Cambria — Caladea is metric-compatible.
+    test: /cambria|caladea/,
+    name: 'Caladea',
+    faces: { regular: caladeaUrl, bold: caladeaBoldUrl, italic: caladeaItalicUrl, boldItalic: caladeaBoldItalicUrl },
   },
 ];
 
