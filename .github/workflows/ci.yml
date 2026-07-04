@@ -123,3 +123,49 @@ jobs:
         with:
           name: render-parity
           path: tools/render-parity/out/
+
+  # Editor feature regression suite — the verify-*.mjs Playwright drivers
+  # (annotate/redact/autosave, text editing + matched fonts, real signing +
+  # OpenSSL external validation, viewer-mount persistence). Gated on has_web only
+  # (no native/rust needed). The GOOGLE-FONT and UNICODE drivers are intentionally
+  # excluded: they fetch fonts from jsdelivr at runtime (network → CI-flaky) and
+  # stay as manual gates. Everything here is deterministic + offline.
+  editor-tests:
+    needs: detect
+    if: needs.detect.outputs.has_web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # vendor/design-system needed to build apps/web
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build web app
+        run: pnpm -C apps/web build
+      - name: Install harness deps + Chromium
+        working-directory: tools/render-parity
+        run: |
+          npm install
+          PW_VER=$(node -p "require('playwright-core/package.json').version")
+          npx --yes "playwright@$PW_VER" install chromium
+      - name: Editor regression suite (verify-*)
+        working-directory: tools/render-parity
+        run: |
+          cp fixtures/sample.pdf ../../apps/web/dist/sample.pdf
+          fail=0
+          for t in \
+            verify-drive \
+            verify-textedit-overlay \
+            verify-textedit-optionc \
+            verify-textedit-persist \
+            verify-signature-details \
+            verify-signature-openssl; do
+            echo "::group::$t"
+            node "$t.mjs" || { echo "::error::$t failed"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail
