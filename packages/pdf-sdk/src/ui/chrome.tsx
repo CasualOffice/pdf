@@ -2861,7 +2861,7 @@ export function Viewer({
                   : editNote
                     ? editNote
                     : textRunsReady
-                      ? 'Quick text edits — click text to fix typos & short values · Tab / Esc · ⌘Z undo (typeface may change; no reflow)'
+                      ? 'Click text to fix typos & short values · Tab / Esc · ⌘Z undo'
                       : 'Analyzing text runs…'}
             </span>
             {(editError || editNote) && (
