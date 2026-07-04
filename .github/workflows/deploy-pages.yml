@@ -47,16 +47,29 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url || steps.deployment-retry.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry1.outputs.page_url || steps.retry2.outputs.page_url }}
     steps:
-      # actions/deploy-pages occasionally hits a transient Pages backend error
+      # actions/deploy-pages intermittently hits a transient Pages backend error
       # ("Deployment failed, try again later.") that fails within seconds of the
-      # deployment API call, unrelated to the build. Retry once before failing
-      # the job. Dependency-free (no third-party retry action) on purpose.
+      # deployment API call, unrelated to the build. The blip can last longer than
+      # the gap between back-to-back retries, so retry with BACKOFF: up to 3
+      # attempts with 45s / 90s sleeps between them, giving the backend time to
+      # recover. Dependency-free (no third-party retry action) on purpose.
       - id: deployment
         uses: actions/deploy-pages@v4
         continue-on-error: true
-      - name: Retry deployment (transient Pages backend failures)
+      - name: Backoff before retry 1
         if: steps.deployment.outcome == 'failure'
-        id: deployment-retry
+        run: sleep 45
+      - name: Retry deployment (attempt 2)
+        id: retry1
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Backoff before retry 2
+        if: steps.deployment.outcome == 'failure' && steps.retry1.outcome == 'failure'
+        run: sleep 90
+      - name: Retry deployment (attempt 3, final)
+        id: retry2
+        if: steps.deployment.outcome == 'failure' && steps.retry1.outcome == 'failure'
         uses: actions/deploy-pages@v4
