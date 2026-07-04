@@ -17,8 +17,8 @@
  * hashed URL assets and fetched on demand, so they never enter the main bundle.
  *
  * Families (the common Office/Windows default set):
- *   - Arial / Helvetica → Arimo (variable — only regular + italic bundled; bold
- *     falls back to regular pending static instances).
+ *   - Arial / Helvetica → Arimo (full regular/bold/italic/bold-italic; the bold
+ *     faces are static instances of the variable Arimo at wght=700).
  *   - Calibri → Carlito, Times → Tinos, Courier → Cousine, Cambria → Caladea
  *     (all static, full regular/bold/italic/bold-italic).
  * Verdana/Georgia have no clean metric-compatible open match → standard fallback.
@@ -29,7 +29,9 @@
  * one of those keeps its real typeface. See GOOGLE_FAMILIES below.
  */
 import arimoUrl from './fonts/Arimo.ttf?url';
+import arimoBoldUrl from './fonts/Arimo-Bold.ttf?url';
 import arimoItalicUrl from './fonts/Arimo-Italic.ttf?url';
+import arimoBoldItalicUrl from './fonts/Arimo-BoldItalic.ttf?url';
 import carlitoUrl from './fonts/Carlito-Regular.ttf?url';
 import carlitoBoldUrl from './fonts/Carlito-Bold.ttf?url';
 import carlitoItalicUrl from './fonts/Carlito-Italic.ttf?url';
@@ -73,7 +75,7 @@ const FAMILIES: FamilyEntry[] = [
     // Arial / Helvetica / ArialMT — Arimo is metric-compatible with Arial.
     test: /arial|helvetica|arimo/,
     name: 'Arimo',
-    faces: { regular: arimoUrl, italic: arimoItalicUrl },
+    faces: { regular: arimoUrl, bold: arimoBoldUrl, italic: arimoItalicUrl, boldItalic: arimoBoldItalicUrl },
   },
   {
     // Calibri — Carlito is metric-compatible with Calibri (Word's default face).
