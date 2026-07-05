@@ -97,6 +97,10 @@ export class CollabTransport implements DocOpsTransport {
   constructor(
     private readonly aiWsUrl: string,
     private readonly room?: string,
+    /** Inactivity timeout (ms): reject if no frame arrives for this long. Reset
+     *  on every frame, so streamed tokens keep it alive — only a stalled server
+     *  trips it (otherwise "Thinking…" would spin forever). */
+    private readonly idleMs = 90_000,
   ) {}
 
   available(): boolean {
@@ -117,12 +121,27 @@ export class CollabTransport implements DocOpsTransport {
         return;
       }
       let settled = false;
+      let idle: ReturnType<typeof setTimeout> | undefined;
       const settle = (v: LlmCallResult | null, err?: Error) => {
         if (settled) return;
         settled = true;
+        if (idle) clearTimeout(idle);
         payload.signal?.removeEventListener('abort', onAbort);
         if (err) reject(err);
         else resolve(v!);
+      };
+      // Reset the inactivity watchdog on any activity; trip only when the server
+      // goes silent for `idleMs` (so the UI can show an error instead of hanging).
+      const bumpIdle = () => {
+        if (idle) clearTimeout(idle);
+        idle = setTimeout(() => {
+          try {
+            ws.close(1000, 'timeout');
+          } catch {
+            /* ignore */
+          }
+          settle(null, new Error('AI request timed out — no response from the server.'));
+        }, this.idleMs);
       };
       const onAbort = () => {
         try {
@@ -135,6 +154,7 @@ export class CollabTransport implements DocOpsTransport {
       payload.signal?.addEventListener('abort', onAbort);
 
       ws.addEventListener('open', () => {
+        bumpIdle();
         ws.send(
           JSON.stringify({
             type: 'chat',
@@ -151,6 +171,7 @@ export class CollabTransport implements DocOpsTransport {
       });
 
       ws.addEventListener('message', ({ data }: MessageEvent<string>) => {
+        bumpIdle();
         let msg: Record<string, unknown>;
         try {
           msg = JSON.parse(data) as Record<string, unknown>;
