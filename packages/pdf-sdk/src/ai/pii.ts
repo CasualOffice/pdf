@@ -18,11 +18,15 @@
 
 export type PiiType =
   | 'credit-card' | 'imei' | 'canada-sin' | 'aadhaar' | 'iban' | 'us-routing'
-  | 'ssn' | 'us-ein' | 'us-passport' | 'india-passport' | 'india-pan'
+  | 'ssn' | 'us-itin' | 'us-ein' | 'us-passport' | 'india-passport' | 'india-pan'
   | 'india-gstin' | 'india-voter-id' | 'india-uan' | 'india-vehicle' | 'india-pincode'
-  | 'uk-nino' | 'us-zip' | 'email' | 'url' | 'ipv4' | 'ipv6' | 'mac-address'
-  | 'phone' | 'swift-bic' | 'bitcoin-address' | 'ethereum-address'
-  | 'date' | 'time' | 'isbn' | 'vin' | 'coordinates';
+  | 'india-ifsc' | 'uk-nino' | 'uk-nhs' | 'us-zip' | 'email' | 'url' | 'ipv4' | 'ipv6'
+  | 'mac-address' | 'phone' | 'swift-bic' | 'bitcoin-address' | 'ethereum-address'
+  | 'date' | 'time' | 'isbn' | 'vin' | 'coordinates'
+  | 'brazil-cpf' | 'netherlands-bsn' | 'spain-dni' | 'italy-codice-fiscale'
+  | 'france-insee' | 'south-africa-id' | 'us-medicare-mbi' | 'isin' | 'uuid' | 'jwt'
+  | 'aws-access-key' | 'api-key' | 'private-key' | 'passport-mrz' | 'social-handle'
+  | 'india-driving-license';
 
 export interface PiiMatch {
   type: PiiType;
@@ -96,6 +100,67 @@ export function abaValid(input: string): boolean {
   return sum % 10 === 0;
 }
 
+/** UK NHS number (10 digits, mod-11 check digit). */
+export function nhsValid(input: string): boolean {
+  const d = input.replace(/\D/g, '');
+  if (d.length !== 10) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += (d.charCodeAt(i) - 48) * (10 - i);
+  let check = 11 - (sum % 11);
+  if (check === 11) check = 0;
+  return check !== 10 && check === d.charCodeAt(9) - 48;
+}
+
+/** Brazil CPF (11 digits, two mod-11 check digits). */
+export function cpfValid(input: string): boolean {
+  const d = input.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const digit = (len: number): number => {
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += (d.charCodeAt(i) - 48) * (len + 1 - i);
+    const r = (sum * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return digit(9) === d.charCodeAt(9) - 48 && digit(10) === d.charCodeAt(10) - 48;
+}
+
+/** Netherlands BSN (9 digits, elfproef 11-test). */
+export function bsnValid(input: string): boolean {
+  const d = input.replace(/\D/g, '');
+  if (d.length !== 9) return false;
+  let sum = 0;
+  for (let i = 0; i < 8; i++) sum += (d.charCodeAt(i) - 48) * (9 - i);
+  sum -= d.charCodeAt(8) - 48;
+  return sum % 11 === 0;
+}
+
+/** Spain DNI (8 digits + control letter, mod-23). */
+export function spainDniValid(input: string): boolean {
+  const m = input.replace(/\s/g, '').toUpperCase().match(/^(\d{8})([A-Z])$/);
+  if (!m) return false;
+  return 'TRWAGMYFPDXBNJZSQVHLCKE'[Number(m[1]) % 23] === m[2];
+}
+
+/** ISIN (2-letter country + 9 alnum + check digit; letters→digits then Luhn). */
+export function isinValid(input: string): boolean {
+  const s = input.replace(/\s/g, '').toUpperCase();
+  if (!/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(s)) return false;
+  let expanded = '';
+  for (const ch of s) expanded += /[A-Z]/.test(ch) ? (ch.charCodeAt(0) - 55).toString() : ch;
+  let sum = 0;
+  let alt = false;
+  for (let i = expanded.length - 1; i >= 0; i--) {
+    let x = expanded.charCodeAt(i) - 48;
+    if (alt) {
+      x *= 2;
+      if (x > 9) x -= 9;
+    }
+    sum += x;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 interface Detector {
@@ -116,14 +181,33 @@ const DETECTORS: Detector[] = [
   { type: 'india-voter-id', re: /\b[A-Z]{3}\d{7}\b/g },
   { type: 'india-uan', re: /\b\d{12}\b/g }, // 12-digit (after aadhaar's validated pass)
   { type: 'india-vehicle', re: /\b[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}\b/g },
+  { type: 'india-driving-license', re: /\b[A-Z]{2}\d{2}\s?\d{11}\b/g },
   { type: 'india-passport', re: /\b[A-PR-WY]\d{7}\b/g },
   { type: 'us-passport', re: /\b[A-Z0-9]{9}\b(?=.*passport)/gi },
+  { type: 'us-itin', re: /\b9\d{2}-\d{2}-\d{4}\b/g }, // ITIN starts 9 — before SSN
   { type: 'ssn', re: /\b\d{3}-\d{2}-\d{4}\b/g },
   { type: 'us-ein', re: /\b\d{2}-\d{7}\b/g },
   { type: 'uk-nino', re: /\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b/g },
   { type: 'swift-bic', re: /\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/g },
   { type: 'ethereum-address', re: /\b0x[a-fA-F0-9]{40}\b/g },
   { type: 'bitcoin-address', re: /\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b/g },
+  { type: 'private-key', re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/g },
+  { type: 'jwt', re: /\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b/g },
+  { type: 'aws-access-key', re: /\b(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}\b/g },
+  { type: 'api-key', re: /\bsk-[A-Za-z0-9]{20,}\b/g },
+  { type: 'uuid', re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi },
+  { type: 'italy-codice-fiscale', re: /\b[A-Z]{6}\d{2}[A-EHLMPR-T]\d{2}[A-Z]\d{3}[A-Z]\b/g },
+  { type: 'india-ifsc', re: /\b[A-Z]{4}0[A-Z0-9]{6}\b/g },
+  { type: 'us-medicare-mbi', re: /\b[1-9][A-Z][A-Z0-9]\d[A-Z][A-Z0-9]\d[A-Z]{2}\d{2}\b/g },
+  { type: 'passport-mrz', re: /\bP[<A-Z][A-Z]{3}[A-Z<]{2,}\b/g },
+  { type: 'uk-nhs', re: /\b\d{3}[ -]?\d{3}[ -]?\d{4}\b/g, validate: nhsValid },
+  { type: 'brazil-cpf', re: /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, validate: cpfValid },
+  { type: 'south-africa-id', re: /\b\d{13}\b/g, validate: luhnValid },
+  { type: 'netherlands-bsn', re: /\b\d{9}\b/g, validate: bsnValid },
+  { type: 'spain-dni', re: /\b\d{8}[A-Z]\b/g, validate: spainDniValid },
+  { type: 'isin', re: /\b[A-Z]{2}[A-Z0-9]{9}\d\b/g, validate: isinValid },
+  { type: 'france-insee', re: /\b[12]\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{3}\s?\d{3}\s?\d{2}\b/g },
+  { type: 'social-handle', re: /(?:^|[\s(])@[A-Za-z0-9_]{2,15}\b/g },
   { type: 'email', re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g },
   { type: 'url', re: /\bhttps?:\/\/[^\s<>")]+/gi },
   { type: 'ipv4', re: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g },
@@ -157,9 +241,11 @@ export function detectPii(text: string): PiiMatch[] {
       all.push({ type: det.type, start: m.index, end: m.index + m[0].length, value: m[0] });
     }
   }
-  // Registry order is priority; keep a match only if it doesn't overlap a kept one.
+  // Resolve overlaps: prefer the match that starts earlier, then the LONGER one
+  // (a full UUID beats a 12-digit sub-span that looks like an ID), then registry
+  // priority (card > phone for the exact same span). Then greedily keep.
   const rank = new Map(DETECTORS.map((d, i) => [d.type, i]));
-  all.sort((a, b) => (rank.get(a.type)! - rank.get(b.type)!) || a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  all.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start) || rank.get(a.type)! - rank.get(b.type)!);
   const kept: PiiMatch[] = [];
   for (const m of all) {
     if (!kept.some((k) => m.start < k.end && m.end > k.start)) kept.push(m);

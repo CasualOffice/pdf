@@ -13,7 +13,7 @@ import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/ca
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
-import { luhnValid, verhoeffValid, ibanValid, abaValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
+import { luhnValid, verhoeffValid, ibanValid, abaValid, nhsValid, cpfValid, spainDniValid, isinValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
 import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
@@ -143,6 +143,14 @@ test('checksums: Luhn, Verhoeff (Aadhaar), IBAN mod-97, ABA routing', () => {
   assert.equal(ibanValid('GB82WEST12345698765433'), false);
   assert.equal(abaValid('021000021'), true); // valid US routing
   assert.equal(abaValid('021000022'), false);
+  assert.equal(nhsValid('943 476 5919'), true); // valid NHS (mod-11)
+  assert.equal(nhsValid('943 476 5918'), false);
+  assert.equal(cpfValid('529.982.247-25'), true); // valid Brazil CPF
+  assert.equal(cpfValid('529.982.247-24'), false);
+  assert.equal(spainDniValid('12345678Z'), true); // valid Spain DNI (mod-23)
+  assert.equal(spainDniValid('12345678A'), false);
+  assert.equal(isinValid('US0378331005'), true); // valid ISIN (Apple)
+  assert.equal(isinValid('US0378331006'), false);
 });
 
 test('detectPii finds validated structured PII and skips non-checksum candidates', () => {
@@ -154,7 +162,10 @@ test('detectPii finds validated structured PII and skips non-checksum candidates
   assert.ok(types.has('aadhaar'));
   // A non-Luhn 16-digit number is NOT flagged as a card.
   assert.equal(detectPii('9999888877776665').some((h) => h.type === 'credit-card'), false);
-  assert.ok(PII_TYPES.length >= 30, `registry covers ${PII_TYPES.length} structured types`);
+  assert.ok(PII_TYPES.length >= 50, `registry covers ${PII_TYPES.length} structured types`);
+  // A UUID's trailing 12 digits must not be mis-flagged as a shorter ID.
+  const u = detectPii('ref 123e4567-e89b-42d3-a456-426614174000');
+  assert.ok(u.some((h) => h.type === 'uuid') && !u.some((h) => h.type === 'aadhaar'));
 });
 
 test('bridge.detect_pii marks structured PII and returns counts by type (no values)', async () => {
