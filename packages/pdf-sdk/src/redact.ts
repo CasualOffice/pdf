@@ -26,6 +26,60 @@
  * @gate UX-S5 — text extracted from a redacted region must be empty.
  */
 import { PDFDocument, degrees } from 'pdf-lib';
+import { visualPlacer } from './page-furniture.ts';
+
+/** A redaction mark in fractional top-left page coordinates (as the viewer stores them). */
+export interface CoverMark {
+  pageIndex: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Region-only redaction ("Keep text" mode, user decision 2026-07-06): draw an
+ * OPAQUE black box over each marked region and leave the rest of the page's
+ * content stream intact, so the page's other text stays selectable/editable.
+ *
+ * TRADE-OFF — this is a VISUAL cover, NOT secure removal: the text under a box
+ * remains in the file bytes and could be extracted. It is deliberately weaker
+ * than the flatten path (UX-S5); the UI must disclose this and offer the secure
+ * flatten (`buildRedactedPdf`) for true removal. Boxes are placed in displayed
+ * ("visual") space honoring `/Rotate` + MediaBox origin (reuses `visualPlacer`);
+ * the mapped rectangle is axis-aligned for all quarter rotations, so we take the
+ * page-space bounding box of the four mapped corners — no rectangle rotation.
+ */
+export async function buildCoveredPdf(srcBytes: Uint8Array, marks: CoverMark[]): Promise<Uint8Array> {
+  const { rgb } = await import('pdf-lib');
+  const doc = await PDFDocument.load(srcBytes);
+  const pages = doc.getPages();
+  for (const m of marks) {
+    const page = pages[m.pageIndex];
+    if (!page) continue;
+    const { vw, vh, toPage } = visualPlacer(page);
+    // Fractional top-left {x,y,w,h} → visual-space corners (v is up from the
+    // visual bottom, so the top edge is at (1 - y) and the bottom at (1 - y - h)).
+    const u0 = m.x * vw;
+    const u1 = (m.x + m.w) * vw;
+    const vBot = (1 - m.y - m.h) * vh;
+    const vTop = (1 - m.y) * vh;
+    const corners = [toPage(u0, vBot), toPage(u1, vBot), toPage(u0, vTop), toPage(u1, vTop)];
+    const xs = corners.map((c) => c.x);
+    const ys = corners.map((c) => c.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    page.drawRectangle({
+      x: minX,
+      y: minY,
+      width: Math.max(...xs) - minX,
+      height: Math.max(...ys) - minY,
+      color: rgb(0, 0, 0),
+      opacity: 1,
+    });
+  }
+  return doc.save();
+}
 
 /** A page rebuilt from a flattened, black-boxed raster image (native orientation). */
 export interface FlattenedPage {

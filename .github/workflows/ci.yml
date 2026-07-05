@@ -148,6 +148,8 @@ jobs:
         run: |
           pnpm -C packages/pdf-sdk build:mcp
           CASUAL_MCP_BIN=packages/pdf-sdk/dist/mcp/server.mjs node tools/render-parity/verify-mcp-stdio.mjs
+      - name: Region-only redaction (buildCoveredPdf keeps text; geometry preserved)
+        run: node --experimental-transform-types tools/render-parity/verify-redact-cover.mjs
 
   # Editor feature regression suite — the verify-*.mjs Playwright drivers
   # (annotate/redact/autosave, text editing + matched/Google fonts, real signing +
@@ -195,7 +197,8 @@ jobs:
             verify-ai-panel \
             verify-ai-highlight \
             verify-ai-redact \
-            verify-ai-summarize; do
+            verify-ai-summarize \
+            verify-redact-cover-ui; do
             echo "::group::$t"
             node "$t.mjs" || { echo "::error::$t failed"; fail=1; }
             echo "::endgroup::"

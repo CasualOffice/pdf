@@ -1985,6 +1985,10 @@ export function Viewer({
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
+  // Redaction method: 'remove' = secure flatten (true removal, page → image);
+  // 'cover' = region-only opaque boxes that keep the page's other text (NOT true
+  // removal — the covered text stays in the bytes). User decision 2026-07-06.
+  const [redactMode, setRedactMode] = useState<'remove' | 'cover'>('remove');
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll, provides: scrollProvides } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
@@ -2348,23 +2352,33 @@ export function Viewer({
       const ab = await exportCap.saveAsCopy().toPromise();
       if (!ab) throw new Error('Could not read the document.');
       const srcBytes = new Uint8Array(ab);
-      const scope = renderCap.forDocument(documentId);
-      const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
-      const flattened: { pageIndex: number; png: Uint8Array }[] = [];
-      for (const pi of pageIndices) {
-        const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
-        // A failed render must NOT be skipped — that would leave the page's
-        // content un-redacted in the output. Fail the whole operation instead.
-        if (!blob) throw new Error(`Couldn't render page ${pi + 1} for redaction.`);
-        // The viewer renders pages in native orientation (it reads /Rotate but
-        // doesn't rotate the canvas), and renderPage is native too — so the marks
-        // and the bitmap share one space; paint directly. The output page keeps
-        // the source /Rotate (buildRedactedPdf) so external viewers match.
-        const png = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi));
-        flattened.push({ pageIndex: pi, png });
+      let out: Uint8Array;
+      if (redactMode === 'cover') {
+        // Region-only "keep text" (user decision 2026-07-06): draw opaque boxes,
+        // leave the rest of the page as real text. NOT true removal — disclosed
+        // in the confirm dialog; the covered text stays in the bytes.
+        const { buildCoveredPdf } = await import('../redact');
+        out = await buildCoveredPdf(srcBytes, redactions);
+      } else {
+        // Secure flatten (default): rasterize marked pages → true byte removal.
+        const scope = renderCap.forDocument(documentId);
+        const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
+        const flattened: { pageIndex: number; png: Uint8Array }[] = [];
+        for (const pi of pageIndices) {
+          const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
+          // A failed render must NOT be skipped — that would leave the page's
+          // content un-redacted in the output. Fail the whole operation instead.
+          if (!blob) throw new Error(`Couldn't render page ${pi + 1} for redaction.`);
+          // The viewer renders pages in native orientation (it reads /Rotate but
+          // doesn't rotate the canvas), and renderPage is native too — so the marks
+          // and the bitmap share one space; paint directly. The output page keeps
+          // the source /Rotate (buildRedactedPdf) so external viewers match.
+          const png = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi));
+          flattened.push({ pageIndex: pi, png });
+        }
+        const { buildRedactedPdf } = await import('../redact');
+        out = await buildRedactedPdf(srcBytes, flattened);
       }
-      const { buildRedactedPdf } = await import('../redact');
-      const out = await buildRedactedPdf(srcBytes, flattened);
       if (onDocumentReplaced) {
         onDocumentReplaced(out);
       } else {
@@ -3062,20 +3076,56 @@ export function Viewer({
                 <span className="cpdf__confirm-icon"><Icon name="redact" size={22} /></span>
                 <h2 className="cpdf__confirm-title">Apply redactions?</h2>
               </div>
+              <div className="cpdf__redact-modes" role="radiogroup" aria-label="Redaction method">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={redactMode === 'remove'}
+                  data-testid="redact-mode-remove"
+                  className={`cpdf__btn${redactMode === 'remove' ? ' cpdf__btn--active' : ''}`}
+                  onClick={() => setRedactMode('remove')}
+                >
+                  Remove (secure)
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={redactMode === 'cover'}
+                  data-testid="redact-mode-cover"
+                  className={`cpdf__btn${redactMode === 'cover' ? ' cpdf__btn--active' : ''}`}
+                  onClick={() => setRedactMode('cover')}
+                >
+                  Keep text
+                </button>
+              </div>
               <p className="cpdf__confirm-body">
-                This permanently removes the content under {redactions.length} marked region
-                {redactions.length === 1 ? '' : 's'} — it <strong>can't be undone</strong>. The{' '}
-                {new Set(redactions.map((r) => r.pageIndex)).size} affected page
-                {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} are rebuilt as flattened images
-                (preserving their size &amp; rotation), so text on {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? 'it' : 'them'} is
-                no longer selectable. Untouched pages keep their text. Download the result to keep the redacted copy.
+                {redactMode === 'remove' ? (
+                  <>
+                    Permanently removes the content under {redactions.length} marked region
+                    {redactions.length === 1 ? '' : 's'} — <strong>can't be undone</strong>. The{' '}
+                    {new Set(redactions.map((r) => r.pageIndex)).size} affected page
+                    {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} are rebuilt as flattened images
+                    (size &amp; rotation preserved), so their text is no longer selectable. Untouched pages keep their text.
+                  </>
+                ) : (
+                  <>
+                    Draws opaque boxes over {redactions.length} region{redactions.length === 1 ? '' : 's'}, keeping the
+                    rest of each page's text selectable and editable. <strong>Note:</strong> this is a visual cover — the
+                    text under the boxes is <strong>not removed</strong> from the file and could be extracted. Choose{' '}
+                    <em>Remove (secure)</em> for true, unrecoverable redaction.
+                  </>
+                )}
               </p>
               <div className="cpdf__confirm-acts">
                 <button type="button" className="cpdf__btn" onClick={() => setConfirmRedact(false)}>
                   Cancel
                 </button>
-                <button type="button" className="cpdf__btn cpdf__btn--danger" onClick={applyRedactions}>
-                  Redact &amp; remove
+                <button
+                  type="button"
+                  className={`cpdf__btn ${redactMode === 'remove' ? 'cpdf__btn--danger' : 'cpdf__btn--primary'}`}
+                  onClick={applyRedactions}
+                >
+                  {redactMode === 'remove' ? 'Redact & remove' : 'Cover regions'}
                 </button>
               </div>
             </div>

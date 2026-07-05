@@ -83,7 +83,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 }
 
 // pdf-lib's Page type isn't imported (lazy module); use a minimal structural type.
-interface PdfLibPage {
+export interface PdfLibPage {
   getMediaBox(): { x: number; y: number; width: number; height: number };
   getRotation(): { angle: number };
 }
@@ -98,7 +98,7 @@ interface PdfLibPage {
  * anchor to page-space (x,y). `rot` is the page rotation to add to any text angle
  * (a 0° watermark becomes `rot`; a 45° watermark becomes `rot + 45`).
  */
-function visualPlacer(page: PdfLibPage) {
+export function visualPlacer(page: PdfLibPage) {
   const { x: ox, y: oy, width: W, height: H } = page.getMediaBox();
   const rot = ((page.getRotation().angle % 360) + 360) % 360;
   const swap = rot === 90 || rot === 270;
