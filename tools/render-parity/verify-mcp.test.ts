@@ -12,7 +12,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MCP_TOOLS, createServer } from '../../packages/pdf-sdk/src/mcp/server.ts';
-import { mergeFiles, watermarkFile, verifyFile, detectPiiText } from '../../packages/pdf-sdk/src/mcp/handlers.ts';
+import { mergeFiles, watermarkFile, verifyFile, detectPiiText, listFormFieldsFile, fillFormFile } from '../../packages/pdf-sdk/src/mcp/handlers.ts';
 
 const tmp = (n: string) => join(tmpdir(), n);
 async function onePagePdf(path: string, label: string) {
@@ -27,7 +27,7 @@ const pageCount = async (path: string) => (await (await import('pdf-lib')).PDFDo
 test('MCP_TOOLS registry is well-formed and sorted by name', () => {
   const names = MCP_TOOLS.map((t) => t.name);
   assert.deepEqual([...names].sort(), names); // sorted (stability)
-  assert.deepEqual(names, ['add_bates', 'add_header_footer', 'add_watermark', 'detect_pii', 'merge_pdfs', 'verify_signatures']);
+  assert.deepEqual(names, ['add_bates', 'add_header_footer', 'add_watermark', 'detect_pii', 'fill_form', 'list_form_fields', 'merge_pdfs', 'verify_signatures']);
   for (const t of MCP_TOOLS) {
     assert.equal(typeof t.description, 'string');
     assert.equal(t.inputSchema.type, 'object');
@@ -66,6 +66,24 @@ test('verify_signatures handler reports zero on an unsigned PDF', async () => {
   await onePagePdf(src, 'x');
   const res = await verifyFile({ input: src });
   assert.equal(res.count, 0);
+});
+
+test('list_form_fields + fill_form handlers round-trip on disk', async () => {
+  const lib = await import('pdf-lib');
+  const doc = await lib.PDFDocument.create();
+  const p = doc.addPage([300, 200]);
+  const form = doc.getForm();
+  form.createTextField('email').addToPage(p, { x: 20, y: 150, width: 200, height: 20 });
+  const src = tmp('mcp-form-src.pdf');
+  const out = tmp('mcp-form-out.pdf');
+  await writeFile(src, await doc.save());
+
+  const listed = await listFormFieldsFile({ input: src });
+  assert.ok(listed.fields.some((f) => f.name === 'email' && f.type === 'text'));
+  const res = await fillFormFile({ input: src, output: out, fields: [{ name: 'email', value: 'a@b.com' }] });
+  assert.deepEqual(res.filled, ['email']);
+  const after = await listFormFieldsFile({ input: out });
+  assert.equal(after.fields.find((f) => f.name === 'email')?.value, 'a@b.com'); // persisted
 });
 
 test('detect_pii handler returns type counts, not values', () => {

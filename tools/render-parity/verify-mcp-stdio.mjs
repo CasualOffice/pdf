@@ -14,15 +14,18 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const server = resolve(here, '../../packages/pdf-sdk/src/mcp/server.ts');
 
 let failed = false;
 const assert = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}: ${m}`); if (!c) failed = true; };
 
-const transport = new StdioClientTransport({
-  command: process.execPath, // node
-  args: ['--experimental-transform-types', '--no-warnings', server],
-});
+// Test the built dist bin (plain `node`, no flags) when CASUAL_MCP_BIN is set —
+// that's what the desktop release ships; otherwise run the TS source directly.
+const bin = process.env.CASUAL_MCP_BIN;
+const args = bin
+  ? [resolve(here, '../..', bin)]
+  : ['--experimental-transform-types', '--no-warnings', resolve(here, '../../packages/pdf-sdk/src/mcp/server.ts')];
+console.log(bin ? `mode: built bin (${bin})` : 'mode: TS source');
+const transport = new StdioClientTransport({ command: process.execPath, args });
 const client = new Client({ name: 'test', version: '0.0.0' }, { capabilities: {} });
 
 try {
@@ -32,8 +35,8 @@ try {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
   console.log('tools:', names.join(', '));
-  assert(names.length === 6, `server advertises 6 tools (${names.length})`);
-  assert(names.includes('detect_pii') && names.includes('merge_pdfs'), 'expected tools present');
+  assert(names.length === 8, `server advertises 8 tools (${names.length})`);
+  assert(['detect_pii', 'merge_pdfs', 'fill_form', 'list_form_fields'].every((n) => names.includes(n)), 'expected tools present');
   assert(tools.every((t) => t.inputSchema && t.inputSchema.type === 'object'), 'every tool has an object input schema');
 
   const res = await client.callTool({ name: 'detect_pii', arguments: { text: 'my card is 4111 1111 1111 1111' } });

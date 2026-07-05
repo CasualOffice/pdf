@@ -124,6 +124,31 @@ jobs:
           name: render-parity
           path: tools/render-parity/out/
 
+  # Fast, browser-less gate: the AI/PDF-ops unit suite (DocOps bridge, PII regex +
+  # checksums, hybrid-RAG fusion, form-fill, source-span highlighting, MCP registry
+  # + file handlers) AND the MCP server's PRODUCTION dist bin driven over a real
+  # stdio handshake with plain `node` — exactly how the desktop release spawns it.
+  unit-tests:
+    needs: detect
+    if: needs.detect.outputs.has_web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # vendor/design-system (link: override) needed for install
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Unit suite (ai + mcp)
+        run: pnpm test:unit
+      - name: MCP production bin over stdio (built, plain node)
+        run: |
+          pnpm -C packages/pdf-sdk build:mcp
+          CASUAL_MCP_BIN=packages/pdf-sdk/dist/mcp/server.mjs node tools/render-parity/verify-mcp-stdio.mjs
+
   # Editor feature regression suite — the verify-*.mjs Playwright drivers
   # (annotate/redact/autosave, text editing + matched/Google fonts, real signing +
   # OpenSSL external validation, viewer-mount persistence, Unicode/CJK editing).
@@ -166,7 +191,10 @@ jobs:
             verify-textedit-unicode \
             verify-textedit-googlefont \
             verify-signature-details \
-            verify-signature-openssl; do
+            verify-signature-openssl \
+            verify-ai-panel \
+            verify-ai-highlight \
+            verify-ai-redact; do
             echo "::group::$t"
             node "$t.mjs" || { echo "::error::$t failed"; fail=1; }
             echo "::endgroup::"

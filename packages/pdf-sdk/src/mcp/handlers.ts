@@ -18,6 +18,7 @@ import { addWatermark, addHeaderFooter, addBatesNumbers } from '../page-furnitur
 import { mergePdfs } from '../merge.ts';
 import { verifyPdfSignatures } from '../verify.ts';
 import { detectPii } from '../ai/pii.ts';
+import { listFormFields, fillFormFields } from '../ai/form.ts';
 
 const read = async (p: string): Promise<Uint8Array> => new Uint8Array(await readFile(p));
 const save = async (p: string, bytes: Uint8Array): Promise<void> => {
@@ -126,6 +127,26 @@ export async function verifyFile(a: { input: string }) {
       reason: s.reason,
     })),
   };
+}
+
+export async function listFormFieldsFile(a: { input: string }) {
+  return { fields: await listFormFields(await read(a.input)) };
+}
+
+export interface FillFormArgs {
+  input: string;
+  output: string;
+  fields: { name: string; value: string }[];
+}
+export async function fillFormFile(a: FillFormArgs) {
+  if (!Array.isArray(a.fields) || a.fields.length === 0) throw new Error('fields must be a non-empty array of {name, value}');
+  const values = a.fields.map((f) => ({
+    name: f.name,
+    value: f.value === 'true' ? true : f.value === 'false' ? false : String(f.value ?? ''),
+  }));
+  const res = await fillFormFields(await read(a.input), values);
+  await save(a.output, res.bytes);
+  return { output: a.output, filled: res.filled, skipped: res.skipped };
 }
 
 export function detectPiiText(a: { text: string }) {
