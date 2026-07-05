@@ -217,6 +217,24 @@ test('bridge.detect_pii marks structured PII and returns counts by type (no valu
   assert.ok(!JSON.stringify(res).includes('4111'));
 });
 
+test('bridge.detect_pii with no page scans the WHOLE document and marks each page', async () => {
+  const mb = { x: 0, y: 0, width: 612, height: 792 };
+  const pages = [
+    { pageIndex: 0, width: 612, height: 792, mediaBox: mb, text: 'nothing sensitive here', runs: [oneRun('nothing sensitive here')] },
+    { pageIndex: 1, width: 612, height: 792, mediaBox: mb, text: 'Card 4111 1111 1111 1111', runs: [oneRun('Card 4111 1111 1111 1111')] },
+    { pageIndex: 2, width: 612, height: 792, mediaBox: mb, text: 'SSN 123-45-6789', runs: [oneRun('SSN 123-45-6789')] },
+  ];
+  const { api, redactions } = mockApi({ extractAllText: async () => pages });
+  const res = await bridge_(api).callTool('detect_pii', {}); // no page → whole doc
+  assert.equal(res.ok, true);
+  const data = (res as { data: { pages: number; found: Record<string, number>; marked: number } }).data;
+  assert.equal(data.pages, 3);
+  assert.ok(data.found['credit-card'] >= 1 && data.found['ssn'] >= 1);
+  assert.equal(data.marked, 2); // pages 1 and 2 have PII; page 0 doesn't
+  assert.deepEqual(redactions.map((r) => r.page).sort(), [1, 2]);
+  assert.ok(!JSON.stringify(res).includes('4111')); // values never echoed
+});
+
 test('bridge.mark_redaction marks a specific phrase (contextual PII)', async () => {
   const { api, redactions } = mockApi({ ...piiApi('Signed by Jane Doe of Acme Corp.') });
   const res = await bridge_(api).callTool('mark_redaction', { page: 0, text: 'Jane Doe' });

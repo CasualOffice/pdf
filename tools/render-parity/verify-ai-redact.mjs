@@ -53,8 +53,9 @@ try {
       drivesLoop: true,
       label: 'Test',
       async call(payload) {
-        window.__piiResult__ = await payload.toolExecutor('detect_pii', { page: 0 });
-        payload.onText && payload.onText('Marked the PII on page 1 for redaction. Review and Apply to remove.');
+        // Whole-document scan (no page) — the real "redact my PII" flow.
+        window.__piiResult__ = await payload.toolExecutor('detect_pii', {});
+        payload.onText && payload.onText('Marked the PII across the document for redaction. Review and Apply to remove.');
         return { data: { ok: true }, status: 200, updatedHistory: [] };
       },
     };
