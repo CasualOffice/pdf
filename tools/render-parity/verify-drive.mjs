@@ -147,7 +147,8 @@ try {
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: 'Apply redactions' }).click();
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: 'Redact & remove' }).click();
+  await page.locator('[data-testid=redact-mode-flatten]').click(); // rasterize the page (this test asserts search → 0)
+  await page.getByRole('button', { name: 'Flatten & redact' }).click();
   // applyRedactions: saveAsCopy → render native → flatten → reopen.
   await page.waitForTimeout(4000);
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
