@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/catalog.ts';
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
+import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
 
@@ -75,6 +76,17 @@ test('rankChunks (BM25) ranks the passage matching the query first', () => {
   assert.ok(top.length >= 1);
   assert.equal(top[0].page, 2); // the invoice passage wins
   assert.deepEqual(rankChunks(chunks, 'xyzzy nothingmatches', 3), []); // no match → empty
+});
+
+// ── citations ────────────────────────────────────────────────────────────────
+test('linkifyCitations turns page mentions into clickable page segments', () => {
+  const segs = linkifyCitations('See page 3 and pages 5 for details.');
+  const pages = segs.filter((s) => s.type === 'page') as { type: 'page'; page: number; label: string }[];
+  assert.deepEqual(pages.map((p) => p.page), [3, 5]);
+  // plain text → a single text segment
+  assert.deepEqual(linkifyCitations('no refs here'), [{ type: 'text', text: 'no refs here' }]);
+  // a number BEFORE the word ("3 pages") is not a citation
+  assert.ok(linkifyCitations('has 3 pages total').every((s) => s.type === 'text'));
 });
 
 // ── bridge ────────────────────────────────────────────────────────────────────

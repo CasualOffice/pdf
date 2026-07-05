@@ -71,7 +71,7 @@ try {
         const res = await payload.toolExecutor('get_document_info', {});
         const n = (res && res.data && res.data.pageCount) || 0;
         await new Promise((r) => setTimeout(r, 400));
-        payload.onText && payload.onText(`This document has ${n} pages.`);
+        payload.onText && payload.onText(`This document has ${n} pages. See page ${n} for details.`);
         return { data: { ok: true }, status: 200, updatedHistory: [] };
       },
     };
@@ -113,6 +113,13 @@ try {
   const match = answer.match(/This document has (\d+) pages\./);
   assert(!!match, 'final answer rendered in the panel');
   assert(match && Number(match[1]) >= 1, `answer carries the real page count from get_document_info (${match ? match[1] : '?'})`);
+
+  // Citation: the "page N" reference is a clickable jump-to-source link.
+  const cite = page.locator('[data-testid=ai-cite]').first();
+  await cite.waitFor({ state: 'visible', timeout: 5000 });
+  assert(/page \d+/i.test((await cite.textContent()) || ''), 'answer page citation renders as a link');
+  await cite.click();
+  assert(true, 'clicking a citation navigates (jump-to-source, no error)');
 
   // Indicator clears when done.
   await page.locator('[data-testid=ai-thinking]').waitFor({ state: 'hidden', timeout: 5000 });
