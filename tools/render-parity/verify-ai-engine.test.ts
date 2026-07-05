@@ -299,6 +299,33 @@ test('transport.available() reflects whether a backend is really reachable', () 
   assert.equal(new CollabTransport('').available(), false); // no URL → unavailable
 });
 
+test('CollabTransport rejects on server inactivity (no eternal "Thinking…")', async () => {
+  // Fake WS that connects but never sends a frame → the idle watchdog must fire.
+  class FakeWS {
+    private listeners: Record<string, ((ev: unknown) => void)[]> = {};
+    constructor() {
+      queueMicrotask(() => (this.listeners['open'] ?? []).forEach((cb) => cb({})));
+    }
+    addEventListener(type: string, cb: (ev: unknown) => void) {
+      (this.listeners[type] ??= []).push(cb);
+    }
+    removeEventListener() {}
+    send() {}
+    close() {}
+  }
+  const orig = (globalThis as { WebSocket?: unknown }).WebSocket;
+  (globalThis as { WebSocket?: unknown }).WebSocket = FakeWS;
+  try {
+    const t = new CollabTransport('ws://x/api/ai', undefined, 40); // 40ms idle timeout
+    await assert.rejects(
+      t.call({ model: 'm', system: 's', messages: [], tools: [], max_tokens: 10 } as never),
+      /timed out/,
+    );
+  } finally {
+    (globalThis as { WebSocket?: unknown }).WebSocket = orig;
+  }
+});
+
 // ── citations ────────────────────────────────────────────────────────────────
 test('linkifyCitations turns page mentions into clickable page segments', () => {
   const segs = linkifyCitations('See page 3 and pages 5 for details.');
