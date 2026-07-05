@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import type { CasualPdfApi } from '../modes';
 import { Icon } from '../ui/icons';
 import { createDocOpsTransport, type DocOpsTransport, type ProviderConfig } from './transport';
-import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from './catalog';
+import { PDF_CATALOG, PDF_SYSTEM_PROMPT, toolProgressLabel } from './catalog';
 import { PdfOpsBridge } from './bridge';
 import { runDocOpsTurn } from './loop';
 import { linkifyCitations } from './cite';
@@ -101,8 +101,7 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
             setStreaming(acc);
             queueMicrotask(() => logRef.current?.scrollTo(0, logRef.current.scrollHeight));
           },
-          onToolStart: (name, args) =>
-            setToolHint(name === 'get_page_text' ? `Reading page ${(args as any).page}…` : `Running ${name}…`),
+          onToolStart: (name, args) => setToolHint(toolProgressLabel(name, args)),
           onError: setError,
         },
       });

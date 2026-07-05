@@ -9,7 +9,7 @@
 //
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/catalog.ts';
+import { PDF_CATALOG, PDF_SYSTEM_PROMPT, toolProgressLabel } from '../../packages/pdf-sdk/src/ai/catalog.ts';
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks, cosineSimilarity, reciprocalRankFusion, hybridRankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
@@ -74,6 +74,15 @@ test('PDF_CATALOG is well-formed and sorted by name (prompt-cache stability)', (
   }
   assert.ok(PDF_SYSTEM_PROMPT.includes('get_document_info'));
   assert.ok(PDF_CATALOG.some((t) => t.name === 'search_document'));
+});
+
+test('toolProgressLabel gives friendly, 1-based status lines per tool', () => {
+  assert.equal(toolProgressLabel('get_page_text', { page: 0 }), 'Reading page 1…'); // 0-based → 1-based
+  assert.equal(toolProgressLabel('get_document_text', {}), 'Reading the document…');
+  assert.equal(toolProgressLabel('search_document', { query: 'refund' }), 'Searching for “refund”…');
+  assert.equal(toolProgressLabel('detect_pii', {}), 'Scanning for personal data…');
+  assert.equal(toolProgressLabel('fill_form', {}), 'Filling the form…');
+  assert.equal(toolProgressLabel('frobnicate', {}), 'Running frobnicate…'); // fallback
 });
 
 // ── retrieval (RAG-lite) ─────────────────────────────────────────────────────
