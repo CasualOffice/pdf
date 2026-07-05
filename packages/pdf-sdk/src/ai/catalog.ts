@@ -54,6 +54,19 @@ export const PDF_CATALOG: PdfTool[] = [
     },
   },
   {
+    name: 'highlight_source',
+    description:
+      'Highlight the exact text on a zero-based `page` that supports your answer, so the user can see where it came from, and scroll there. Pass the verbatim quote (as it appears in the document). Call this after you have found and quoted a source passage.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Zero-based page index the text is on.' },
+        text: { type: 'string', description: 'The verbatim passage to highlight (as written in the document).' },
+      },
+      required: ['page', 'text'],
+    },
+  },
+  {
     name: 'search_document',
     description:
       'Search the WHOLE document and return the passages most relevant to a query, each with its zero-based page number. Prefer this over reading pages one by one when a question could be answered from anywhere in the document — it is one call instead of many. Use the returned page numbers to cite sources (present them 1-based to the user) or to goto_page.',
@@ -76,6 +89,7 @@ export const PDF_SYSTEM_PROMPT = [
   'the most relevant passages (with page numbers), then read specific pages with',
   'get_page_text only if you need more. Use get_document_info for structure/length.',
   'Do not guess page contents. When you state a fact from the document, cite the',
-  'page (1-based for the user). Be concise. If the document does not contain the',
+  'page (1-based for the user), and call highlight_source(page, verbatim quote) to',
+  'show where it came from. Be concise. If the document does not contain the',
   'answer, say so.',
 ].join(' ');

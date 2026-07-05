@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/catalog.ts';
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
+import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
 import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
@@ -19,6 +20,7 @@ import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packa
 // ── mock CasualPdfApi (only the methods the bridge uses) ─────────────────────
 function mockApi(over: Record<string, unknown> = {}) {
   const gotos: number[] = [];
+  const highlights: { page: number; rects: unknown[] }[] = [];
   const api = {
     pageCount: () => 3,
     getOutline: async () => [{ title: 'Intro', pageIndex: 0, children: [] }],
@@ -27,10 +29,13 @@ function mockApi(over: Record<string, unknown> = {}) {
       width: 612,
       height: 792,
       mediaBox: { x: 0, y: 0, width: 612, height: 792 },
-      text: `text of page ${page}`,
-      runs: [],
+      text: `Mitochondria produce ATP on page ${page}.`,
+      runs: [
+        { text: 'Mitochondria produce ATP', charStart: 0, charEnd: 24, userSpace: { left: 72, bottom: 700, right: 300, top: 712 }, frac: { x: 0, y: 0, w: 0, h: 0 }, fontSizePt: 12, fontWeight: 400, fontItalic: false, fontBaseName: 'Arial', fontSubsetted: false, color: 'rgb(0,0,0)' },
+      ],
     }),
     gotoPage: (p: number) => gotos.push(p),
+    highlightRegion: (page: number, rects: unknown[]) => highlights.push({ page, rects }),
     extractAllText: async () =>
       [
         'The mitochondria is the powerhouse of the cell and produces ATP energy.',
@@ -39,7 +44,7 @@ function mockApi(over: Record<string, unknown> = {}) {
       ].map((text, i) => ({ pageIndex: i, width: 612, height: 792, mediaBox: { x: 0, y: 0, width: 612, height: 792 }, text, runs: [] })),
     ...over,
   };
-  return { api: api as any, gotos };
+  return { api: api as any, gotos, highlights };
 }
 
 // ── catalog ──────────────────────────────────────────────────────────────────
@@ -78,6 +83,44 @@ test('rankChunks (BM25) ranks the passage matching the query first', () => {
   assert.deepEqual(rankChunks(chunks, 'xyzzy nothingmatches', 3), []); // no match → empty
 });
 
+// ── source-span highlighting (coordinate conversion is the risk) ─────────────
+test('toAnnotationRect maps user-space (bottom-left) to {origin,size} with no flip', () => {
+  // left=10, bottom=20, right=110, top=32 → origin at (10,20), 100×12.
+  assert.deepEqual(toAnnotationRect({ left: 10, bottom: 20, right: 110, top: 32 }), {
+    origin: { x: 10, y: 20 },
+    size: { width: 100, height: 12 },
+  });
+});
+
+test('findRunsForText matches runs making up a cited passage', () => {
+  const runs = [
+    { text: 'Mitochondria produce', userSpace: { left: 0, bottom: 0, right: 1, top: 1 } },
+    { text: 'ATP energy', userSpace: { left: 1, bottom: 0, right: 2, top: 1 } },
+    { text: 'Unrelated caption', userSpace: { left: 0, bottom: 5, right: 1, top: 6 } },
+  ];
+  // A phrase spanning two runs highlights both, not the caption.
+  const hit = findRunsForText(runs, 'mitochondria produce ATP energy');
+  assert.deepEqual(hit.map((r) => r.text), ['Mitochondria produce', 'ATP energy']);
+  // A keyword highlights the run it sits in.
+  assert.deepEqual(findRunsForText(runs, 'energy').map((r) => r.text), ['ATP energy']);
+  assert.deepEqual(findRunsForText(runs, 'nonexistent'), []);
+});
+
+test('bridge.highlight_source highlights the matching run with its real rect', async () => {
+  const { api, highlights, gotos } = mockApi();
+  const bridge = new PdfOpsBridge(() => api);
+  const res = await bridge.callTool('highlight_source', { page: 1, text: 'Mitochondria produce ATP' });
+  assert.equal(res.ok, true);
+  assert.equal((res as { data: { highlighted: number } }).data.highlighted, 1);
+  assert.equal(highlights.length, 1);
+  assert.equal(highlights[0].page, 1);
+  assert.deepEqual(highlights[0].rects, [{ left: 72, bottom: 700, right: 300, top: 712 }]); // the run's real user-space rect
+  assert.deepEqual(gotos, []); // highlightRegion (not goto_page) drives the scroll
+  // Text not on the page → ok, but nothing highlighted.
+  const miss = await bridge.callTool('highlight_source', { page: 1, text: 'zzz not present' });
+  assert.equal((miss as { data: { highlighted: number } }).data.highlighted, 0);
+});
+
 // ── citations ────────────────────────────────────────────────────────────────
 test('linkifyCitations turns page mentions into clickable page segments', () => {
   const segs = linkifyCitations('See page 3 and pages 5 for details.');
@@ -113,7 +156,7 @@ test('bridge.get_page_text reads a page', async () => {
   const { api } = mockApi();
   const bridge = new PdfOpsBridge(() => api);
   const res = await bridge.callTool('get_page_text', { page: 1 });
-  assert.deepEqual(res, { ok: true, data: { page: 1, text: 'text of page 1', width: 612, height: 792 } });
+  assert.deepEqual(res, { ok: true, data: { page: 1, text: 'Mitochondria produce ATP on page 1.', width: 612, height: 792 } });
 });
 
 test('bridge.get_page_text rejects out-of-range and bad args', async () => {

@@ -10,6 +10,7 @@
 
 import type { CasualPdfApi } from '../modes';
 import { chunkPages, rankChunks, type DocChunk } from './retrieve.ts';
+import { findRunsForText } from './highlight.ts';
 
 export type PdfOpsResult =
   | { ok: true; data?: unknown }
@@ -65,6 +66,19 @@ export class PdfOpsBridge {
         if (page === null) return bad('BAD_ARGS', '`page` must be a non-negative integer.');
         api.gotoPage(page);
         return { ok: true, data: { page } };
+      }
+      case 'highlight_source': {
+        const page = asPageIndex(args);
+        if (page === null) return bad('BAD_ARGS', '`page` must be a non-negative integer.');
+        if (page >= api.pageCount()) return bad('OUT_OF_RANGE', `page ${page} is past the last page.`);
+        const text = String((args as { text?: unknown }).text ?? '').trim();
+        if (!text) return bad('BAD_ARGS', '`text` is required.');
+        const pt = await api.extractText(page);
+        if (!pt) return bad('NOT_READY', 'Text extraction is not ready yet.', true);
+        const runs = findRunsForText(pt.runs, text);
+        if (runs.length === 0) return { ok: true, data: { page, highlighted: 0, note: 'text not found on that page' } };
+        api.highlightRegion(page, runs.map((r) => r.userSpace));
+        return { ok: true, data: { page, highlighted: runs.length } };
       }
       case 'search_document': {
         const query = String((args as { query?: unknown }).query ?? '').trim();

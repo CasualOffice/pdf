@@ -2164,6 +2164,29 @@ export function Viewer({
         for (let i = 0; i < count; i++) out.push(await extractPageText(bytes, i));
         return out;
       },
+      highlightRegion: (pageIndex, rects) => {
+        // extractText rects are PDF user space (bottom-left) — the SAME space as
+        // annotation rects, so this is just a shape change (no Y-flip).
+        if (!annoApi || !rects.length) return;
+        const segs = rects.map((r) => ({
+          origin: { x: r.left, y: r.bottom },
+          size: { width: r.right - r.left, height: r.top - r.bottom },
+        }));
+        const minX = Math.min(...segs.map((s) => s.origin.x));
+        const minY = Math.min(...segs.map((s) => s.origin.y));
+        const maxX = Math.max(...segs.map((s) => s.origin.x + s.size.width));
+        const maxY = Math.max(...segs.map((s) => s.origin.y + s.size.height));
+        annoApi.createAnnotation(pageIndex, {
+          type: MARKUP_SUBTYPE.highlight,
+          id: genId(),
+          pageIndex,
+          rect: { origin: { x: minX, y: minY }, size: { width: maxX - minX, height: maxY - minY } },
+          segmentRects: segs,
+          strokeColor: '#f5d90a',
+          opacity: 0.4,
+        } as Parameters<NonNullable<typeof annoApi>['createAnnotation']>[1]);
+        scrollProvidesRef.current?.scrollToPage({ pageNumber: pageIndex + 1 });
+      },
     };
     return () => {
       if (apiRef) apiRef.current = null;
