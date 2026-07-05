@@ -78,10 +78,10 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
     return createDocOpsTransport(provider ?? { provider: 'auto' });
   }, [createTransport, provider]);
 
-  const send = useCallback(async () => {
-    const userText = input.trim();
+  const send = useCallback(async (override?: string) => {
+    const userText = (override ?? input).trim();
     if (!userText || busy) return;
-    setInput('');
+    if (!override) setInput('');
     setError(null);
     setStreaming('');
     setToolHint(null);
@@ -143,6 +143,24 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
       </div>
 
       <div style={S.log} ref={logRef} role="log" aria-live="polite" aria-busy={busy}>
+        {messages.length === 0 && !busy ? (
+          <div data-testid="ai-empty" style={{ margin: 'auto', textAlign: 'center', color: 'var(--cpdf-muted, #6b7280)', maxWidth: 260 }}>
+            <p style={{ margin: '0 0 10px' }}>Ask anything about this document.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {['Summarize this document', 'What is this document about?'].map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  data-testid="ai-quick"
+                  onClick={() => void send(q)}
+                  style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--cpdf-border, #e5e7eb)', background: 'transparent', color: 'inherit', cursor: 'pointer', font: 'inherit' }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {messages.map((m, i) => (
           <div key={i} style={S.bubble(m.role === 'user')} data-testid={m.role === 'assistant' ? 'ai-answer' : 'ai-user'}>
             {m.text}

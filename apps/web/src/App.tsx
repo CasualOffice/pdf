@@ -13,6 +13,10 @@ import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoveryS
 import { isDesktop } from './desk-bridge-bootstrap';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
+// Collab mode: the AI connects to a collab server's /api/ai (the server env —
+// LLM_ENDPOINT/LLM_API_KEY — picks the provider). Set at deploy time; when unset
+// the AI runs in desktop mode (the shell's local model) only.
+const COLLAB_WS_URL = import.meta.env.VITE_COLLAB_WS_URL as string | undefined;
 
 type SignatureStatus = 'certified' | 'signed' | 'unsigned' | 'unknown';
 
@@ -815,7 +819,11 @@ export function App() {
             )}
             {aiOpen && (
               <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 360, zIndex: 19, borderLeft: '1px solid var(--cpdf-border, #e5e7eb)', background: 'var(--cpdf-surface, #fff)', boxShadow: '-2px 0 12px rgba(0,0,0,.08)' }}>
-                <AiPanel getApi={() => api.current} onClose={() => setAiOpen(false)} />
+                <AiPanel
+                  getApi={() => api.current}
+                  onClose={() => setAiOpen(false)}
+                  provider={COLLAB_WS_URL ? { provider: 'auto', collabWsUrl: COLLAB_WS_URL } : undefined}
+                />
               </div>
             )}
           </>

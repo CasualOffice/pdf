@@ -86,9 +86,13 @@ try {
   await page.locator('[data-testid=ai-panel]').waitFor({ state: 'visible', timeout: 5000 });
   assert(true, 'AI panel opens');
 
-  // Ask a question.
-  await page.locator('[data-testid=ai-input]').fill('How many pages does this document have?');
-  await page.locator('[data-testid=ai-send]').click();
+  // Empty state offers quick prompts.
+  await page.locator('[data-testid=ai-empty]').waitFor({ state: 'visible', timeout: 5000 });
+  const quick = page.locator('[data-testid=ai-quick]');
+  assert((await quick.count()) >= 2, 'empty state shows quick-prompt buttons');
+
+  // Ask via a quick prompt (also exercises send(override)).
+  await quick.first().click();
 
   // Processing indicator appears while the model works.
   await page.locator('[data-testid=ai-thinking]').waitFor({ state: 'visible', timeout: 5000 });
