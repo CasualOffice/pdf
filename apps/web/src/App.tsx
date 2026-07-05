@@ -32,15 +32,6 @@ function bytesInclude(bytes: Uint8Array, ascii: string): boolean {
   return false;
 }
 
-function hasPdfSignature(bytes: Uint8Array): boolean {
-  return (
-    bytesInclude(bytes, '/ByteRange') &&
-    bytesInclude(bytes, '/Contents') &&
-    (bytesInclude(bytes, '/Type/Sig') ||
-      bytesInclude(bytes, '/Type /Sig') ||
-      bytesInclude(bytes, '/SigFlags'))
-  );
-}
 
 // A *visible* signature is a stamp annotation, not a cryptographic signature.
 // Detect only stamp subtypes here — NOT the generic `/Type/Annot`, which every
@@ -537,18 +528,33 @@ export function App() {
       ]);
     };
     const check = async () => {
+      // "Certified" must mean exactly what the details dialog shows: a real,
+      // parseable cryptographic signature in the PRISTINE loaded bytes. We run
+      // the SAME verifier on the SAME fetch(src) bytes the dialog uses, so the
+      // badge can never claim "Certified" for a signature the dialog then
+      // reports as "not found" (a string-match on the PDFium re-export could —
+      // e.g. an empty/unsigned /Sig field survives the re-export).
+      try {
+        const res = await fetch(src);
+        const pristine = new Uint8Array(await res.arrayBuffer());
+        if (cancelled) return;
+        const { verifyPdfSignatures } = await import('@casualoffice/pdf/verify');
+        const sigs = await verifyPdfSignatures(pristine);
+        if (cancelled) return;
+        if (sigs.length > 0) {
+          setSignatureStatus('certified');
+          return;
+        }
+      } catch {
+        /* fall through to the visible-stamp check */
+      }
+      // A *visible* signature is a stamp annotation in the overlay — check the
+      // live baked bytes (retry while the viewer is still initializing).
       for (let i = 0; i < 4 && !cancelled; i++) {
         try {
-          const bytes = await withTimeout(api.current?.getBytes(), 500);
-          if (bytes?.byteLength) {
-            if (hasPdfSignature(bytes)) {
-              if (!cancelled) setSignatureStatus('certified');
-              return;
-            }
-            if (hasVisibleSignatureBytes(bytes)) {
-              if (!cancelled) setSignatureStatus('signed');
-              return;
-            }
+          const live = await withTimeout(api.current?.getBytes(), 500);
+          if (live?.byteLength) {
+            if (!cancelled) setSignatureStatus(hasVisibleSignatureBytes(live) ? 'signed' : 'unsigned');
             return;
           }
         } catch {
