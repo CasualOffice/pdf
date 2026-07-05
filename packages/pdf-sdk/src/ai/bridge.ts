@@ -111,6 +111,24 @@ export class PdfOpsBridge {
         api.addRedactionMarks(page, runs.map((r) => r.frac));
         return { ok: true, data: { page, marked: runs.length, note: 'Marked for redaction — the user must review and Apply to remove.' } };
       }
+      case 'list_form_fields': {
+        const fields = await api.listFormFields();
+        return { ok: true, data: { fields } };
+      }
+      case 'fill_form': {
+        const raw = (args as { fields?: unknown }).fields;
+        if (!Array.isArray(raw) || raw.length === 0) return bad('BAD_ARGS', '`fields` must be a non-empty array of {name, value}.');
+        const values = raw
+          .map((f) => f as { name?: unknown; value?: unknown })
+          .filter((f) => typeof f.name === 'string')
+          .map((f) => ({
+            name: f.name as string,
+            value: f.value === 'true' ? true : f.value === 'false' ? false : String(f.value ?? ''),
+          }));
+        if (values.length === 0) return bad('BAD_ARGS', 'no valid {name, value} entries.');
+        const res = await api.fillForm(values);
+        return { ok: true, data: res };
+      }
       case 'search_document': {
         const query = String((args as { query?: unknown }).query ?? '').trim();
         if (!query) return bad('BAD_ARGS', '`query` is required.');

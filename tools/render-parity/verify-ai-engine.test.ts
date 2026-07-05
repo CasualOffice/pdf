@@ -14,6 +14,7 @@ import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
 import { luhnValid, verhoeffValid, ibanValid, abaValid, nhsValid, cpfValid, spainDniValid, isinValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
+import { listFormFields, fillFormFields } from '../../packages/pdf-sdk/src/ai/form.ts';
 import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
@@ -39,6 +40,8 @@ function mockApi(over: Record<string, unknown> = {}) {
     gotoPage: (p: number) => gotos.push(p),
     highlightRegion: (page: number, rects: unknown[]) => highlights.push({ page, rects }),
     addRedactionMarks: (page: number, rects: unknown[]) => redactions.push({ page, rects }),
+    listFormFields: async () => [{ name: 'fullName', type: 'text', value: null }],
+    fillForm: async (values: { name: string; value: unknown }[]) => ({ filled: values.map((v) => v.name), skipped: [] }),
     extractAllText: async () =>
       [
         'The mitochondria is the powerhouse of the cell and produces ATP energy.',
@@ -185,6 +188,45 @@ test('bridge.mark_redaction marks a specific phrase (contextual PII)', async () 
   assert.equal(res.ok, true);
   assert.equal((res as { data: { marked: number } }).data.marked, 1);
   assert.equal(redactions.length, 1);
+});
+
+// ── form fill (pdf-lib, real bytes) ──────────────────────────────────────────
+test('form.ts lists and fills AcroForm fields (real pdf-lib round-trip)', async () => {
+  const lib = await import('pdf-lib');
+  const doc = await lib.PDFDocument.create();
+  const pageEl = doc.addPage([300, 200]);
+  const form = doc.getForm();
+  const name = form.createTextField('fullName');
+  name.addToPage(pageEl, { x: 20, y: 150, width: 200, height: 20 });
+  const agree = form.createCheckBox('agree');
+  agree.addToPage(pageEl, { x: 20, y: 120, width: 15, height: 15 });
+  const bytes = await doc.save();
+
+  const fields = await listFormFields(bytes);
+  assert.ok(fields.some((f) => f.name === 'fullName' && f.type === 'text'));
+  assert.ok(fields.some((f) => f.name === 'agree' && f.type === 'checkbox'));
+
+  const res = await fillFormFields(bytes, [
+    { name: 'fullName', value: 'Ada Lovelace' },
+    { name: 'agree', value: true },
+    { name: 'missing', value: 'x' },
+  ]);
+  assert.deepEqual(res.filled.sort(), ['agree', 'fullName']);
+  assert.deepEqual(res.skipped, ['missing']);
+  // Reload the filled bytes → the values persisted.
+  const after = await listFormFields(res.bytes);
+  assert.equal(after.find((f) => f.name === 'fullName')?.value, 'Ada Lovelace');
+  assert.equal(after.find((f) => f.name === 'agree')?.value, true);
+});
+
+test('bridge.list_form_fields and fill_form route through the API', async () => {
+  const { api } = mockApi();
+  const b = new PdfOpsBridge(() => api);
+  const list = await b.callTool('list_form_fields', {});
+  assert.equal((list as { data: { fields: unknown[] } }).data.fields.length, 1);
+  const fill = await b.callTool('fill_form', { fields: [{ name: 'fullName', value: 'Ada' }] });
+  assert.deepEqual((fill as { data: { filled: string[] } }).data.filled, ['fullName']);
+  assert.equal((await b.callTool('fill_form', { fields: [] })).ok, false); // empty → BAD_ARGS
 });
 
 // ── citations ────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ export * from './loop';
 export * from './retrieve';
 export * from './highlight';
 export * from './pii';
+export * from './form';
 export * from './cite';
 export { AiPanel } from './AiPanel';
 export type { AiPanelProps } from './AiPanel';

@@ -2198,6 +2198,29 @@ export function Viewer({
         setRedacting(true);
         scrollProvidesRef.current?.scrollToPage({ pageNumber: pageIndex + 1 });
       },
+      listFormFields: async () => {
+        if (!exportCap) return [];
+        const ab = await exportCap.saveAsCopy().toPromise();
+        if (!ab) return [];
+        const { listFormFields } = await import('../ai/form');
+        return listFormFields(new Uint8Array(ab));
+      },
+      fillForm: async (values) => {
+        if (!exportCap) return { filled: [], skipped: values.map((v) => v.name) };
+        const ab = await exportCap.saveAsCopy().toPromise();
+        if (!ab) return { filled: [], skipped: values.map((v) => v.name) };
+        const { fillFormFields } = await import('../ai/form');
+        const res = await fillFormFields(new Uint8Array(ab), values);
+        // Reload the viewer with the filled bytes (same path as redact/organize).
+        const replaced = onDocumentReplacedRef.current;
+        if (replaced) {
+          replaced(res.bytes);
+        } else {
+          const buffer = res.bytes.buffer.slice(res.bytes.byteOffset, res.bytes.byteOffset + res.bytes.byteLength) as ArrayBuffer;
+          await docCapRef.current?.openDocumentBuffer({ buffer, name: 'filled.pdf', autoActivate: true }).toPromise();
+        }
+        return { filled: res.filled, skipped: res.skipped };
+      },
     };
     return () => {
       if (apiRef) apiRef.current = null;
