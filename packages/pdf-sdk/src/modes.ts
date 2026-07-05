@@ -85,6 +85,9 @@ export interface CasualPdfApi {
   /** Canonical text-with-coordinates for a page — the AI grounding / citation
    *  primitive (see `extract.ts`). Null if export isn't ready. */
   extractText(pageIndex: number): Promise<PageText | null>;
+  /** Text for EVERY page in one pass (a single export). Used by whole-document
+   *  AI retrieval (RAG-lite). Empty array if export isn't ready. */
+  extractAllText(): Promise<PageText[]>;
 }
 
 /** A node in the document outline returned by {@link CasualPdfApi.getOutline}. */

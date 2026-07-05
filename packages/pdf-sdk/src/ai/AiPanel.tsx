@@ -18,6 +18,7 @@ import { createDocOpsTransport, type DocOpsTransport, type ProviderConfig } from
 import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from './catalog';
 import { PdfOpsBridge } from './bridge';
 import { runDocOpsTurn } from './loop';
+import { linkifyCitations } from './cite';
 import './ai.css';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -162,7 +163,24 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
             className={`cpdf__ai-msg${m.role === 'user' ? ' cpdf__ai-msg--me' : ''}`}
             data-testid={m.role === 'assistant' ? 'ai-answer' : 'ai-user'}
           >
-            {m.text}
+            {m.role === 'assistant'
+              ? linkifyCitations(m.text).map((seg, j) =>
+                  seg.type === 'page' ? (
+                    <button
+                      key={j}
+                      type="button"
+                      className="cpdf__ai-cite"
+                      data-testid="ai-cite"
+                      title={`Go to page ${seg.page}`}
+                      onClick={() => getApi()?.gotoPage(seg.page - 1)}
+                    >
+                      {seg.label}
+                    </button>
+                  ) : (
+                    <span key={j}>{seg.text}</span>
+                  ),
+                )
+              : m.text}
           </div>
         ))}
         {busy && streaming ? (
