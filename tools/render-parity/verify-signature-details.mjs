@@ -15,8 +15,11 @@ const server = createServer(async (req, res) => {
     const u = new URL(req.url, 'http://x'); let p = decodeURIComponent(u.pathname);
     if (p === '/signed.pdf' && signedBytes) { res.setHeader('Content-Type','application/pdf'); return res.end(Buffer.from(signedBytes)); }
     if (p.endsWith('/')) p += 'index.html';
-    const fp = join(root, normalize(p).replace(/^(\.\.[/\\])+/, ''));
-    res.setHeader('Content-Type', MIME[extname(fp)] || 'application/octet-stream'); res.end(await readFile(fp));
+    const rel = normalize(p).replace(/^(\.\.[/\\])+/, '');
+    let body;
+    try { body = await readFile(join(root, rel)); }
+    catch { body = await readFile(join(here, 'fixtures', rel.replace(/^\/+/, ''))); }
+    res.setHeader('Content-Type', MIME[extname(rel)] || 'application/octet-stream'); res.end(body);
   } catch { res.statusCode = 404; res.end('nf'); }
 });
 await new Promise((r) => server.listen(8171, '127.0.0.1', r));
@@ -28,6 +31,14 @@ try {
   const p1 = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   await p1.goto('http://127.0.0.1:8171/?src=%2Fsample.pdf', { waitUntil: 'networkidle', timeout: 60000 });
   await p1.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 60000 });
+  // Regression guard (the reported bug): an UNSIGNED document must NEVER show
+  // "Certified". The badge now runs the real verifier on fetch(src) — the same
+  // bytes the details dialog uses — so it can't claim a signature the dialog
+  // then reports as "not found".
+  await p1.waitForTimeout(900);
+  const preBadge = ((await p1.locator('.appbar__sigstatus').textContent().catch(() => '')) || '').trim();
+  console.log('unsigned badge:', preBadge);
+  assert(preBadge !== 'Certified', 'unsigned document is NOT badged Certified');
   await p1.getByRole('button', { name: 'Menu' }).first().click(); await p1.waitForTimeout(200);
   await p1.getByRole('menuitem', { name: /Sign document/ }).click(); await p1.waitForTimeout(300);
   const [dl] = await Promise.all([
