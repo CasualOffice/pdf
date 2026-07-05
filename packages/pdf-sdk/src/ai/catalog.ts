@@ -149,6 +149,41 @@ export const PDF_CATALOG: PdfTool[] = [
   },
 ];
 
+/**
+ * A friendly, human-readable status line for a tool call — shown as the
+ * "Thinking…" hint while a tool runs so the assistant feels native (not
+ * "Running detect_pii…"). Pages are shown 1-based (the model works 0-based).
+ */
+export function toolProgressLabel(name: string, args: Record<string, unknown> = {}): string {
+  const pg = Number((args as { page?: unknown }).page);
+  const page1 = Number.isInteger(pg) ? pg + 1 : null;
+  const query = String((args as { query?: unknown }).query ?? '').trim();
+  switch (name) {
+    case 'get_document_info':
+      return 'Checking the document…';
+    case 'get_document_text':
+      return 'Reading the document…';
+    case 'get_page_text':
+      return page1 ? `Reading page ${page1}…` : 'Reading a page…';
+    case 'goto_page':
+      return page1 ? `Going to page ${page1}…` : 'Navigating…';
+    case 'search_document':
+      return query ? `Searching for “${query}”…` : 'Searching the document…';
+    case 'highlight_source':
+      return page1 ? `Highlighting on page ${page1}…` : 'Highlighting the source…';
+    case 'detect_pii':
+      return 'Scanning for personal data…';
+    case 'mark_redaction':
+      return 'Marking text for redaction…';
+    case 'list_form_fields':
+      return 'Reading the form fields…';
+    case 'fill_form':
+      return 'Filling the form…';
+    default:
+      return `Running ${name}…`;
+  }
+}
+
 /** Default system prompt for the "Ask this PDF" assistant. */
 export const PDF_SYSTEM_PROMPT = [
   'You are the AI assistant inside Casual PDF, a PDF viewer/editor.',
