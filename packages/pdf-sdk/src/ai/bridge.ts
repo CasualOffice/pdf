@@ -9,7 +9,7 @@
  */
 
 import type { CasualPdfApi } from '../modes';
-import { chunkPages, rankChunks, type DocChunk } from './retrieve.ts';
+import { chunkPages, hybridRankChunks, type DocChunk } from './retrieve.ts';
 import { findRunsForText } from './highlight.ts';
 import { detectPii } from './pii.ts';
 
@@ -111,13 +111,34 @@ export class PdfOpsBridge {
         api.addRedactionMarks(page, runs.map((r) => r.frac));
         return { ok: true, data: { page, marked: runs.length, note: 'Marked for redaction — the user must review and Apply to remove.' } };
       }
+      case 'list_form_fields': {
+        const fields = await api.listFormFields();
+        return { ok: true, data: { fields } };
+      }
+      case 'fill_form': {
+        const raw = (args as { fields?: unknown }).fields;
+        if (!Array.isArray(raw) || raw.length === 0) return bad('BAD_ARGS', '`fields` must be a non-empty array of {name, value}.');
+        const values = raw
+          .map((f) => f as { name?: unknown; value?: unknown })
+          .filter((f) => typeof f.name === 'string')
+          .map((f) => ({
+            name: f.name as string,
+            value: f.value === 'true' ? true : f.value === 'false' ? false : String(f.value ?? ''),
+          }));
+        if (values.length === 0) return bad('BAD_ARGS', 'no valid {name, value} entries.');
+        const res = await api.fillForm(values);
+        return { ok: true, data: res };
+      }
       case 'search_document': {
         const query = String((args as { query?: unknown }).query ?? '').trim();
         if (!query) return bad('BAD_ARGS', '`query` is required.');
         const chunks = await this.getChunks(api);
         if (chunks === null) return bad('NOT_READY', 'Document text is not ready yet.', true);
-        const results = rankChunks(chunks, query, 6).map((c) => ({ page: c.page, text: c.text }));
-        return { ok: true, data: { query, results } };
+        // Hybrid (BM25 + dense) when the runtime provides an embedder; else BM25.
+        const embedder = api.embedTexts ? (texts: string[]) => api.embedTexts!(texts) : undefined;
+        const ranked = await hybridRankChunks(chunks, query, 6, embedder);
+        const results = ranked.map((c) => ({ page: c.page, text: c.text }));
+        return { ok: true, data: { query, results, retrieval: embedder ? 'hybrid' : 'bm25' } };
       }
       default:
         return bad('UNSUPPORTED', `Unknown tool: ${name}`);

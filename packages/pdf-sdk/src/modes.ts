@@ -3,6 +3,7 @@
 
 import type { CSSProperties, MutableRefObject } from 'react';
 import type { PageText } from './extract';
+import type { FormFieldInfo, FillValue } from './ai/form';
 
 /**
  * Interaction mode — what the user may do. Orthogonal to collab (single-user vs
@@ -97,6 +98,17 @@ export interface CasualPdfApi {
    *  only proposes marks and enters redaction review — it NEVER removes content;
    *  the user must confirm Apply. */
   addRedactionMarks(pageIndex: number, rects: { x: number; y: number; w: number; h: number }[]): void;
+  /** List the document's AcroForm fields (name, type, value, options). Empty
+   *  array if there is no form or export isn't ready. */
+  listFormFields(): Promise<FormFieldInfo[]>;
+  /** Fill AcroForm fields by name and reload the viewer with the filled bytes.
+   *  Returns which fields were filled vs skipped. */
+  fillForm(values: FillValue[]): Promise<{ filled: string[]; skipped: string[] }>;
+  /** Optional embedder for semantic (dense) retrieval — supplied by the runtime
+   *  (desktop llama.cpp worker / collab server), NOT bundled in the client. When
+   *  absent, `search_document` uses BM25 alone; when present, BM25 + dense fused
+   *  via RRF. Returns one vector per input text. */
+  embedTexts?(texts: string[]): Promise<number[][]>;
 }
 
 /** A node in the document outline returned by {@link CasualPdfApi.getOutline}. */

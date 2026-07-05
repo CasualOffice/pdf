@@ -95,3 +95,76 @@ export function rankChunks(chunks: DocChunk[], query: string, k = 6): DocChunk[]
     .slice(0, k)
     .map((s) => s.chunk);
 }
+
+// ── Dense / hybrid retrieval (embeddings RAG, docs/AI.md §4) ──────────────────
+//
+// BM25 is lexical: it misses passages that answer a question in different words
+// ("how do cells make energy?" vs "mitochondria produce ATP"). An embedding model
+// scores by meaning. Per the two-mode architecture, the model itself runs in the
+// desktop llama.cpp worker or the collab server — NOT bundled in the client — so
+// this module takes an injectable `Embedder`. When none is supplied (plain web),
+// retrieval degrades to BM25. When one is, we fuse lexical + dense rankings with
+// Reciprocal Rank Fusion, which is robust without score normalization.
+
+/** Turns texts into vectors. Supplied by the runtime (desktop worker / collab). */
+export type Embedder = (texts: string[]) => Promise<number[][]>;
+
+/** Cosine similarity of two equal-length vectors (0 if either is degenerate). */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
+}
+
+/**
+ * Reciprocal Rank Fusion — merge several ranked lists into one. An item's score
+ * is Σ 1/(rrfK + rank) across the lists it appears in; higher wins. `keyOf` gives
+ * each item a stable identity across lists. Standard rrfK=60.
+ */
+export function reciprocalRankFusion<T>(rankings: T[][], keyOf: (t: T) => string, rrfK = 60): T[] {
+  const score = new Map<string, number>();
+  const item = new Map<string, T>();
+  for (const list of rankings) {
+    list.forEach((t, i) => {
+      const key = keyOf(t);
+      score.set(key, (score.get(key) ?? 0) + 1 / (rrfK + i + 1));
+      if (!item.has(key)) item.set(key, t);
+    });
+  }
+  return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => item.get(key) as T);
+}
+
+const chunkKey = (c: DocChunk): string => `${c.page}:${c.text}`;
+
+/**
+ * Retrieve the top-k chunks for `query`. With an `embedder`, fuse BM25 with dense
+ * cosine ranking via RRF (semantic + lexical). Without one — or if embedding
+ * throws — fall back to BM25 alone. Async because embedding is.
+ */
+export async function hybridRankChunks(
+  chunks: DocChunk[],
+  query: string,
+  k = 6,
+  embedder?: Embedder,
+): Promise<DocChunk[]> {
+  const lexical = rankChunks(chunks, query, chunks.length);
+  if (!embedder) return lexical.slice(0, k);
+  try {
+    const [queryVec] = await embedder([query]);
+    const chunkVecs = await embedder(chunks.map((c) => c.text));
+    const dense = chunks
+      .map((c, i) => ({ c, s: cosineSimilarity(queryVec, chunkVecs[i]) }))
+      .sort((a, b) => b.s - a.s)
+      .map((x) => x.c);
+    return reciprocalRankFusion([lexical, dense], chunkKey).slice(0, k);
+  } catch {
+    return lexical.slice(0, k);
+  }
+}

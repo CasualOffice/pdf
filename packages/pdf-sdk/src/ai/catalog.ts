@@ -36,6 +36,29 @@ export const PDF_CATALOG: PdfTool[] = [
     },
   },
   {
+    name: 'fill_form',
+    description:
+      'Fill the document AcroForm fields and reload with the filled values. Call list_form_fields first to see the field names, types, and options. Pass an array of {name, value}: text takes a string, checkbox takes true/false, radio/dropdown take the option to select. Returns which fields were filled vs skipped.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          description: 'Fields to fill.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Exact field name from list_form_fields.' },
+              value: { type: 'string', description: 'Value: text, "true"/"false" for a checkbox, or the option to select.' },
+            },
+            required: ['name', 'value'],
+          },
+        },
+      },
+      required: ['fields'],
+    },
+  },
+  {
     name: 'get_document_info',
     description:
       'Return the page count and the document outline/bookmarks. Call this FIRST to orient yourself before answering anything about the document.',
@@ -79,6 +102,12 @@ export const PDF_CATALOG: PdfTool[] = [
     },
   },
   {
+    name: 'list_form_fields',
+    description:
+      'List the document AcroForm fields (name, type, current value, and allowed options for radio/dropdown). Call before fill_form. Returns an empty list if the document has no form.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name: 'mark_redaction',
     description:
       'Mark specific text on a zero-based `page` for redaction (e.g. a name or sensitive phrase that detect_pii would not catch). This only PROPOSES a mark; the user must review and Apply to remove it. Pass the verbatim text. Never claim the text has been removed — you only propose marks.',
@@ -120,6 +149,8 @@ export const PDF_SYSTEM_PROMPT = [
   'validated by checksums), and mark_redaction(page, text) for CONTEXTUAL PII the',
   'scan cannot catch: person names, company names, places/addresses, signatures,',
   'and role-tagged dates (date of birth/death, signing dates). Both only PROPOSE',
-  'marks the user must Apply, so never say anything has been removed. Be concise.',
-  'If the document does not contain the answer, say so.',
+  'marks the user must Apply, so never say anything has been removed. To fill a',
+  'form, call list_form_fields to see the field names/types/options, then fill_form',
+  'with {name, value} entries. Be concise. If the document does not contain the',
+  'answer, say so.',
 ].join(' ');
