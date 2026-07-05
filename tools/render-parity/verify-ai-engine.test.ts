@@ -13,6 +13,7 @@ import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/ca
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
+import { luhnValid, verhoeffValid, ibanValid, abaValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
 import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
@@ -21,6 +22,7 @@ import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packa
 function mockApi(over: Record<string, unknown> = {}) {
   const gotos: number[] = [];
   const highlights: { page: number; rects: unknown[] }[] = [];
+  const redactions: { page: number; rects: unknown[] }[] = [];
   const api = {
     pageCount: () => 3,
     getOutline: async () => [{ title: 'Intro', pageIndex: 0, children: [] }],
@@ -36,6 +38,7 @@ function mockApi(over: Record<string, unknown> = {}) {
     }),
     gotoPage: (p: number) => gotos.push(p),
     highlightRegion: (page: number, rects: unknown[]) => highlights.push({ page, rects }),
+    addRedactionMarks: (page: number, rects: unknown[]) => redactions.push({ page, rects }),
     extractAllText: async () =>
       [
         'The mitochondria is the powerhouse of the cell and produces ATP energy.',
@@ -44,8 +47,17 @@ function mockApi(over: Record<string, unknown> = {}) {
       ].map((text, i) => ({ pageIndex: i, width: 612, height: 792, mediaBox: { x: 0, y: 0, width: 612, height: 792 }, text, runs: [] })),
     ...over,
   };
-  return { api: api as any, gotos, highlights };
+  return { api: api as any, gotos, highlights, redactions };
 }
+
+/** A run covering a whole page-text string, for PII/redaction tests. */
+function oneRun(text: string) {
+  return { text, charStart: 0, charEnd: text.length, userSpace: { left: 72, bottom: 700, right: 500, top: 712 }, frac: { x: 0.12, y: 0.1, w: 0.6, h: 0.02 }, fontSizePt: 12, fontWeight: 400, fontItalic: false, fontBaseName: 'Arial', fontSubsetted: false, color: 'rgb(0,0,0)' };
+}
+function piiApi(text: string) {
+  return { extractText: async (page: number) => ({ pageIndex: page, width: 612, height: 792, mediaBox: { x: 0, y: 0, width: 612, height: 792 }, text, runs: [oneRun(text)] }) };
+}
+const bridge_ = (api: unknown) => new PdfOpsBridge(() => api as never);
 
 // ── catalog ──────────────────────────────────────────────────────────────────
 test('PDF_CATALOG is well-formed and sorted by name (prompt-cache stability)', () => {
@@ -119,6 +131,49 @@ test('bridge.highlight_source highlights the matching run with its real rect', a
   // Text not on the page → ok, but nothing highlighted.
   const miss = await bridge.callTool('highlight_source', { page: 1, text: 'zzz not present' });
   assert.equal((miss as { data: { highlighted: number } }).data.highlighted, 0);
+});
+
+// ── PII detection (regex + checksums) ────────────────────────────────────────
+test('checksums: Luhn, Verhoeff (Aadhaar), IBAN mod-97, ABA routing', () => {
+  assert.equal(luhnValid('4111111111111111'), true); // Visa test card
+  assert.equal(luhnValid('4111111111111112'), false); // bad check digit
+  assert.equal(verhoeffValid('299556705675'), true); // valid Aadhaar (Verhoeff)
+  assert.equal(verhoeffValid('299556705676'), false);
+  assert.equal(ibanValid('GB82WEST12345698765432'), true); // canonical valid IBAN
+  assert.equal(ibanValid('GB82WEST12345698765433'), false);
+  assert.equal(abaValid('021000021'), true); // valid US routing
+  assert.equal(abaValid('021000022'), false);
+});
+
+test('detectPii finds validated structured PII and skips non-checksum candidates', () => {
+  const hits = detectPii('Card 4111 1111 1111 1111, SSN 123-45-6789, email a@b.com, Aadhaar 2995 5670 5675.');
+  const types = new Set(hits.map((h) => h.type));
+  assert.ok(types.has('credit-card'));
+  assert.ok(types.has('ssn'));
+  assert.ok(types.has('email'));
+  assert.ok(types.has('aadhaar'));
+  // A non-Luhn 16-digit number is NOT flagged as a card.
+  assert.equal(detectPii('9999888877776665').some((h) => h.type === 'credit-card'), false);
+  assert.ok(PII_TYPES.length >= 30, `registry covers ${PII_TYPES.length} structured types`);
+});
+
+test('bridge.detect_pii marks structured PII and returns counts by type (no values)', async () => {
+  const { api, redactions } = mockApi({ ...piiApi('Pay to card 4111 1111 1111 1111 or email me at x@y.com.') });
+  const res = await bridge_(api).callTool('detect_pii', { page: 0 });
+  assert.equal(res.ok, true);
+  const data = (res as { data: { found: Record<string, number>; marked: number } }).data;
+  assert.ok(data.found['credit-card'] >= 1 && data.found['email'] >= 1);
+  assert.equal(redactions.length >= 1, true);
+  // The PII VALUE must not be echoed back to the model.
+  assert.ok(!JSON.stringify(res).includes('4111'));
+});
+
+test('bridge.mark_redaction marks a specific phrase (contextual PII)', async () => {
+  const { api, redactions } = mockApi({ ...piiApi('Signed by Jane Doe of Acme Corp.') });
+  const res = await bridge_(api).callTool('mark_redaction', { page: 0, text: 'Jane Doe' });
+  assert.equal(res.ok, true);
+  assert.equal((res as { data: { marked: number } }).data.marked, 1);
+  assert.equal(redactions.length, 1);
 });
 
 // ── citations ────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@
 import type { CasualPdfApi } from '../modes';
 import { chunkPages, rankChunks, type DocChunk } from './retrieve.ts';
 import { findRunsForText } from './highlight.ts';
+import { detectPii } from './pii.ts';
 
 export type PdfOpsResult =
   | { ok: true; data?: unknown }
@@ -79,6 +80,36 @@ export class PdfOpsBridge {
         if (runs.length === 0) return { ok: true, data: { page, highlighted: 0, note: 'text not found on that page' } };
         api.highlightRegion(page, runs.map((r) => r.userSpace));
         return { ok: true, data: { page, highlighted: runs.length } };
+      }
+      case 'detect_pii': {
+        const page = asPageIndex(args);
+        if (page === null) return bad('BAD_ARGS', '`page` must be a non-negative integer.');
+        if (page >= api.pageCount()) return bad('OUT_OF_RANGE', `page ${page} is past the last page.`);
+        const pt = await api.extractText(page);
+        if (!pt) return bad('NOT_READY', 'Text extraction is not ready yet.', true);
+        const matches = detectPii(pt.text);
+        const rects: { x: number; y: number; w: number; h: number }[] = [];
+        for (const m of matches) {
+          for (const r of pt.runs) if (r.charStart < m.end && r.charEnd > m.start) rects.push(r.frac);
+        }
+        if (rects.length) api.addRedactionMarks(page, rects);
+        // Return TYPES + counts only — never echo the PII values back to the model.
+        const byType: Record<string, number> = {};
+        for (const m of matches) byType[m.type] = (byType[m.type] ?? 0) + 1;
+        return { ok: true, data: { page, found: byType, marked: rects.length, note: 'Marked for redaction — the user must review and Apply to remove.' } };
+      }
+      case 'mark_redaction': {
+        const page = asPageIndex(args);
+        if (page === null) return bad('BAD_ARGS', '`page` must be a non-negative integer.');
+        if (page >= api.pageCount()) return bad('OUT_OF_RANGE', `page ${page} is past the last page.`);
+        const text = String((args as { text?: unknown }).text ?? '').trim();
+        if (!text) return bad('BAD_ARGS', '`text` is required.');
+        const pt = await api.extractText(page);
+        if (!pt) return bad('NOT_READY', 'Text extraction is not ready yet.', true);
+        const runs = findRunsForText(pt.runs, text);
+        if (runs.length === 0) return { ok: true, data: { page, marked: 0, note: 'text not found on that page' } };
+        api.addRedactionMarks(page, runs.map((r) => r.frac));
+        return { ok: true, data: { page, marked: runs.length, note: 'Marked for redaction — the user must review and Apply to remove.' } };
       }
       case 'search_document': {
         const query = String((args as { query?: unknown }).query ?? '').trim();
