@@ -15,7 +15,7 @@ Casual PDF's AI job is **four small things on top of infrastructure that already
 3. Port the existing **4-part DocOps client** (`transport.ts` / `catalog.ts` / `bridge.ts` / `AiPanel.tsx`) from Sheets/Docs into `packages/pdf-sdk/src/ai/`, with `MODEL='claude-opus-4-8'`.
 4. Expose the **same catalog** through an MCP server/client surface.
 
-The single unifier: the **same `PdfOpsBridge` + `PDF_CATALOG`** feed the collab server loop (cloud), the desktop `docops_llm_call` (offline llama.cpp), the browser DirectTransport (BYO-key), **and** the MCP surface — so "which runtime" is a factory/config choice at runtime, **never a second build or a second product** (locked decision #9).
+The single unifier: the **same `PdfOpsBridge` + `PDF_CATALOG`** feed the collab server loop (cloud, provider via server env) and the desktop `docops_llm_call` (local llama.cpp, model chosen in the desktop app), **and** the MCP surface — so "which runtime" is a factory/config choice at runtime, **never a second build or a second product** (locked decision #9). Provider/model configuration is NOT a casual_pdf concern: desktop mode uses the shell's local-model settings, collab mode uses the server's env.
 
 Separately, the **signing identity** moves from browser `localStorage` (`sign.ts:92`) to a **native OS-keychain vault** (Rust `keyring`, MIT/Apache) that also holds AI/MCP tokens, mirroring the existing `fonts.rs` Tauri-command bridge.
 
@@ -45,7 +45,7 @@ Docs/Sheets consume both transports through one 4-part client (`services/sheet/a
 
 Client core in `packages/pdf-sdk/src/ai/` (subpath-exported `@casualoffice/pdf/ai`):
 
-- **`transport.ts`** — `PdfOpsTransport` interface + runtime factory. **DirectTransport** (browser `fetch`→Anthropic SSE, BYO-key, `drivesLoop=false`), **CollabTransport** (WS to `/api/ai`, server holds loop, `drivesLoop=true`; derives URL `/yjs`→`/api/ai`), **DesktopTransport** (Tauri `invoke('docops_llm_call', …)`, falls back to Direct off-Tauri). Factory: desktop→Desktop, else collab-URL→Collab, else Direct.
+- **`transport.ts`** — `DocOpsTransport` interface + factory. **TWO modes only**, and the provider/model choice lives OUTSIDE this repo: **DesktopTransport** (Tauri `invoke('docops_llm_call', …)` → the shell's llama.cpp worker; the *desktop app* owns local-model settings) and **CollabTransport** (WS to `/api/ai`; the *collab server env* — `LLM_ENDPOINT`/`LLM_API_KEY` — picks Anthropic/Ollama/OpenAI). Both `drivesLoop=true`. Factory `auto`: desktop-in-shell → Desktop, else collab-URL → Collab. **No client-side provider config or API-key UI in casual_pdf.**
 - **`catalog.ts`** — `PDF_CATALOG` (Anthropic `{name, description, input_schema}`), **sorted by name** for prompt-cache stability.
 - **`bridge.ts`** — `PdfOpsBridge.callTool(name, args)` switch returning a discriminated `{ok:true, data|diffSummary} | {ok:false, code, message, retryable}` union.
 - **`AiPanel.tsx`** — `@schnsrw/design-system` panel; `MODEL='claude-opus-4-8'`; branches on `transport.drivesLoop`; `runQuickAction` single-completion fallback for the weak offline model.
@@ -110,7 +110,7 @@ MCP is JSON-RPC 2.0 over **stdio** or **Streamable HTTP** — a new transport or
 
 **Offline (desktop-native, graceful degradation):** the existing llama.cpp GGUF worker. **⚠ Licensing GO/NO-GO gate:** the current catalog tops out at **Qwen2.5-3B whose weight license is contested** (Qwen RESEARCH non-commercial per one primary source vs Apache-2.0 relicense 2025-01-02 per another) — pin the **exact** GGUF the worker loads and confirm **that artifact's** license before enabling the offline tier in a commercial build. **Recommended:** Qwen2.5-7B-Instruct (**verified Apache-2.0**, matches `build_qwen_prompt`'s ChatML with zero prompt work) + an Apache-2.0 low-RAM tier (Qwen2.5-0.5B/1.5B, or Phi-3.5-mini MIT). Avoid Llama-3.1 (Meta Community) and Gemma (custom) unless legal signs off. Even a 7B is far weaker than Opus 4.8 at orchestration → offline = summarize/extract/ask, never promised agentic. Perf: ~60–120 tok/s (7B Q4_K_M, M3/M4 Metal), ~18 tok/s on 8GB; multi-second first-load Metal shader-compile stall → show a "loading model" state.
 
-**Streaming asymmetry:** the local path emits `ai:stream-token`; the desktop cloud-proxy branch of `docops_llm_call` does **not** stream, and collab streams block-sized chunks. Use the DirectTransport SSE path where fine token streaming matters.
+**Streaming:** the desktop local path emits `ai:stream-token` per token; collab streams text blocks over the WS. Both surface through the loop's `onText` callback so the panel renders live and shows the processing indicator.
 
 ---
 
@@ -146,7 +146,6 @@ All **code** deps MIT/Apache/BSD (decision #4); no (A)GPL; MuPDF excluded. Model
 | tauri 2 + plugins | shell (reuse) | MIT/Apache-2.0 | OK |
 | EmbedPDF / PDFium | render (reuse) | MIT / BSD-3+Apache | OK |
 | pdf-lib, @signpdf/*, node-forge, Yjs | pure ops/sign/CRDT (reuse) | MIT / MIT / BSD-3 / MIT | OK |
-| @anthropic-ai/sdk | web DirectTransport | MIT | OK |
 | @modelcontextprotocol/sdk (TS) | MCP | MIT | OK |
 | **rmcp (Rust MCP SDK)** | MCP in shell | **Apache-2.0** (not MIT) | OK — pin+confirm |
 | **keyring (Rust v4.x)** + backends | native vault | **MIT OR Apache-2.0** | OK — cargo-deny before merge |

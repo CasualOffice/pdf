@@ -58,36 +58,21 @@ try {
   // + a get_document_info tool call. Round 2: read the real tool_result (the
   // fixture's page count) and stream the answer. A small delay makes the
   // processing indicator observable.
+  // Mirror the REAL modes: both desktop and collab transports are drivesLoop=true
+  // (they hold the loop and call payload.toolExecutor). Stream text, run the tool
+  // via the executor (→ real bridge → viewer), then stream the answer.
   await page.addInitScript(() => {
-    let calls = 0;
     window.__casualPdfAiTransport__ = {
-      requiresApiKey: false,
-      drivesLoop: false,
+      drivesLoop: true,
       label: 'Test',
       async call(payload) {
-        calls += 1;
         await new Promise((r) => setTimeout(r, 400));
-        if (calls === 1) {
-          payload.onText && payload.onText('Let me check the document. ');
-          return {
-            data: {
-              content: [
-                { type: 'text', text: 'Let me check the document. ' },
-                { type: 'tool_use', id: 'tu1', name: 'get_document_info', input: {} },
-              ],
-              stop_reason: 'tool_use',
-            },
-            status: 200,
-          };
-        }
-        let n = 0;
-        try {
-          const last = payload.messages[payload.messages.length - 1];
-          n = JSON.parse(last.content[0].content).data.pageCount;
-        } catch { /* leave 0 */ }
-        const answer = `This document has ${n} pages.`;
-        payload.onText && payload.onText(answer);
-        return { data: { content: [{ type: 'text', text: answer }], stop_reason: 'end_turn' }, status: 200 };
+        payload.onText && payload.onText('Let me check the document. ');
+        const res = await payload.toolExecutor('get_document_info', {});
+        const n = (res && res.data && res.data.pageCount) || 0;
+        await new Promise((r) => setTimeout(r, 400));
+        payload.onText && payload.onText(`This document has ${n} pages.`);
+        return { data: { ok: true }, status: 200, updatedHistory: [] };
       },
     };
   });

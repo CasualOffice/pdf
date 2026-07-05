@@ -89,14 +89,12 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
 
     const transport = resolveTransport();
     const bridge = new PdfOpsBridge(getApi);
-    const apiKey = (provider as { apiKey?: string } | undefined)?.apiKey;
     let acc = '';
     try {
       const result = await runDocOpsTurn({
         transport,
         model,
         system: PDF_SYSTEM_PROMPT,
-        apiKey,
         history: historyRef.current,
         userText,
         tools: PDF_CATALOG,
@@ -122,7 +120,7 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
       setStreaming('');
       setToolHint(null);
     }
-  }, [input, busy, resolveTransport, getApi, provider, model]);
+  }, [input, busy, resolveTransport, getApi, model]);
 
   const transportLabel = (() => {
     try {
