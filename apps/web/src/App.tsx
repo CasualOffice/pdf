@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { signPdf } from '@casualoffice/pdf/sign';
+import { AiPanel } from '@casualoffice/pdf/ai';
 import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
 import { SignatureInfoDialog } from './SignatureInfoDialog';
@@ -12,6 +13,10 @@ import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoveryS
 import { isDesktop } from './desk-bridge-bootstrap';
 
 const DEFAULT_PDF = 'https://snippet.embedpdf.com/ebook.pdf';
+// Collab mode: the AI connects to a collab server's /api/ai (the server env —
+// LLM_ENDPOINT/LLM_API_KEY — picks the provider). Set at deploy time; when unset
+// the AI runs in desktop mode (the shell's local model) only.
+const COLLAB_WS_URL = import.meta.env.VITE_COLLAB_WS_URL as string | undefined;
 
 type SignatureStatus = 'certified' | 'signed' | 'unsigned' | 'unknown';
 
@@ -103,6 +108,7 @@ export function App() {
   const insertFileRef = useRef<HTMLInputElement>(null);
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
   // True inside the Casual Office desktop shell (?desk=1). Routes Open/Save and
   // the initial document load through the native Tauri bridge instead of the
   // browser file picker / <a download>. A no-op in a plain browser.
@@ -800,6 +806,26 @@ export function App() {
               onRedo={() => { if (api.current?.canRedo()) api.current.redo(); else versionRedo(); }}
               className="viewer"
             />
+            {!aiOpen && (
+              <button
+                type="button"
+                data-testid="ai-toggle"
+                onClick={() => setAiOpen(true)}
+                aria-pressed={aiOpen}
+                style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 20, padding: '10px 16px', borderRadius: 24, border: 'none', background: 'var(--cpdf-accent, #2563eb)', color: '#fff', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}
+              >
+                Ask AI
+              </button>
+            )}
+            {aiOpen && (
+              <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 360, zIndex: 19, borderLeft: '1px solid var(--cpdf-border, #e5e7eb)', background: 'var(--cpdf-surface, #fff)', boxShadow: '-2px 0 12px rgba(0,0,0,.08)' }}>
+                <AiPanel
+                  getApi={() => api.current}
+                  onClose={() => setAiOpen(false)}
+                  provider={COLLAB_WS_URL ? { provider: 'auto', collabWsUrl: COLLAB_WS_URL } : undefined}
+                />
+              </div>
+            )}
           </>
         ) : (
           <div className={`welcome${dragOver ? ' welcome--drag' : ''}`} aria-label="Welcome to Casual PDF">

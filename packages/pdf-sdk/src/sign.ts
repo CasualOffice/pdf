@@ -5,7 +5,12 @@
  * Certified PDF signing — a real, verifiable cryptographic signature.
  *
  * A stable **self-signed identity** (RSA-2048 key + X.509 certificate) is
- * generated on first use and persisted in the browser, then reused. Signing is
+ * generated on first use and persisted, then reused. On the **desktop** shell it
+ * is stored in the native OS-keychain vault (encrypted at rest — see
+ * `apps/shell/src-tauri/src/vault.rs`), reached via `window.__deskApp__`. On the
+ * **web** build it lives in IndexedDB (off the synchronous localStorage surface).
+ * A one-time migration lifts any legacy `localStorage` identity into the new
+ * store and wipes the plaintext copy. Signing is
  * done with the in-policy JS stack (@signpdf + node-forge, MIT/BSD-3):
  *   1. @signpdf/placeholder-plain appends a signature field + /ByteRange +
  *      zero-padded /Contents placeholder as an INCREMENTAL update (original
@@ -24,8 +29,12 @@
  */
 import forge from 'node-forge';
 
-/** localStorage key prefix — one stable identity per signer name. */
+/** Legacy localStorage key prefix — the pre-vault web identity store. Retained
+ *  only to migrate an existing identity into the native vault / IndexedDB. */
 const STORE_PREFIX = 'casualpdf.identity.v1:';
+/** IndexedDB store for the web build (survives a localStorage clear; async). */
+const IDB_NAME = 'casualpdf-identity';
+const IDB_STORE = 'p12';
 /** Passphrase for the in-browser PKCS#12 (not a security boundary — the p12
  *  never leaves the browser; it just satisfies the p12 container format). */
 const PASSPHRASE = 'casual-pdf';
@@ -88,24 +97,115 @@ async function buildSelfSignedP12(commonName: string): Promise<string> {
   return forge.util.encode64(forge.asn1.toDer(p12Asn1).getBytes());
 }
 
-/** Get (or lazily create + persist) the stable self-signed identity for a name. */
-async function getIdentityP12(commonName: string): Promise<Uint8Array> {
-  const key = STORE_PREFIX + commonName;
-  let b64: string | null = null;
+function decodeP12(b64: string): Uint8Array {
+  return Uint8Array.from(forge.util.decode64(b64), (c) => c.charCodeAt(0));
+}
+
+/** Read the legacy browser-localStorage identity for a name (pre-vault). */
+function readLegacyIdentity(commonName: string): string | null {
   try {
-    b64 = localStorage.getItem(key);
+    return localStorage.getItem(STORE_PREFIX + commonName);
   } catch {
-    /* localStorage may be unavailable (private mode) — fall through to ephemeral. */
+    return null;
   }
-  if (!b64) {
-    b64 = await buildSelfSignedP12(commonName);
+}
+/** Wipe the legacy plaintext identity once it has been migrated. */
+function clearLegacyIdentity(commonName: string): void {
+  try {
+    localStorage.removeItem(STORE_PREFIX + commonName);
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── Web fallback: IndexedDB ─────────────────────────────────────────────────
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('indexedDB unavailable'));
+      return;
+    }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error('idb open failed'));
+  });
+}
+async function idbGet(commonName: string): Promise<string | null> {
+  const db = await idbOpen();
+  try {
+    return await new Promise<string | null>((resolve, reject) => {
+      const r = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(commonName);
+      r.onsuccess = () => resolve((r.result as string | undefined) ?? null);
+      r.onerror = () => reject(r.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+async function idbPut(commonName: string, b64: string): Promise<void> {
+  const db = await idbOpen();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(b64, commonName);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Get (or lazily create + persist) the stable self-signed identity for a name.
+ *
+ * Desktop → native OS-keychain vault (`window.__deskApp__`). Web → IndexedDB,
+ * falling back to localStorage only when IndexedDB is unavailable (private mode).
+ * Either path migrates a legacy `localStorage` identity in on first use and
+ * wipes the plaintext copy.
+ */
+async function getIdentityP12(commonName: string): Promise<Uint8Array> {
+  // Desktop: native, encrypted-at-rest OS keychain.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const desk = (globalThis as any).__deskApp__;
+  if (desk?.identityGet && desk?.identitySet) {
+    let b64: string | null = null;
     try {
-      localStorage.setItem(key, b64);
+      b64 = await desk.identityGet(commonName);
     } catch {
-      /* ignore persistence failure — the identity is still valid for this call. */
+      b64 = null;
+    }
+    if (!b64) {
+      b64 = readLegacyIdentity(commonName) ?? (await buildSelfSignedP12(commonName));
+      try {
+        await desk.identitySet(commonName, b64);
+        clearLegacyIdentity(commonName); // migrated into the keychain
+      } catch {
+        /* vault write failed — the identity is still valid for this call. */
+      }
+    }
+    return decodeP12(b64);
+  }
+
+  // Web: IndexedDB, migrating from the legacy localStorage key if present.
+  const existing = await idbGet(commonName).catch(() => null);
+  if (existing) return decodeP12(existing);
+
+  const b64 = readLegacyIdentity(commonName) ?? (await buildSelfSignedP12(commonName));
+  try {
+    await idbPut(commonName, b64);
+    clearLegacyIdentity(commonName); // migrated into IndexedDB → drop plaintext
+  } catch {
+    // IndexedDB unavailable (private mode) — keep it in localStorage so it persists.
+    try {
+      localStorage.setItem(STORE_PREFIX + commonName, b64);
+    } catch {
+      /* ephemeral — still valid for this call. */
     }
   }
-  return Uint8Array.from(forge.util.decode64(b64), (c) => c.charCodeAt(0));
+  return decodeP12(b64);
 }
 
 /** Sign a PDF with the stable self-signed identity and return the signed bytes. */

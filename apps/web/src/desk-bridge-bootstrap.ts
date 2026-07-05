@@ -51,6 +51,14 @@ export interface DeskApp {
    *  or null if none installed / a TrueType Collection. Used by text editing to
    *  embed the genuine local typeface (best fidelity). */
   resolveSystemFont(family: string, weight: number, italic: boolean): Promise<Uint8Array | null>;
+  /** Native encrypted-at-rest vault (OS keychain) for the signing identity.
+   *  Returns the base64 PKCS#12 for a signer name, or null if none stored. */
+  identityGet(name: string): Promise<string | null>;
+  /** Persist the base64 PKCS#12 signing identity for a signer name. */
+  identitySet(name: string, p12Base64: string): Promise<void>;
+  /** Native vault for small AI/MCP credentials (base64/opaque string). */
+  tokenGet(name: string): Promise<string | null>;
+  tokenSet(name: string, value: string): Promise<void>;
   /** Signal unsaved state to the shell (drives the close-guard prompt). */
   setDirty(dirty: boolean): void;
   /** Monotonic edit counter, so an in-flight save can detect a mid-write edit. */
@@ -237,6 +245,19 @@ declare global {
       } catch {
         return null;
       }
+    },
+
+    async identityGet(name: string): Promise<string | null> {
+      return (await inv('identity_get', { name })) as string | null;
+    },
+    async identitySet(name: string, p12Base64: string): Promise<void> {
+      await inv('identity_set', { name, p12Base64 });
+    },
+    async tokenGet(name: string): Promise<string | null> {
+      return (await inv('token_get', { name })) as string | null;
+    },
+    async tokenSet(name: string, value: string): Promise<void> {
+      await inv('token_set', { name, value });
     },
 
     setDirty(dirty: boolean): void {
