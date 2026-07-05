@@ -39,7 +39,11 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
+    "build:mcp": "node scripts/build-mcp.mjs",
     "typecheck": "tsc --noEmit"
+  },
+  "bin": {
+    "casual-pdf-mcp": "./dist/mcp/server.mjs"
   },
   "peerDependencies": {
     "react": ">=18.0.0 <20.0.0",

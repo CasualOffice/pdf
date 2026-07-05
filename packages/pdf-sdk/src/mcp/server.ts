@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
@@ -20,7 +19,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { watermarkFile, headerFooterFile, batesFile, mergeFiles, verifyFile, detectPiiText } from './handlers.ts';
+import { watermarkFile, headerFooterFile, batesFile, mergeFiles, verifyFile, detectPiiText, listFormFieldsFile, fillFormFile } from './handlers.ts';
 
 interface McpTool {
   name: string;
@@ -91,6 +90,30 @@ export const MCP_TOOLS: McpTool[] = [
       required: ['text'],
     },
     run: (a) => detectPiiText(a as never),
+  },
+  {
+    name: 'fill_form',
+    description: 'Fill AcroForm fields in a PDF and write a new file. Call list_form_fields first for names/types/options. Text takes a string; checkbox takes "true"/"false"; radio/dropdown take the option.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        input: pdfPath,
+        output: { type: 'string', description: 'Absolute path for the filled PDF.' },
+        fields: {
+          type: 'array',
+          description: 'Fields to fill.',
+          items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } }, required: ['name', 'value'] },
+        },
+      },
+      required: ['input', 'output', 'fields'],
+    },
+    run: (a) => fillFormFile(a as never),
+  },
+  {
+    name: 'list_form_fields',
+    description: 'List a PDF’s AcroForm fields (name, type, current value, options). Returns an empty list if there is no form.',
+    inputSchema: { type: 'object', properties: { input: pdfPath }, required: ['input'] },
+    run: (a) => listFormFieldsFile(a as never),
   },
   {
     name: 'merge_pdfs',
