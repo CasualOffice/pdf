@@ -12,7 +12,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MCP_TOOLS, createServer } from '../../packages/pdf-sdk/src/mcp/server.ts';
-import { mergeFiles, watermarkFile, verifyFile, detectPiiText, listFormFieldsFile, fillFormFile } from '../../packages/pdf-sdk/src/mcp/handlers.ts';
+import { mergeFiles, watermarkFile, verifyFile, detectPiiText, listFormFieldsFile, fillFormFile, signFile } from '../../packages/pdf-sdk/src/mcp/handlers.ts';
 
 const tmp = (n: string) => join(tmpdir(), n);
 async function onePagePdf(path: string, label: string) {
@@ -20,14 +20,15 @@ async function onePagePdf(path: string, label: string) {
   const doc = await lib.PDFDocument.create();
   const font = await doc.embedFont(lib.StandardFonts.Helvetica);
   doc.addPage([300, 200]).drawText(label, { x: 20, y: 150, size: 14, font });
-  await writeFile(path, await doc.save());
+  // Classic xref table (not an object stream) so @signpdf/placeholder-plain can read it.
+  await writeFile(path, await doc.save({ useObjectStreams: false }));
 }
 const pageCount = async (path: string) => (await (await import('pdf-lib')).PDFDocument.load(await readFile(path))).getPageCount();
 
 test('MCP_TOOLS registry is well-formed and sorted by name', () => {
   const names = MCP_TOOLS.map((t) => t.name);
   assert.deepEqual([...names].sort(), names); // sorted (stability)
-  assert.deepEqual(names, ['add_bates', 'add_header_footer', 'add_watermark', 'detect_pii', 'fill_form', 'list_form_fields', 'merge_pdfs', 'verify_signatures']);
+  assert.deepEqual(names, ['add_bates', 'add_header_footer', 'add_watermark', 'detect_pii', 'fill_form', 'list_form_fields', 'merge_pdfs', 'sign_pdf', 'verify_signatures']);
   for (const t of MCP_TOOLS) {
     assert.equal(typeof t.description, 'string');
     assert.equal(t.inputSchema.type, 'object');
@@ -84,6 +85,20 @@ test('list_form_fields + fill_form handlers round-trip on disk', async () => {
   assert.deepEqual(res.filled, ['email']);
   const after = await listFormFieldsFile({ input: out });
   assert.equal(after.fields.find((f) => f.name === 'email')?.value, 'a@b.com'); // persisted
+});
+
+test('sign_pdf (self-signed) produces a real PKCS#7 that verify_signatures confirms', async () => {
+  const src = tmp('mcp-sign-src.pdf');
+  const out = tmp('mcp-signed.pdf');
+  await onePagePdf(src, 'sign me');
+  const res = await signFile({ input: src, output: out, name: 'Ada Lovelace' });
+  assert.equal(res.selfSigned, true);
+  assert.equal(res.signedBy, 'Ada Lovelace');
+  const v = await verifyFile({ input: out });
+  assert.equal(v.count, 1); // one signature present
+  assert.equal(v.signatures[0].digestValid, true); // document intact (digest matches)
+  assert.equal(v.signatures[0].signatureValid, true); // RSA signature valid
+  assert.equal(v.signatures[0].selfSigned, true); // trust caveat surfaced
 });
 
 test('detect_pii handler returns type counts, not values', () => {
