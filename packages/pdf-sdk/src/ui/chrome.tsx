@@ -1898,6 +1898,7 @@ function PlacementBanner({ documentId }: { documentId: string }) {
 export function Viewer({
   documentId,
   mode,
+  onModeChange,
   apiRef,
   onEdited,
   onDocumentReplaced,
@@ -2016,6 +2017,13 @@ export function Viewer({
   // Presentation mode: full screen is a clean reading view — hide editing chrome.
   const presenting = fs.isFullscreen;
   const editing = mode !== 'view' && !presenting;
+  // Refs so the imperative apiRef handlers (below) see the current mode without
+  // re-subscribing — used to auto-enter Edit when the AI proposes redaction marks
+  // (RedactionLayer only renders while editing, so View would hide them).
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const onModeChangeRef = useRef(onModeChange);
+  onModeChangeRef.current = onModeChange;
   // Text is selectable whenever no drawing tool is active — i.e. View mode and
   // the Select tool in Edit/Suggest (activeToolId === null) — plus while a
   // text-markup tool is active (highlight/underline/…). It's only OFF for the
@@ -2191,6 +2199,9 @@ export function Viewer({
         // extractText frac is already fractional top-left {x,y,w,h} — the exact
         // RedactRect shape. AI proposes marks only; the user confirms Apply.
         if (!rects.length) return;
+        // Marks only render (and are reviewable) in Edit — switch out of View so
+        // the user actually SEES what will be redacted before Apply.
+        if (modeRef.current === 'view') onModeChangeRef.current?.('edit');
         setRedactions((prev) => [
           ...prev,
           ...rects.map((r) => ({ id: nextRedactId(), pageIndex, x: r.x, y: r.y, w: r.w, h: r.h })),

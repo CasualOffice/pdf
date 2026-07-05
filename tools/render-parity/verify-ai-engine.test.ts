@@ -17,6 +17,7 @@ import { luhnValid, verhoeffValid, ibanValid, abaValid, nhsValid, cpfValid, spai
 import { listFormFields, fillFormFields } from '../../packages/pdf-sdk/src/ai/form.ts';
 import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
+import { DesktopTransport, CollabTransport } from '../../packages/pdf-sdk/src/ai/transport.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
 
 // ── mock CasualPdfApi (only the methods the bridge uses) ─────────────────────
@@ -235,6 +236,15 @@ test('bridge.detect_pii with no page scans the WHOLE document and marks each pag
   assert.ok(!JSON.stringify(res).includes('4111')); // values never echoed
 });
 
+test('bridge.detect_pii with a types filter scopes to requested PII (e.g. "redact all SSNs")', async () => {
+  const { api } = mockApi({ ...piiApi('Card 4111 1111 1111 1111, SSN 123-45-6789, email a@b.com') });
+  const res = await bridge_(api).callTool('detect_pii', { page: 0, types: ['ssn'] });
+  const data = (res as { data: { found: Record<string, number> } }).data;
+  assert.ok(data.found['ssn'] >= 1); // SSN marked
+  assert.equal(data.found['credit-card'], undefined); // card NOT over-redacted
+  assert.equal(data.found['email'], undefined); // email NOT over-redacted
+});
+
 test('bridge.mark_redaction marks a specific phrase (contextual PII)', async () => {
   const { api, redactions } = mockApi({ ...piiApi('Signed by Jane Doe of Acme Corp.') });
   const res = await bridge_(api).callTool('mark_redaction', { page: 0, text: 'Jane Doe' });
@@ -282,6 +292,13 @@ test('bridge.list_form_fields and fill_form route through the API', async () => 
   assert.equal((await b.callTool('fill_form', { fields: [] })).ok, false); // empty → BAD_ARGS
 });
 
+// ── transport availability (honest "AI unavailable" state) ───────────────────
+test('transport.available() reflects whether a backend is really reachable', () => {
+  assert.equal(new DesktopTransport().available(), false); // no Tauri shell in Node/web
+  assert.equal(new CollabTransport('ws://host/api/ai').available(), true); // collab configured
+  assert.equal(new CollabTransport('').available(), false); // no URL → unavailable
+});
+
 // ── citations ────────────────────────────────────────────────────────────────
 test('linkifyCitations turns page mentions into clickable page segments', () => {
   const segs = linkifyCitations('See page 3 and pages 5 for details.');
@@ -291,6 +308,13 @@ test('linkifyCitations turns page mentions into clickable page segments', () => 
   assert.deepEqual(linkifyCitations('no refs here'), [{ type: 'text', text: 'no refs here' }]);
   // a number BEFORE the word ("3 pages") is not a citation
   assert.ok(linkifyCitations('has 3 pages total').every((s) => s.type === 'text'));
+  // a range "pages 3-5" is one clickable segment to the first page (no stray "-5")
+  const range = linkifyCitations('see pages 3-5 here');
+  const rp = range.filter((s) => s.type === 'page') as { type: 'page'; page: number; label: string }[];
+  assert.equal(rp.length, 1);
+  assert.equal(rp[0].page, 3);
+  assert.equal(rp[0].label, 'pages 3-5');
+  assert.ok(!range.some((s) => s.type === 'text' && /-5/.test(s.text))); // range fully consumed
 });
 
 // ── bridge ────────────────────────────────────────────────────────────────────
@@ -316,6 +340,26 @@ test('bridge.get_document_info returns page count + outline', async () => {
   const bridge = new PdfOpsBridge(() => api);
   const res = await bridge.callTool('get_document_info', {});
   assert.deepEqual(res, { ok: true, data: { pageCount: 3, outline: [{ title: 'Intro', pageIndex: 0, children: [] }] } });
+});
+
+test('bridge.get_document_text returns whole-doc text with page markers (summaries) + truncates', async () => {
+  const { api } = mockApi();
+  const res = await new PdfOpsBridge(() => api).callTool('get_document_text', {});
+  assert.equal(res.ok, true);
+  const data = (res as { data: { pages: number; pagesIncluded: number; truncated: boolean; text: string } }).data;
+  assert.equal(data.pages, 3);
+  assert.ok(/\[Page 1\]/.test(data.text) && /\[Page 3\]/.test(data.text)); // page markers
+  assert.ok(/mitochondria/i.test(data.text)); // ACTUAL content, not just structure
+  assert.equal(data.truncated, false);
+  // Long pages + a tight budget → truncates and includes fewer pages.
+  const long = 'x'.repeat(700);
+  const big = mockApi({
+    extractAllText: async () => [0, 1, 2].map((i) => ({ pageIndex: i, width: 612, height: 792, mediaBox: { x: 0, y: 0, width: 612, height: 792 }, text: long, runs: [] })),
+  });
+  const r2 = await new PdfOpsBridge(() => big.api).callTool('get_document_text', { maxChars: 1000 });
+  const d2 = (r2 as { data: { truncated: boolean; pagesIncluded: number } }).data;
+  assert.equal(d2.truncated, true);
+  assert.ok(d2.pagesIncluded < 3);
 });
 
 test('bridge.get_page_text reads a page', async () => {

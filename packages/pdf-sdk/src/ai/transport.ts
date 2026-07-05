@@ -60,6 +60,10 @@ export interface DocOpsTransport {
   readonly drivesLoop: boolean;
   /** Human label for status display (e.g. "Local (desktop)", "Collab server"). */
   readonly label: string;
+  /** Whether this transport can actually run here (desktop shell present / collab
+   *  URL configured). Lets the UI show an honest "AI unavailable" state instead of
+   *  advertising a backend that will error on first use. */
+  available(): boolean;
 }
 
 const abortError = () => Object.assign(new Error('AbortError'), { name: 'AbortError' });
@@ -94,6 +98,10 @@ export class CollabTransport implements DocOpsTransport {
     private readonly aiWsUrl: string,
     private readonly room?: string,
   ) {}
+
+  available(): boolean {
+    return !!this.aiWsUrl;
+  }
 
   call(payload: LlmCallPayload): Promise<LlmCallResult> {
     return new Promise((resolve, reject) => {
@@ -193,6 +201,10 @@ export class DesktopTransport implements DocOpsTransport {
   readonly drivesLoop = true;
   readonly label = 'Local (desktop)';
 
+  available(): boolean {
+    return resolveTauriInvoke() !== null;
+  }
+
   call(payload: LlmCallPayload): Promise<LlmCallResult> {
     if (payload.signal?.aborted) return Promise.reject(abortError());
     const invoke = resolveTauriInvoke();
@@ -211,7 +223,7 @@ export class DesktopTransport implements DocOpsTransport {
     payload: LlmCallPayload,
     invoke: (cmd: string, args?: unknown) => Promise<unknown>,
   ): Promise<LlmCallResult> {
-    const maxRounds = payload.maxToolRounds ?? 12;
+    const maxRounds = payload.maxToolRounds ?? 24;
     const messages: any[] = [...payload.messages];
     for (let round = 0; round < maxRounds; round++) {
       if (payload.signal?.aborted) throw abortError();

@@ -55,6 +55,24 @@ export class PdfOpsBridge {
         const outline = await api.getOutline();
         return { ok: true, data: { pageCount: api.pageCount(), outline } };
       }
+      case 'get_document_text': {
+        const pages = await api.extractAllText();
+        if (pages.length === 0) return bad('NOT_READY', 'Document text is not ready yet.', true);
+        const budget = Math.min(Math.max(Number((args as { maxChars?: unknown }).maxChars) || 24000, 1000), 200000);
+        let text = '';
+        let pagesIncluded = 0;
+        let truncated = false;
+        for (const pt of pages) {
+          const block = `[Page ${pt.pageIndex + 1}]\n${pt.text}\n\n`;
+          if (text.length + block.length > budget && text.length > 0) {
+            truncated = true;
+            break;
+          }
+          text += block;
+          pagesIncluded += 1;
+        }
+        return { ok: true, data: { pages: pages.length, pagesIncluded, truncated, text } };
+      }
       case 'get_page_text': {
         const page = asPageIndex(args);
         if (page === null) return bad('BAD_ARGS', '`page` must be a non-negative integer.');
@@ -85,8 +103,10 @@ export class PdfOpsBridge {
       case 'detect_pii': {
         const note = 'Marked for redaction — the user must review and Apply to remove.';
         const found: Record<string, number> = {};
+        const rawTypes = (args as { types?: unknown }).types;
+        const wanted = Array.isArray(rawTypes) && rawTypes.length ? new Set(rawTypes.map((t) => String(t))) : null;
         const scan = (pt: PageText): number => {
-          const matches = detectPii(pt.text);
+          const matches = detectPii(pt.text).filter((m) => !wanted || wanted.has(m.type));
           const rects: { x: number; y: number; w: number; h: number }[] = [];
           for (const m of matches) {
             for (const r of pt.runs) if (r.charStart < m.end && r.charEnd > m.start) rects.push(r.frac);
