@@ -19,6 +19,7 @@ import { mergePdfs } from '../merge.ts';
 import { verifyPdfSignatures } from '../verify.ts';
 import { detectPii } from '../ai/pii.ts';
 import { listFormFields, fillFormFields } from '../ai/form.ts';
+import { signPdfWithP12, buildSelfSignedP12 } from '../sign.ts';
 
 const read = async (p: string): Promise<Uint8Array> => new Uint8Array(await readFile(p));
 const save = async (p: string, bytes: Uint8Array): Promise<void> => {
@@ -147,6 +148,42 @@ export async function fillFormFile(a: FillFormArgs) {
   const res = await fillFormFields(await read(a.input), values);
   await save(a.output, res.bytes);
   return { output: a.output, filled: res.filled, skipped: res.skipped };
+}
+
+export interface SignArgs {
+  input: string;
+  output: string;
+  /** Path to a PKCS#12 (.p12/.pfx) identity. Omit to mint a throwaway self-signed one. */
+  p12?: string;
+  passphrase?: string;
+  name?: string;
+  reason?: string;
+  location?: string;
+}
+export async function signFile(a: SignArgs) {
+  const pdf = await read(a.input);
+  let p12: Uint8Array;
+  let passphrase: string;
+  let selfSigned = false;
+  if (a.p12) {
+    p12 = new Uint8Array(await readFile(a.p12));
+    passphrase = a.passphrase ?? '';
+  } else {
+    // No cert supplied → mint a throwaway self-signed identity (unverifiable
+    // trust, but a real cryptographic PKCS#7 signature). Container passphrase
+    // matches buildSelfSignedP12's ('casual-pdf').
+    const b64 = await buildSelfSignedP12(a.name ?? 'Casual PDF Signer');
+    p12 = new Uint8Array(Buffer.from(b64, 'base64'));
+    passphrase = 'casual-pdf';
+    selfSigned = true;
+  }
+  const signed = await signPdfWithP12(pdf, p12, passphrase, {
+    signerName: a.name,
+    reason: a.reason,
+    location: a.location,
+  });
+  await save(a.output, signed);
+  return { output: a.output, signedBy: a.name ?? 'Casual PDF Signer', selfSigned, bytes: signed.length };
 }
 
 export function detectPiiText(a: { text: string }) {

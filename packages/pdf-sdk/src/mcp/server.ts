@@ -19,7 +19,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { watermarkFile, headerFooterFile, batesFile, mergeFiles, verifyFile, detectPiiText, listFormFieldsFile, fillFormFile } from './handlers.ts';
+import { watermarkFile, headerFooterFile, batesFile, mergeFiles, verifyFile, detectPiiText, listFormFieldsFile, fillFormFile, signFile } from './handlers.ts';
 
 interface McpTool {
   name: string;
@@ -127,6 +127,24 @@ export const MCP_TOOLS: McpTool[] = [
       required: ['inputs', 'output'],
     },
     run: (a) => mergeFiles(a as never),
+  },
+  {
+    name: 'sign_pdf',
+    description: 'Digitally sign a PDF (PKCS#7, incremental update — original bytes preserved). Provide a PKCS#12 (.p12/.pfx) identity + passphrase for a real cert; omit them to mint a throwaway self-signed identity. Writes a new file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        input: pdfPath,
+        output: { type: 'string', description: 'Absolute path for the signed PDF.' },
+        p12: { type: 'string', description: 'Absolute path to a .p12/.pfx identity (optional; self-signed if omitted).' },
+        passphrase: { type: 'string', description: 'Passphrase for the .p12 (if provided).' },
+        name: { type: 'string', description: 'Signer name shown in the signature.' },
+        reason: { type: 'string', description: 'Reason for signing.' },
+        location: { type: 'string', description: 'Signing location.' },
+      },
+      required: ['input', 'output'],
+    },
+    run: (a) => signFile(a as never),
   },
   {
     name: 'verify_signatures',

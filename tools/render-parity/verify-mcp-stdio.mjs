@@ -35,8 +35,8 @@ try {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
   console.log('tools:', names.join(', '));
-  assert(names.length === 8, `server advertises 8 tools (${names.length})`);
-  assert(['detect_pii', 'merge_pdfs', 'fill_form', 'list_form_fields'].every((n) => names.includes(n)), 'expected tools present');
+  assert(names.length === 9, `server advertises 9 tools (${names.length})`);
+  assert(['detect_pii', 'merge_pdfs', 'fill_form', 'list_form_fields', 'sign_pdf'].every((n) => names.includes(n)), 'expected tools present');
   assert(tools.every((t) => t.inputSchema && t.inputSchema.type === 'object'), 'every tool has an object input schema');
 
   const res = await client.callTool({ name: 'detect_pii', arguments: { text: 'my card is 4111 1111 1111 1111' } });

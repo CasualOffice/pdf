@@ -58,8 +58,9 @@ function pemFromPkcs8(pkcs8: Uint8Array): string {
   return `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----`;
 }
 
-/** Build a fresh self-signed identity → base64 PKCS#12. */
-async function buildSelfSignedP12(commonName: string): Promise<string> {
+/** Build a fresh self-signed identity → base64 PKCS#12. Node + browser (WebCrypto).
+ *  Exported so headless callers (the MCP server) can mint a throwaway identity. */
+export async function buildSelfSignedP12(commonName: string): Promise<string> {
   // WebCrypto keygen: fast and off the render path (forge's sync keygen isn't).
   const kp = await crypto.subtle.generateKey(
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
@@ -209,6 +210,45 @@ async function getIdentityP12(commonName: string): Promise<Uint8Array> {
 }
 
 /** Sign a PDF with the stable self-signed identity and return the signed bytes. */
+/**
+ * Sign a PDF with a caller-supplied PKCS#12 identity (bytes + passphrase) as an
+ * incremental update. The in-policy JS core (@signpdf + node-forge); no vault, no
+ * DOM — usable from Node (the MCP server) or the browser. `signPdf` below wraps
+ * this with the web vault identity.
+ */
+export async function signPdfWithP12(
+  pdf: Uint8Array,
+  p12: Uint8Array,
+  passphrase: string,
+  opts: { signerName?: string; reason?: string; location?: string; contactInfo?: string } = {},
+): Promise<Uint8Array> {
+  const [{ plainAddPlaceholder }, signpdfMod, { P12Signer }] = await Promise.all([
+    import('@signpdf/placeholder-plain'),
+    import('@signpdf/signpdf'),
+    import('@signpdf/signer-p12'),
+  ]);
+  // Construct a signer from the SignPdf class — resolves across ESM/CJS interop
+  // (the browser bundle vs raw Node, where the ready instance is buried).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod = signpdfMod as any;
+  const SignPdf = mod.SignPdf ?? mod.default?.SignPdf;
+  const signpdf = SignPdf ? new SignPdf() : (mod.default?.default ?? mod.default ?? mod);
+  const signerName = opts.signerName ?? 'Casual PDF Signer';
+
+  const withPlaceholder = plainAddPlaceholder({
+    pdfBuffer: Buffer.from(pdf),
+    reason: opts.reason ?? 'Signed in Casual PDF',
+    contactInfo: opts.contactInfo ?? signerName,
+    name: signerName,
+    location: opts.location ?? '',
+    signatureLength: 8192,
+  });
+
+  const signer = new P12Signer(Buffer.from(p12), { passphrase });
+  const signed = await signpdf.sign(withPlaceholder, signer);
+  return new Uint8Array(signed);
+}
+
 export async function signPdf({
   pdf,
   signerName = 'Casual PDF Signer',
@@ -216,25 +256,6 @@ export async function signPdf({
   location,
   contactInfo,
 }: SignPdfOptions): Promise<Uint8Array> {
-  const [{ plainAddPlaceholder }, signpdfMod, { P12Signer }] = await Promise.all([
-    import('@signpdf/placeholder-plain'),
-    import('@signpdf/signpdf'),
-    import('@signpdf/signer-p12'),
-  ]);
-  const signpdf = signpdfMod.default ?? signpdfMod;
-
   const p12 = await getIdentityP12(signerName);
-
-  const withPlaceholder = plainAddPlaceholder({
-    pdfBuffer: Buffer.from(pdf),
-    reason,
-    contactInfo: contactInfo ?? signerName,
-    name: signerName,
-    location: location ?? '',
-    signatureLength: 8192,
-  });
-
-  const signer = new P12Signer(Buffer.from(p12), { passphrase: PASSPHRASE });
-  const signed = await signpdf.sign(withPlaceholder, signer);
-  return new Uint8Array(signed);
+  return signPdfWithP12(pdf, p12, PASSPHRASE, { signerName, reason, location, contactInfo });
 }
