@@ -58,6 +58,29 @@ test('resolveTauriInvoke finds invoke from __TAURI__.core (withGlobalTauri)', ()
   }
 });
 
+test('DesktopTransport surfaces the shell "no model loaded" message (graceful first-run)', async () => {
+  // The desktop shell returns a clear, actionable error when no local model is
+  // loaded; DesktopTransport must propagate it so the panel shows it (not a crash).
+  (globalThis as any).window = {
+    __TAURI__: {
+      core: {
+        invoke: async () => {
+          throw 'No local model is loaded. Load a local model in AI settings.';
+        },
+      },
+    },
+  };
+  try {
+    const res = await new DesktopTransport().call({
+      model: 'm', system: 's', messages: [{ role: 'user', content: 'hi' }], tools: [], max_tokens: 100,
+    });
+    assert.equal(res.status, 500);
+    assert.match(res.data.error.message, /No local model is loaded/);
+  } finally {
+    delete (globalThis as any).window;
+  }
+});
+
 test('DesktopTransport routes through docops_llm_call with the { args } wrapper + camelCase maxTokens', async () => {
   const seen: any[] = [];
   (globalThis as any).window = {
