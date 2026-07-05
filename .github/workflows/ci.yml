@@ -194,7 +194,8 @@ jobs:
             verify-signature-openssl \
             verify-ai-panel \
             verify-ai-highlight \
-            verify-ai-redact; do
+            verify-ai-redact \
+            verify-ai-summarize; do
             echo "::group::$t"
             node "$t.mjs" || { echo "::error::$t failed"; fail=1; }
             echo "::endgroup::"

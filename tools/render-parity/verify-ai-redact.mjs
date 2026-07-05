@@ -63,8 +63,9 @@ try {
 
   await page.goto('http://127.0.0.1:8157/?src=%2Fpii.pdf', { waitUntil: 'networkidle', timeout: 60000 });
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 60000 });
-  await page.getByRole('tab', { name: 'Edit mode' }).click();
-  await page.waitForTimeout(300);
+  // Stay in VIEW mode (the default). Asking the AI to redact must auto-switch to
+  // Edit so the marks are visible + reviewable (P1 fix).
+  assert((await page.getByRole('tab', { name: 'View mode' }).getAttribute('aria-selected')) === 'true', 'starts in View mode');
 
   // Ask the AI to redact PII → detect_pii marks it.
   await page.locator('[data-testid=ai-toggle]').click();
@@ -82,6 +83,10 @@ try {
   assert(found['aadhaar'] >= 1, 'Aadhaar detected (Verhoeff-validated)');
   assert(pii.data.marked >= 4, `marked >= 4 PII spans for redaction (${pii.data.marked})`);
   assert(!JSON.stringify(pii).includes('4111'), 'the PII value is NOT echoed back to the model');
+
+  // P1: adding marks auto-switched View → Edit so they're visible/reviewable.
+  await page.waitForTimeout(300);
+  assert((await page.getByRole('tab', { name: 'Edit mode' }).getAttribute('aria-selected')) === 'true', 'AI redaction auto-switched to Edit mode (marks visible)');
 
   // Apply the redactions (the human confirm step) and remove.
   await page.getByRole('button', { name: 'Apply redactions' }).click();

@@ -67,7 +67,7 @@ function textOf(content: any[]): string {
 
 export async function runDocOpsTurn(opts: RunTurnOptions): Promise<TurnResult> {
   const { transport, bridge, callbacks: cb } = opts;
-  const maxRounds = opts.maxToolRounds ?? 12;
+  const maxRounds = opts.maxToolRounds ?? 24;
   const maxTokens = opts.maxTokens ?? 4096;
   const messages: any[] = [...(opts.history ?? []), { role: 'user', content: opts.userText }];
   let answer = '';

@@ -15,8 +15,10 @@
 
 export type CiteSegment = { type: 'text'; text: string } | { type: 'page'; page: number; label: string };
 
-// "page 3", "pages 3", "p. 3", "pp. 3" — a page keyword directly before a number.
-const PAGE_RE = /\b(?:pages?|pp?\.)\s*(\d+)/gi;
+// "page 3", "pages 3", "p. 3", "pp. 3", and ranges "pages 3-5" — a page keyword
+// directly before a number (the whole range is consumed so "-5" isn't left as
+// stray text; a click navigates to the range's first page).
+const PAGE_RE = /\b(?:pages?|pp?\.)\s*(\d+)(?:\s*[-–—]\s*\d+)?/gi;
 
 /**
  * Split `text` into plain-text and page-citation segments. `page` is 1-based

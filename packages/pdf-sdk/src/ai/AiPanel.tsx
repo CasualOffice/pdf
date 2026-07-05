@@ -66,13 +66,20 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
   const send = useCallback(async (override?: string) => {
     const userText = (override ?? input).trim();
     if (!userText || busy) return;
+    const transport = resolveTransport();
+    // Honest failure: don't accept a query a dead transport can't serve.
+    if (typeof transport.available === 'function' && !transport.available()) {
+      if (!override) setInput('');
+      setMessages((m) => [...m, { role: 'user', text: userText }]);
+      setError('The AI assistant runs in the Casual Office desktop app, or with a connected collab server. It is not available on this web build.');
+      return;
+    }
     if (!override) setInput('');
     setError(null);
     setStreaming('');
     setToolHint(null);
     setMessages((m) => [...m, { role: 'user', text: userText }]);
 
-    const transport = resolveTransport();
     const bridge = new PdfOpsBridge(getApi);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -103,7 +110,12 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
       const answer = result.answer || acc;
       setMessages((m) => [...m, { role: 'assistant', text: answer }]);
     } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') setError((err as Error)?.message ?? String(err));
+      if ((err as Error)?.name === 'AbortError') {
+        // Keep whatever streamed before Stop instead of dropping it.
+        if (acc.trim()) setMessages((m) => [...m, { role: 'assistant', text: acc }]);
+      } else {
+        setError((err as Error)?.message ?? String(err));
+      }
     } finally {
       setStreaming('');
       setToolHint(null);
@@ -120,18 +132,20 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
     setError(null);
   }, []);
 
-  const transportLabel = (() => {
+  const { transportLabel, unavailable } = (() => {
     try {
-      return resolveTransport().label;
+      const t = resolveTransport();
+      const avail = typeof t.available !== 'function' || t.available();
+      return { transportLabel: avail ? t.label : '', unavailable: !avail };
     } catch {
-      return '';
+      return { transportLabel: '', unavailable: false };
     }
   })();
 
   return (
     <div className="cpdf__ai" style={style} data-testid="ai-panel">
       <div className="cpdf__ai-head">
-        <span>Ask this PDF {transportLabel ? <small>· {transportLabel}</small> : null}</span>
+        <span>Ask this PDF {unavailable ? <small>· unavailable</small> : transportLabel ? <small>· {transportLabel}</small> : null}</span>
         <span className="cpdf__ai-headbtns">
           {messages.length > 0 || busy ? (
             <button type="button" className="cpdf__ai-iconbtn" data-testid="ai-clear" onClick={clearChat} aria-label="Clear conversation" title="Clear conversation">
@@ -149,12 +163,20 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
       <div className="cpdf__ai-log" ref={logRef} role="log" aria-live="polite" aria-busy={busy}>
         {messages.length === 0 && !busy ? (
           <div className="cpdf__ai-empty" data-testid="ai-empty">
-            <p style={{ margin: 0 }}>Ask anything about this document.</p>
-            {['Summarize this document', 'What is this document about?'].map((q) => (
-              <button key={q} type="button" className="cpdf__ai-quick" data-testid="ai-quick" onClick={() => void send(q)}>
-                {q}
-              </button>
-            ))}
+            {unavailable ? (
+              <p style={{ margin: 0 }} data-testid="ai-unavailable">
+                The assistant runs in the Casual Office desktop app, or with a connected collab server. It’s not available on this web build.
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: 0 }}>Ask anything about this document.</p>
+                {['Summarize this document', 'What is this document about?'].map((q) => (
+                  <button key={q} type="button" className="cpdf__ai-quick" data-testid="ai-quick" onClick={() => void send(q)}>
+                    {q}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         ) : null}
         {messages.map((m, i) => (
@@ -207,7 +229,8 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
           className="cpdf__ai-input"
           rows={2}
           value={input}
-          placeholder="Ask about this document…"
+          disabled={unavailable}
+          placeholder={unavailable ? 'AI unavailable on the web build' : 'Ask about this document…'}
           data-testid="ai-input"
           aria-label="Ask about this document"
           onChange={(e) => setInput(e.target.value)}
@@ -223,7 +246,7 @@ export function AiPanel({ getApi, provider, model = 'claude-opus-4-8', createTra
             Stop
           </button>
         ) : (
-          <button type="button" className="cpdf__ai-btn" disabled={!input.trim()} data-testid="ai-send" onClick={() => void send()}>
+          <button type="button" className="cpdf__ai-btn" disabled={unavailable || !input.trim()} data-testid="ai-send" onClick={() => void send()}>
             Send
           </button>
         )}

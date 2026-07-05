@@ -31,6 +31,11 @@ export const PDF_CATALOG: PdfTool[] = [
       type: 'object',
       properties: {
         page: { type: 'integer', description: 'Zero-based page to scan. Omit to scan the whole document.' },
+        types: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Restrict to these PII types (e.g. ["ssn"], ["credit-card","iban"]) for requests like "redact all SSNs". Omit to mark every type.',
+        },
       },
     },
   },
@@ -60,8 +65,19 @@ export const PDF_CATALOG: PdfTool[] = [
   {
     name: 'get_document_info',
     description:
-      'Return the page count and the document outline/bookmarks. Call this FIRST to orient yourself before answering anything about the document.',
+      'Return the page count and the document outline/bookmarks — STRUCTURE ONLY, no page text. Use it to orient yourself (how long / how it is organized); it does NOT tell you what the document says, so never answer a content question from this alone.',
     input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_document_text',
+    description:
+      "Return the whole document's text (every page, each prefixed with its page number), up to a character budget. This is the tool to SUMMARIZE, describe, or answer a broad question about the document — one call instead of reading pages one at a time. For a specific keyword or topic, prefer search_document. Returns { text, pages, pagesIncluded, truncated }.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        maxChars: { type: 'integer', description: 'Character budget for the returned text (default 24000).' },
+      },
+    },
   },
   {
     name: 'get_page_text',
@@ -137,11 +153,14 @@ export const PDF_CATALOG: PdfTool[] = [
 export const PDF_SYSTEM_PROMPT = [
   'You are the AI assistant inside Casual PDF, a PDF viewer/editor.',
   'You help the user understand and navigate the open document.',
-  'Always ground answers in the actual document. For a question that could be',
-  'answered from anywhere in the document, call search_document first to retrieve',
-  'the most relevant passages (with page numbers), then read specific pages with',
-  'get_page_text only if you need more. Use get_document_info for structure/length.',
-  'Do not guess page contents. When you state a fact from the document, cite the',
+  'Always ground answers in the ACTUAL TEXT of the document — never answer about',
+  'its content from get_document_info alone (that returns only the page count and',
+  'outline, NOT the text). To summarize or describe the document, or answer a broad',
+  'question, call get_document_text to read the whole document in one call. For a',
+  'specific keyword or topic, call search_document to retrieve the most relevant',
+  'passages (with page numbers), then get_page_text for a single page if you need',
+  'more. Do not guess page contents. When you state a fact from the document, cite',
+  'the',
   'page (1-based for the user), and call highlight_source(page, verbatim quote) to',
   'show where it came from. To redact: call detect_pii(page) for STRUCTURED PII',
   '(credit cards, Aadhaar, SSN, passport, EIN, IBAN, emails, phones, URLs, IDs —',
