@@ -53,14 +53,29 @@ export const PDF_CATALOG: PdfTool[] = [
       required: ['page'],
     },
   },
+  {
+    name: 'search_document',
+    description:
+      'Search the WHOLE document and return the passages most relevant to a query, each with its zero-based page number. Prefer this over reading pages one by one when a question could be answered from anywhere in the document — it is one call instead of many. Use the returned page numbers to cite sources (present them 1-based to the user) or to goto_page.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to look for — a question or keywords.' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 /** Default system prompt for the "Ask this PDF" assistant. */
 export const PDF_SYSTEM_PROMPT = [
   'You are the AI assistant inside Casual PDF, a PDF viewer/editor.',
   'You help the user understand and navigate the open document.',
-  'Always ground answers in the actual document: call get_document_info first,',
-  'then get_page_text to read the pages you need before answering. Do not guess',
-  'page contents. When you state a fact from the document, say which page it came',
-  'from. Be concise. If the document does not contain the answer, say so.',
+  'Always ground answers in the actual document. For a question that could be',
+  'answered from anywhere in the document, call search_document first to retrieve',
+  'the most relevant passages (with page numbers), then read specific pages with',
+  'get_page_text only if you need more. Use get_document_info for structure/length.',
+  'Do not guess page contents. When you state a fact from the document, cite the',
+  'page (1-based for the user). Be concise. If the document does not contain the',
+  'answer, say so.',
 ].join(' ');

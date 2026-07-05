@@ -2152,6 +2152,18 @@ export function Viewer({
         const { extractPageText } = await import('../extract');
         return extractPageText(new Uint8Array(ab), pageIndex);
       },
+      extractAllText: async () => {
+        // One export, then extract every page from those same bytes (RAG-lite).
+        if (!exportCap) return [];
+        const ab = await exportCap.saveAsCopy().toPromise();
+        if (!ab) return [];
+        const bytes = new Uint8Array(ab);
+        const { extractPageText } = await import('../extract');
+        const count = docCapRef.current?.getDocument(documentId)?.pages?.length ?? 0;
+        const out = [];
+        for (let i = 0; i < count; i++) out.push(await extractPageText(bytes, i));
+        return out;
+      },
     };
     return () => {
       if (apiRef) apiRef.current = null;

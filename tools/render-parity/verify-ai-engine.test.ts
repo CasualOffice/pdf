@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/catalog.ts';
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
+import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
 import type { DocOpsTransport, LlmCallPayload, LlmCallResult } from '../../packages/pdf-sdk/src/ai/transport.ts';
 
@@ -29,6 +30,12 @@ function mockApi(over: Record<string, unknown> = {}) {
       runs: [],
     }),
     gotoPage: (p: number) => gotos.push(p),
+    extractAllText: async () =>
+      [
+        'The mitochondria is the powerhouse of the cell and produces ATP energy.',
+        'Photosynthesis in plants converts sunlight into chemical energy in chloroplasts.',
+        'The invoice total is $4,200 due on receipt to Acme Corporation.',
+      ].map((text, i) => ({ pageIndex: i, width: 612, height: 792, mediaBox: { x: 0, y: 0, width: 612, height: 792 }, text, runs: [] })),
     ...over,
   };
   return { api: api as any, gotos };
@@ -44,6 +51,42 @@ test('PDF_CATALOG is well-formed and sorted by name (prompt-cache stability)', (
     assert.equal(typeof t.description, 'string');
   }
   assert.ok(PDF_SYSTEM_PROMPT.includes('get_document_info'));
+  assert.ok(PDF_CATALOG.some((t) => t.name === 'search_document'));
+});
+
+// ── retrieval (RAG-lite) ─────────────────────────────────────────────────────
+test('chunkPages splits page text into passages tagged with their page', () => {
+  const chunks = chunkPages([
+    { pageIndex: 0, text: 'Para one.\n\nPara two.' },
+    { pageIndex: 1, text: 'Second page.' },
+  ]);
+  assert.ok(chunks.length >= 2);
+  assert.ok(chunks.every((c) => typeof c.page === 'number' && c.text.length > 0));
+  assert.ok(chunks.some((c) => c.page === 1 && /Second page/.test(c.text)));
+});
+
+test('rankChunks (BM25) ranks the passage matching the query first', () => {
+  const chunks = [
+    { page: 0, text: 'The mitochondria is the powerhouse of the cell and produces ATP energy.' },
+    { page: 1, text: 'Photosynthesis in plants converts sunlight into chemical energy.' },
+    { page: 2, text: 'The invoice total is $4,200 due to Acme Corporation.' },
+  ];
+  const top = rankChunks(chunks, 'how much is the invoice total', 2);
+  assert.ok(top.length >= 1);
+  assert.equal(top[0].page, 2); // the invoice passage wins
+  assert.deepEqual(rankChunks(chunks, 'xyzzy nothingmatches', 3), []); // no match → empty
+});
+
+// ── bridge ────────────────────────────────────────────────────────────────────
+test('bridge.search_document retrieves relevant passages with page numbers', async () => {
+  const { api } = mockApi();
+  const bridge = new PdfOpsBridge(() => api);
+  const res = await bridge.callTool('search_document', { query: 'invoice total for Acme' });
+  assert.equal(res.ok, true);
+  const data = (res as { data: { results: { page: number; text: string }[] } }).data;
+  assert.ok(data.results.length >= 1);
+  assert.equal(data.results[0].page, 2); // the invoice page ranks first
+  assert.equal((await bridge.callTool('search_document', {})).ok, false); // missing query
 });
 
 // ── bridge ────────────────────────────────────────────────────────────────────

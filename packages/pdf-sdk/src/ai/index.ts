@@ -6,5 +6,6 @@ export * from './transport';
 export * from './catalog';
 export * from './bridge';
 export * from './loop';
+export * from './retrieve';
 export { AiPanel } from './AiPanel';
 export type { AiPanelProps } from './AiPanel';
