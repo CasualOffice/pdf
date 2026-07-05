@@ -26,13 +26,12 @@ export const PDF_CATALOG: PdfTool[] = [
   {
     name: 'detect_pii',
     description:
-      'Scan a zero-based `page` for structured personal data — credit-card numbers (validated by the Luhn checksum, so random digits are not flagged), US SSNs, emails, and phone numbers — and MARK every hit for redaction. This only PROPOSES marks; the user must review and click Apply to permanently remove them. Use for requests like "redact my PII / card numbers". Returns the counts by type (never the values).',
+      'Scan for structured personal data — credit cards (Luhn-validated so random digits are not flagged), Aadhaar, SSN, passports, IBAN, emails, phones, and more — and MARK every hit for redaction. Omit `page` to scan the WHOLE document in one call (preferred for "redact my PII"); pass a zero-based `page` to scan just that page. This only PROPOSES marks; the user must review and click Apply to permanently remove them. Returns counts by type (never the values).',
     input_schema: {
       type: 'object',
       properties: {
-        page: { type: 'integer', description: 'Zero-based page index to scan.' },
+        page: { type: 'integer', description: 'Zero-based page to scan. Omit to scan the whole document.' },
       },
-      required: ['page'],
     },
   },
   {

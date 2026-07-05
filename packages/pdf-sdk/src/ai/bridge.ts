@@ -9,6 +9,7 @@
  */
 
 import type { CasualPdfApi } from '../modes';
+import type { PageText } from '../extract';
 import { chunkPages, hybridRankChunks, type DocChunk } from './retrieve.ts';
 import { findRunsForText } from './highlight.ts';
 import { detectPii } from './pii.ts';
@@ -82,21 +83,33 @@ export class PdfOpsBridge {
         return { ok: true, data: { page, highlighted: runs.length } };
       }
       case 'detect_pii': {
+        const note = 'Marked for redaction — the user must review and Apply to remove.';
+        const found: Record<string, number> = {};
+        const scan = (pt: PageText): number => {
+          const matches = detectPii(pt.text);
+          const rects: { x: number; y: number; w: number; h: number }[] = [];
+          for (const m of matches) {
+            for (const r of pt.runs) if (r.charStart < m.end && r.charEnd > m.start) rects.push(r.frac);
+            found[m.type] = (found[m.type] ?? 0) + 1; // TYPES only — never echo values
+          }
+          if (rects.length) api.addRedactionMarks(pt.pageIndex, rects);
+          return rects.length;
+        };
+        // `page` omitted → scan the WHOLE document in one call.
+        if ((args as { page?: unknown }).page == null) {
+          const pages = await api.extractAllText();
+          if (pages.length === 0) return bad('NOT_READY', 'Text extraction is not ready yet.', true);
+          let marked = 0;
+          for (const pt of pages) marked += scan(pt);
+          return { ok: true, data: { pages: pages.length, found, marked, note } };
+        }
         const page = asPageIndex(args);
         if (page === null) return bad('BAD_ARGS', '`page` must be a non-negative integer.');
         if (page >= api.pageCount()) return bad('OUT_OF_RANGE', `page ${page} is past the last page.`);
         const pt = await api.extractText(page);
         if (!pt) return bad('NOT_READY', 'Text extraction is not ready yet.', true);
-        const matches = detectPii(pt.text);
-        const rects: { x: number; y: number; w: number; h: number }[] = [];
-        for (const m of matches) {
-          for (const r of pt.runs) if (r.charStart < m.end && r.charEnd > m.start) rects.push(r.frac);
-        }
-        if (rects.length) api.addRedactionMarks(page, rects);
-        // Return TYPES + counts only — never echo the PII values back to the model.
-        const byType: Record<string, number> = {};
-        for (const m of matches) byType[m.type] = (byType[m.type] ?? 0) + 1;
-        return { ok: true, data: { page, found: byType, marked: rects.length, note: 'Marked for redaction — the user must review and Apply to remove.' } };
+        const marked = scan(pt);
+        return { ok: true, data: { page, found, marked, note } };
       }
       case 'mark_redaction': {
         const page = asPageIndex(args);
