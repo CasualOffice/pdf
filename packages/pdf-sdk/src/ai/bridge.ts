@@ -9,7 +9,7 @@
  */
 
 import type { CasualPdfApi } from '../modes';
-import { chunkPages, rankChunks, type DocChunk } from './retrieve.ts';
+import { chunkPages, hybridRankChunks, type DocChunk } from './retrieve.ts';
 import { findRunsForText } from './highlight.ts';
 import { detectPii } from './pii.ts';
 
@@ -134,8 +134,11 @@ export class PdfOpsBridge {
         if (!query) return bad('BAD_ARGS', '`query` is required.');
         const chunks = await this.getChunks(api);
         if (chunks === null) return bad('NOT_READY', 'Document text is not ready yet.', true);
-        const results = rankChunks(chunks, query, 6).map((c) => ({ page: c.page, text: c.text }));
-        return { ok: true, data: { query, results } };
+        // Hybrid (BM25 + dense) when the runtime provides an embedder; else BM25.
+        const embedder = api.embedTexts ? (texts: string[]) => api.embedTexts!(texts) : undefined;
+        const ranked = await hybridRankChunks(chunks, query, 6, embedder);
+        const results = ranked.map((c) => ({ page: c.page, text: c.text }));
+        return { ok: true, data: { query, results, retrieval: embedder ? 'hybrid' : 'bm25' } };
       }
       default:
         return bad('UNSUPPORTED', `Unknown tool: ${name}`);

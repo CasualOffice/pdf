@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PDF_CATALOG, PDF_SYSTEM_PROMPT } from '../../packages/pdf-sdk/src/ai/catalog.ts';
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
-import { chunkPages, rankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
+import { chunkPages, rankChunks, cosineSimilarity, reciprocalRankFusion, hybridRankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
 import { luhnValid, verhoeffValid, ibanValid, abaValid, nhsValid, cpfValid, spainDniValid, isinValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
 import { listFormFields, fillFormFields } from '../../packages/pdf-sdk/src/ai/form.ts';
@@ -84,6 +84,41 @@ test('chunkPages splits page text into passages tagged with their page', () => {
   assert.ok(chunks.length >= 2);
   assert.ok(chunks.every((c) => typeof c.page === 'number' && c.text.length > 0));
   assert.ok(chunks.some((c) => c.page === 1 && /Second page/.test(c.text)));
+});
+
+test('cosineSimilarity: identical=1, orthogonal=0, degenerate=0', () => {
+  assert.ok(Math.abs(cosineSimilarity([1, 2, 3], [1, 2, 3]) - 1) < 1e-9);
+  assert.ok(Math.abs(cosineSimilarity([1, 0], [0, 1])) < 1e-9);
+  assert.equal(cosineSimilarity([0, 0], [1, 1]), 0);
+});
+
+test('reciprocalRankFusion: an item in both lists beats one in a single list', () => {
+  const fused = reciprocalRankFusion(
+    [[{ id: 'a' }, { id: 'b' }], [{ id: 'b' }, { id: 'c' }]],
+    (t) => t.id,
+  );
+  assert.equal(fused[0].id, 'b'); // b appears in both → highest fused score
+  assert.deepEqual(fused.map((f) => f.id).sort(), ['a', 'b', 'c']); // all present
+});
+
+test('hybridRankChunks: dense surfaces a semantic match BM25 misses; BM25 fallback without an embedder', async () => {
+  const chunks = [
+    { page: 0, text: 'The capital of France is Paris.' },
+    { page: 1, text: 'Mitochondria are the powerhouse of the cell.' }, // answers the query semantically, no keyword overlap
+    { page: 2, text: 'Quarterly revenue grew ten percent.' },
+  ];
+  const query = 'how do cells produce energy';
+  // No embedder → pure BM25 (does NOT rank the mitochondria passage first).
+  const bm25 = await hybridRankChunks(chunks, query, 3);
+  assert.notEqual(bm25[0]?.page, 1);
+  // A fake embedder that scores by topic — the query lands in the biology bucket.
+  const vec = (t: string): number[] => {
+    const s = t.toLowerCase();
+    return [/cell|mitochondria|energy|powerhouse|produce/.test(s) ? 1 : 0, /france|paris|capital/.test(s) ? 1 : 0, /revenue|percent|quarter/.test(s) ? 1 : 0];
+  };
+  const embedder = async (texts: string[]) => texts.map(vec);
+  const hybrid = await hybridRankChunks(chunks, query, 3, embedder);
+  assert.equal(hybrid[0].page, 1); // dense retrieval surfaces the semantic answer
 });
 
 test('rankChunks (BM25) ranks the passage matching the query first', () => {
@@ -246,10 +281,15 @@ test('bridge.search_document retrieves relevant passages with page numbers', asy
   const bridge = new PdfOpsBridge(() => api);
   const res = await bridge.callTool('search_document', { query: 'invoice total for Acme' });
   assert.equal(res.ok, true);
-  const data = (res as { data: { results: { page: number; text: string }[] } }).data;
+  const data = (res as { data: { results: { page: number; text: string }[]; retrieval: string } }).data;
   assert.ok(data.results.length >= 1);
   assert.equal(data.results[0].page, 2); // the invoice page ranks first
+  assert.equal(data.retrieval, 'bm25'); // no embedder on the mock → lexical
   assert.equal((await bridge.callTool('search_document', {})).ok, false); // missing query
+  // With an embedder, the bridge reports hybrid retrieval.
+  const withEmb = mockApi({ embedTexts: async (t: string[]) => t.map(() => [1, 0]) });
+  const hy = await new PdfOpsBridge(() => withEmb.api).callTool('search_document', { query: 'invoice' });
+  assert.equal((hy as { data: { retrieval: string } }).data.retrieval, 'hybrid');
 });
 
 // ── bridge ────────────────────────────────────────────────────────────────────
