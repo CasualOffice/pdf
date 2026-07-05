@@ -88,6 +88,10 @@ export interface CasualPdfApi {
   /** Text for EVERY page in one pass (a single export). Used by whole-document
    *  AI retrieval (RAG-lite). Empty array if export isn't ready. */
   extractAllText(): Promise<PageText[]>;
+  /** Highlight text regions on a page (AI citation source-span highlighting).
+   *  `rects` are PDF user-space bounds (bottom-left), as returned by
+   *  {@link extractText}. Adds a highlight annotation and scrolls to the page. */
+  highlightRegion(pageIndex: number, rects: { left: number; bottom: number; right: number; top: number }[]): void;
 }
 
 /** A node in the document outline returned by {@link CasualPdfApi.getOutline}. */
