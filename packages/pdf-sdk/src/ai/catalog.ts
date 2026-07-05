@@ -24,6 +24,18 @@ export interface PdfTool {
 
 export const PDF_CATALOG: PdfTool[] = [
   {
+    name: 'detect_pii',
+    description:
+      'Scan a zero-based `page` for structured personal data — credit-card numbers (validated by the Luhn checksum, so random digits are not flagged), US SSNs, emails, and phone numbers — and MARK every hit for redaction. This only PROPOSES marks; the user must review and click Apply to permanently remove them. Use for requests like "redact my PII / card numbers". Returns the counts by type (never the values).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Zero-based page index to scan.' },
+      },
+      required: ['page'],
+    },
+  },
+  {
     name: 'get_document_info',
     description:
       'Return the page count and the document outline/bookmarks. Call this FIRST to orient yourself before answering anything about the document.',
@@ -67,6 +79,19 @@ export const PDF_CATALOG: PdfTool[] = [
     },
   },
   {
+    name: 'mark_redaction',
+    description:
+      'Mark specific text on a zero-based `page` for redaction (e.g. a name or sensitive phrase that detect_pii would not catch). This only PROPOSES a mark; the user must review and Apply to remove it. Pass the verbatim text. Never claim the text has been removed — you only propose marks.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Zero-based page index the text is on.' },
+        text: { type: 'string', description: 'The verbatim text to mark for redaction.' },
+      },
+      required: ['page', 'text'],
+    },
+  },
+  {
     name: 'search_document',
     description:
       'Search the WHOLE document and return the passages most relevant to a query, each with its zero-based page number. Prefer this over reading pages one by one when a question could be answered from anywhere in the document — it is one call instead of many. Use the returned page numbers to cite sources (present them 1-based to the user) or to goto_page.',
@@ -90,6 +115,11 @@ export const PDF_SYSTEM_PROMPT = [
   'get_page_text only if you need more. Use get_document_info for structure/length.',
   'Do not guess page contents. When you state a fact from the document, cite the',
   'page (1-based for the user), and call highlight_source(page, verbatim quote) to',
-  'show where it came from. Be concise. If the document does not contain the',
-  'answer, say so.',
+  'show where it came from. To redact: call detect_pii(page) for STRUCTURED PII',
+  '(credit cards, Aadhaar, SSN, passport, EIN, IBAN, emails, phones, URLs, IDs —',
+  'validated by checksums), and mark_redaction(page, text) for CONTEXTUAL PII the',
+  'scan cannot catch: person names, company names, places/addresses, signatures,',
+  'and role-tagged dates (date of birth/death, signing dates). Both only PROPOSE',
+  'marks the user must Apply, so never say anything has been removed. Be concise.',
+  'If the document does not contain the answer, say so.',
 ].join(' ');

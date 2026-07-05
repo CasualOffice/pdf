@@ -92,6 +92,11 @@ export interface CasualPdfApi {
    *  `rects` are PDF user-space bounds (bottom-left), as returned by
    *  {@link extractText}. Adds a highlight annotation and scrolls to the page. */
   highlightRegion(pageIndex: number, rects: { left: number; bottom: number; right: number; top: number }[]): void;
+  /** Add redaction MARKS on a page (AI PII redaction). `rects` are fractional
+   *  top-left `{x,y,w,h}`, as returned by {@link extractText} run `frac`. This
+   *  only proposes marks and enters redaction review — it NEVER removes content;
+   *  the user must confirm Apply. */
+  addRedactionMarks(pageIndex: number, rects: { x: number; y: number; w: number; h: number }[]): void;
 }
 
 /** A node in the document outline returned by {@link CasualPdfApi.getOutline}. */

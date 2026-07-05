@@ -2187,6 +2187,17 @@ export function Viewer({
         } as Parameters<NonNullable<typeof annoApi>['createAnnotation']>[1]);
         scrollProvidesRef.current?.scrollToPage({ pageNumber: pageIndex + 1 });
       },
+      addRedactionMarks: (pageIndex, rects) => {
+        // extractText frac is already fractional top-left {x,y,w,h} — the exact
+        // RedactRect shape. AI proposes marks only; the user confirms Apply.
+        if (!rects.length) return;
+        setRedactions((prev) => [
+          ...prev,
+          ...rects.map((r) => ({ id: nextRedactId(), pageIndex, x: r.x, y: r.y, w: r.w, h: r.h })),
+        ]);
+        setRedacting(true);
+        scrollProvidesRef.current?.scrollToPage({ pageNumber: pageIndex + 1 });
+      },
     };
     return () => {
       if (apiRef) apiRef.current = null;
