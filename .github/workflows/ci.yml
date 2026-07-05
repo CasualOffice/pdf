@@ -198,7 +198,7 @@ jobs:
             verify-ai-highlight \
             verify-ai-redact \
             verify-ai-summarize \
-            verify-redact-cover-ui; do
+            verify-redact-text; do
             echo "::group::$t"
             node "$t.mjs" || { echo "::error::$t failed"; fail=1; }
             echo "::endgroup::"

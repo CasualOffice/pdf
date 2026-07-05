@@ -1,12 +1,13 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 //
-// E2E for region-only "Keep text" redaction (the user's report: after redaction
-// you can't edit/select text). Redact page 1 of multi.pdf in "Keep text" mode and
-// assert the redacted page's OTHER text is still editable in-app AND still present
-// in the downloaded bytes (cover, not remove).
+// E2E for SURGICAL text redaction (the user's real ask): remove the text under a
+// marked region from the file, keep the rest of the page as real text. A
+// deterministic transport uses mark_redaction to target the word "appleone"
+// precisely; we redact in the default "Remove text" mode and assert that word is
+// GONE from the bytes while the rest of the page (and other pages) keep their text.
 //
-//   node tools/render-parity/verify-redact-cover-ui.mjs
+//   node tools/render-parity/verify-redact-text.mjs
 //
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -33,7 +34,7 @@ const server = createServer(async (req, res) => {
     res.end(b);
   } catch { res.statusCode = 404; res.end('nf'); }
 });
-await new Promise((r) => server.listen(8160, '127.0.0.1', r));
+await new Promise((r) => server.listen(8161, '127.0.0.1', r));
 
 const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const browser = await chromium.launch({ ...(existsSync(mac) ? { executablePath: mac } : {}), headless: true });
@@ -45,51 +46,50 @@ let failed = false;
 const assert = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}: ${m}`); if (!c) failed = true; };
 
 try {
-  await page.goto('http://127.0.0.1:8160/?src=%2Fmulti.pdf', { waitUntil: 'networkidle', timeout: 60000 });
-  await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 60000 });
-  await page.getByRole('tab', { name: 'Edit mode' }).click();
-  await page.waitForTimeout(300);
+  await page.addInitScript(() => {
+    window.__casualPdfAiTransport__ = {
+      drivesLoop: true,
+      label: 'Test',
+      async call(payload) {
+        window.__mk__ = await payload.toolExecutor('mark_redaction', { page: 0, text: 'appleone' });
+        payload.onText && payload.onText('Marked "appleone" for redaction.');
+        return { data: { ok: true }, status: 200, updatedHistory: [] };
+      },
+    };
+  });
 
-  // Redact a box on page 1.
-  await page.getByRole('button', { name: /Redact \(permanently remove regions\)/ }).click();
-  await page.waitForTimeout(300);
-  const p1 = page.locator('.cpdf__page').first();
-  const box = await p1.boundingBox();
-  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.3, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForTimeout(400);
+  await page.goto('http://127.0.0.1:8161/?src=%2Fmulti.pdf', { waitUntil: 'networkidle', timeout: 60000 });
+  await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 60000 });
+
+  // AI marks the exact word (auto-switches to Edit mode).
+  await page.locator('[data-testid=ai-toggle]').click();
+  await page.locator('[data-testid=ai-input]').fill('Redact appleone');
+  await page.locator('[data-testid=ai-send]').click();
+  await page.locator('[data-testid=ai-answer]').last().waitFor({ state: 'visible', timeout: 20000 });
+  const mk = await page.evaluate(() => window.__mk__);
+  console.log('mark result:', JSON.stringify(mk));
+  assert(mk && mk.data && mk.data.marked >= 1, 'AI marked the word "appleone"');
+
+  // Apply in the default "Remove text" (surgical) mode.
   await page.getByRole('button', { name: 'Apply redactions' }).click();
   await page.waitForTimeout(300);
-
-  // Choose "Keep text" mode, then cover.
-  assert(await page.locator('[data-testid=redact-mode-cover]').isVisible(), 'redaction mode toggle present (Keep text)');
-  await page.locator('[data-testid=redact-mode-cover]').click();
-  await page.waitForTimeout(200);
-  await page.getByRole('button', { name: 'Cover regions' }).click();
-  await page.waitForTimeout(2500);
+  assert((await page.locator('[data-testid=redact-mode-text]').getAttribute('aria-checked')) === 'true', 'Remove text is the default mode');
+  await page.getByRole('button', { name: 'Remove text & redact' }).click();
+  await page.waitForTimeout(3500);
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
   await page.waitForTimeout(1000);
 
-  // The redacted page's OTHER text must still be editable (the user's complaint).
-  await page.getByRole('button', { name: /Quick text edits/ }).click();
-  await page.waitForTimeout(1000);
-  const runs = await page.getByRole('button', { name: /Edit text:/ }).count();
-  console.log('editable runs on page 1 after Keep-text redaction:', runs);
-  assert(runs > 0, 'text on the redacted page is STILL editable after Keep-text redaction');
-  await page.getByRole('button', { name: /Quick text edits/ }).click().catch(() => {}); // exit
-
-  // Download → the page's text is still in the bytes (cover, not remove).
-  await page.waitForTimeout(500);
+  // Download and check the bytes.
   const [dl] = await Promise.all([
     page.waitForEvent('download', { timeout: 20000 }),
     page.keyboard.press('Meta+s'),
   ]);
-  await dl.saveAs('/tmp/covered-ui.pdf');
-  const text = execSync(`python3 ${join(here, 'extract-text.py')} /tmp/covered-ui.pdf`, { maxBuffer: 64 * 1024 * 1024 }).toString();
-  console.log('downloaded text (first 90):', JSON.stringify(text.replace(/\s+/g, ' ').slice(0, 90)));
-  assert(/appleone/.test(text), 'redacted page 1 keeps its text in the downloaded file (Keep-text mode)');
+  await dl.saveAs('/tmp/redact-text.pdf');
+  const text = execSync(`python3 ${join(here, 'extract-text.py')} /tmp/redact-text.pdf`, { maxBuffer: 64 * 1024 * 1024 }).toString().replace(/\s+/g, ' ');
+  console.log('post-redaction text (first 160):', JSON.stringify(text.slice(0, 160)));
+  assert(!/appleone/.test(text), 'the redacted word "appleone" is REMOVED from the bytes');
+  assert(/ALPHA/.test(text) && /Common line/.test(text), 'the REDACTED page keeps its other text (not flattened away)');
+  assert(/bananatwo/.test(text) && /cherrythree/.test(text), 'other pages keep their text');
 
   assert(errors.length === 0, `no page errors (${errors.length})`);
 } catch (e) {

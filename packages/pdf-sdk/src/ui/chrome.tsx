@@ -1985,10 +1985,12 @@ export function Viewer({
   const [redactBusy, setRedactBusy] = useState(false);
   const [redactError, setRedactError] = useState<string | null>(null);
   const [confirmRedact, setConfirmRedact] = useState(false);
-  // Redaction method: 'remove' = secure flatten (true removal, page → image);
-  // 'cover' = region-only opaque boxes that keep the page's other text (NOT true
-  // removal — the covered text stays in the bytes). User decision 2026-07-06.
-  const [redactMode, setRedactMode] = useState<'remove' | 'cover'>('remove');
+  // Redaction method (user decision 2026-07-06): 'text' = surgical — remove the
+  // text under each region from the file + box it, keeping the rest of the page
+  // as real text (auto-falls-back to flattening any page it can't cleanly clear);
+  // 'flatten' = secure whole-page image (removes text/images/vectors — for
+  // non-text content). Text is the common case, so it's the default.
+  const [redactMode, setRedactMode] = useState<'text' | 'flatten'>('text');
   const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll, provides: scrollProvides } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
@@ -2352,32 +2354,49 @@ export function Viewer({
       const ab = await exportCap.saveAsCopy().toPromise();
       if (!ab) throw new Error('Could not read the document.');
       const srcBytes = new Uint8Array(ab);
-      let out: Uint8Array;
-      if (redactMode === 'cover') {
-        // Region-only "keep text" (user decision 2026-07-06): draw opaque boxes,
-        // leave the rest of the page as real text. NOT true removal — disclosed
-        // in the confirm dialog; the covered text stays in the bytes.
-        const { buildCoveredPdf } = await import('../redact');
-        out = await buildCoveredPdf(srcBytes, redactions);
-      } else {
-        // Secure flatten (default): rasterize marked pages → true byte removal.
+      const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
+      // Render + flatten the given pages (secure image) from the current viewer
+      // document, painting the black boxes. Shared by 'flatten' mode and the
+      // 'text'-mode fallback for pages surgical couldn't cleanly clear.
+      const flattenPages = async (base: Uint8Array, pages: number[]): Promise<Uint8Array> => {
         const scope = renderCap.forDocument(documentId);
-        const pageIndices = [...new Set(redactions.map((r) => r.pageIndex))];
         const flattened: { pageIndex: number; png: Uint8Array }[] = [];
-        for (const pi of pageIndices) {
+        for (const pi of pages) {
           const blob = await scope.renderPage({ pageIndex: pi, options: { scaleFactor: SCALE, withAnnotations: true } }).toPromise();
-          // A failed render must NOT be skipped — that would leave the page's
-          // content un-redacted in the output. Fail the whole operation instead.
           if (!blob) throw new Error(`Couldn't render page ${pi + 1} for redaction.`);
-          // The viewer renders pages in native orientation (it reads /Rotate but
-          // doesn't rotate the canvas), and renderPage is native too — so the marks
-          // and the bitmap share one space; paint directly. The output page keeps
-          // the source /Rotate (buildRedactedPdf) so external viewers match.
-          const png = await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi));
-          flattened.push({ pageIndex: pi, png });
+          flattened.push({ pageIndex: pi, png: await flattenPage(blob, redactions.filter((r) => r.pageIndex === pi)) });
         }
         const { buildRedactedPdf } = await import('../redact');
-        out = await buildRedactedPdf(srcBytes, flattened);
+        return buildRedactedPdf(base, flattened);
+      };
+
+      let out: Uint8Array;
+      if (redactMode === 'text') {
+        // Surgical: remove text objects in the regions, keep the rest as text.
+        const { redactTextInRegion } = await import('../textedit-pdfium');
+        const { marksToUserRects, buildCoveredPdf, buildCoveredRects } = await import('../redact');
+        const userRects = await marksToUserRects(srcBytes, redactions);
+        const surgical = await redactTextInRegion(srcBytes, userRects);
+        // Verify each redacted page is actually text-free in its regions; any page
+        // that isn't (residual off-page fallback, or leftover text) is flattened.
+        const { extractPageText } = await import('../extract');
+        const bad = new Set(surgical.residualPages);
+        for (const pi of pageIndices) {
+          if (bad.has(pi)) continue;
+          const pt = await extractPageText(surgical.bytes, pi);
+          const rs = userRects.filter((r) => r.pageIndex === pi);
+          const leftover = (pt?.runs ?? []).some((run) =>
+            rs.some((r) => run.userSpace.left < r.right && run.userSpace.right > r.left && run.userSpace.bottom < r.top && run.userSpace.top > r.bottom),
+          );
+          if (leftover) bad.add(pi);
+        }
+        out = bad.size ? await flattenPages(surgical.bytes, [...bad]) : surgical.bytes;
+        // Cover the ACTUAL removed text objects (often whole lines) so nothing
+        // vanishes without a black box, plus the marked regions themselves.
+        out = await buildCoveredRects(out, surgical.removedBounds);
+        out = await buildCoveredPdf(out, redactions);
+      } else {
+        out = await flattenPages(srcBytes, pageIndices);
       }
       if (onDocumentReplaced) {
         onDocumentReplaced(out);
@@ -3080,39 +3099,39 @@ export function Viewer({
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={redactMode === 'remove'}
-                  data-testid="redact-mode-remove"
-                  className={`cpdf__btn${redactMode === 'remove' ? ' cpdf__btn--active' : ''}`}
-                  onClick={() => setRedactMode('remove')}
+                  aria-checked={redactMode === 'text'}
+                  data-testid="redact-mode-text"
+                  className={`cpdf__btn${redactMode === 'text' ? ' cpdf__btn--active' : ''}`}
+                  onClick={() => setRedactMode('text')}
                 >
-                  Remove (secure)
+                  Remove text
                 </button>
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={redactMode === 'cover'}
-                  data-testid="redact-mode-cover"
-                  className={`cpdf__btn${redactMode === 'cover' ? ' cpdf__btn--active' : ''}`}
-                  onClick={() => setRedactMode('cover')}
+                  aria-checked={redactMode === 'flatten'}
+                  data-testid="redact-mode-flatten"
+                  className={`cpdf__btn${redactMode === 'flatten' ? ' cpdf__btn--active' : ''}`}
+                  onClick={() => setRedactMode('flatten')}
                 >
-                  Keep text
+                  Flatten (images)
                 </button>
               </div>
               <p className="cpdf__confirm-body">
-                {redactMode === 'remove' ? (
+                {redactMode === 'text' ? (
                   <>
-                    Permanently removes the content under {redactions.length} marked region
-                    {redactions.length === 1 ? '' : 's'} — <strong>can't be undone</strong>. The{' '}
-                    {new Set(redactions.map((r) => r.pageIndex)).size} affected page
-                    {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} are rebuilt as flattened images
-                    (size &amp; rotation preserved), so their text is no longer selectable. Untouched pages keep their text.
+                    Removes the text touching {redactions.length} marked region{redactions.length === 1 ? '' : 's'} from
+                    the file and blacks it out — the rest of each page stays selectable and editable. (It removes whole
+                    text spans that the region touches, so a bit around the mark may go too.) Any page whose text can't be
+                    cleanly cleared is <strong>automatically flattened</strong> to an image so nothing is left behind.{' '}
+                    <strong>Can't be undone.</strong>
                   </>
                 ) : (
                   <>
-                    Draws opaque boxes over {redactions.length} region{redactions.length === 1 ? '' : 's'}, keeping the
-                    rest of each page's text selectable and editable. <strong>Note:</strong> this is a visual cover — the
-                    text under the boxes is <strong>not removed</strong> from the file and could be extracted. Choose{' '}
-                    <em>Remove (secure)</em> for true, unrecoverable redaction.
+                    Rebuilds the {new Set(redactions.map((r) => r.pageIndex)).size} affected page
+                    {new Set(redactions.map((r) => r.pageIndex)).size === 1 ? '' : 's'} as flattened images — removes{' '}
+                    <strong>all</strong> content in the regions (text, images, vectors), so their text is no longer
+                    selectable. Use this for images or other non-text content. <strong>Can't be undone.</strong>
                   </>
                 )}
               </p>
@@ -3120,12 +3139,8 @@ export function Viewer({
                 <button type="button" className="cpdf__btn" onClick={() => setConfirmRedact(false)}>
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  className={`cpdf__btn ${redactMode === 'remove' ? 'cpdf__btn--danger' : 'cpdf__btn--primary'}`}
-                  onClick={applyRedactions}
-                >
-                  {redactMode === 'remove' ? 'Redact & remove' : 'Cover regions'}
+                <button type="button" className="cpdf__btn cpdf__btn--danger" onClick={applyRedactions}>
+                  {redactMode === 'text' ? 'Remove text & redact' : 'Flatten & redact'}
                 </button>
               </div>
             </div>

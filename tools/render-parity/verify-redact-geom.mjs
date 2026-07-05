@@ -50,7 +50,8 @@ try {
   await page.waitForTimeout(400);
   await page.getByRole('button', { name: 'Apply redactions' }).click();
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: 'Redact & remove' }).click();
+  await page.locator('[data-testid=redact-mode-flatten]').click(); // this test verifies secure whole-page flatten
+  await page.getByRole('button', { name: 'Flatten & redact' }).click();
   await page.waitForTimeout(3500);
   await page.locator('.cpdf__viewport img').first().waitFor({ state: 'visible', timeout: 40000 });
   await page.waitForTimeout(1200);
