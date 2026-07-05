@@ -64,6 +64,20 @@ export interface DocOpsTransport {
 
 const abortError = () => Object.assign(new Error('AbortError'), { name: 'AbortError' });
 
+/** The Tauri `invoke`, resolved from either global the shell may expose:
+ *  `__TAURI_INTERNALS__.invoke`, or (with `withGlobalTauri`) `__TAURI__.core.invoke`
+ *  — the casual_pdf desktop window uses the latter. `null` outside the shell. */
+type TauriInvoke = (cmd: string, args?: unknown) => Promise<unknown>;
+export function resolveTauriInvoke(): TauriInvoke | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as {
+    __TAURI_INTERNALS__?: { invoke?: TauriInvoke };
+    __TAURI__?: { core?: { invoke?: TauriInvoke } };
+  };
+  const invoke = w.__TAURI_INTERNALS__?.invoke ?? w.__TAURI__?.core?.invoke;
+  return typeof invoke === 'function' ? (cmd, args) => invoke(cmd, args) : null;
+}
+
 /** Derive the AI WebSocket URL from a Yjs collab URL (`/yjs` → `/api/ai`).
  *  Strips trailing slashes first so `…/yjs/` is handled as well as `…/yjs`. */
 export function deriveAiWsUrl(yjsUrl: string): string {
@@ -181,9 +195,8 @@ export class DesktopTransport implements DocOpsTransport {
 
   call(payload: LlmCallPayload): Promise<LlmCallResult> {
     if (payload.signal?.aborted) return Promise.reject(abortError());
-    const tauri = (window as { __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> } })
-      .__TAURI_INTERNALS__;
-    if (!tauri?.invoke) {
+    const invoke = resolveTauriInvoke();
+    if (!invoke) {
       // Not in the desktop shell → no local worker. The web build must use
       // collab mode instead; surface a clear message rather than silently failing.
       return Promise.resolve({
@@ -191,7 +204,7 @@ export class DesktopTransport implements DocOpsTransport {
         status: 400,
       });
     }
-    return this.runLoop(payload, tauri.invoke.bind(tauri));
+    return this.runLoop(payload, invoke);
   }
 
   private async runLoop(

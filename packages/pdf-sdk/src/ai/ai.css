@@ -1,0 +1,166 @@
+/* Copyright (c) 2026 Casual Office — SPDX-License-Identifier: Apache-2.0
+ *
+ * "Ask this PDF" panel styling. Uses the @schnsrw/design-system tokens so it
+ * themes with the app (light/dark) automatically, and follows the viewer's
+ * design language: rounded, floating surfaces with color-separation (not
+ * borders), visible focus rings, ≥32–36px targets (WCAG 2.2). Fallback values
+ * keep it usable when the SDK is embedded without the token stylesheet. */
+
+.cpdf__ai {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 320px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #14181f);
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+}
+
+.cpdf__ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  font-weight: 600;
+  background: var(--color-surface-raised, #fff);
+  box-shadow: var(--shadow-1, 0 1px 2px rgba(0, 0, 0, 0.06));
+  z-index: 1;
+}
+.cpdf__ai-head small {
+  color: var(--color-text-secondary, #6b7280);
+  font-weight: 400;
+}
+.cpdf__ai-headbtns {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+.cpdf__ai-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+.cpdf__ai-msg {
+  align-self: flex-start;
+  max-width: 85%;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--color-surface-alt, rgba(0, 0, 0, 0.05));
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cpdf__ai-msg--me {
+  align-self: flex-end;
+  background: var(--color-accent, #2563eb);
+  color: var(--color-text-on-accent, #fff);
+}
+
+.cpdf__ai-thinking {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  align-self: flex-start;
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 13px;
+}
+.cpdf__ai-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent, currentColor);
+  animation: cpdf-ai-pulse 1s ease-in-out infinite;
+}
+@keyframes cpdf-ai-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.cpdf__ai-empty {
+  margin: auto;
+  max-width: 260px;
+  text-align: center;
+  color: var(--color-text-secondary, #6b7280);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+.cpdf__ai-quick {
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: none;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-alt, rgba(0, 0, 0, 0.05));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--motion-fast, 0.12s) var(--ease-out, ease);
+}
+.cpdf__ai-quick:hover { background: var(--color-hover, rgba(0, 0, 0, 0.08)); }
+.cpdf__ai-quick:focus-visible { outline: 2px solid var(--color-focus-ring, #2563eb); outline-offset: 2px; }
+
+.cpdf__ai-error {
+  margin: 0 var(--space-4, 16px) var(--space-2, 8px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-danger-soft, rgba(220, 38, 38, 0.12));
+  color: var(--color-danger, #b91c1c);
+  font-size: 13px;
+}
+
+.cpdf__ai-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px);
+  background: var(--color-surface-raised, #fff);
+  box-shadow: var(--shadow-1, 0 -1px 2px rgba(0, 0, 0, 0.06));
+}
+.cpdf__ai-input {
+  flex: 1;
+  resize: none;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: none;
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-surface-alt, rgba(0, 0, 0, 0.05));
+  color: inherit;
+  font: inherit;
+  line-height: 1.4;
+}
+.cpdf__ai-input:focus-visible { outline: 2px solid var(--color-focus-ring, #2563eb); outline-offset: 1px; }
+
+.cpdf__ai-btn {
+  padding: var(--space-2, 8px) var(--space-4, 16px);
+  border: none;
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-accent, #2563eb);
+  color: var(--color-text-on-accent, #fff);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--motion-fast, 0.12s) var(--ease-out, ease);
+}
+.cpdf__ai-btn:disabled { opacity: 0.5; cursor: default; }
+.cpdf__ai-btn:focus-visible { outline: 2px solid var(--color-focus-ring, #2563eb); outline-offset: 2px; }
+.cpdf__ai-btn--stop { background: var(--color-danger, #b91c1c); }
+
+.cpdf__ai-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  background: none;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: background var(--motion-fast, 0.12s) var(--ease-out, ease);
+}
+.cpdf__ai-iconbtn:hover { background: var(--color-hover, rgba(0, 0, 0, 0.06)); color: var(--color-text, #14181f); }
+.cpdf__ai-iconbtn:focus-visible { outline: 2px solid var(--color-focus-ring, #2563eb); outline-offset: 2px; }
