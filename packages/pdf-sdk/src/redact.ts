@@ -26,6 +26,107 @@
  * @gate UX-S5 — text extracted from a redacted region must be empty.
  */
 import { PDFDocument, degrees } from 'pdf-lib';
+import { visualPlacer } from './page-furniture.ts';
+
+/** A redaction mark in fractional top-left page coordinates (as the viewer stores them). */
+export interface CoverMark {
+  pageIndex: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Region-only redaction ("Keep text" mode, user decision 2026-07-06): draw an
+ * OPAQUE black box over each marked region and leave the rest of the page's
+ * content stream intact, so the page's other text stays selectable/editable.
+ *
+ * TRADE-OFF — this is a VISUAL cover, NOT secure removal: the text under a box
+ * remains in the file bytes and could be extracted. It is deliberately weaker
+ * than the flatten path (UX-S5); the UI must disclose this and offer the secure
+ * flatten (`buildRedactedPdf`) for true removal. Boxes are placed in displayed
+ * ("visual") space honoring `/Rotate` + MediaBox origin (reuses `visualPlacer`);
+ * the mapped rectangle is axis-aligned for all quarter rotations, so we take the
+ * page-space bounding box of the four mapped corners — no rectangle rotation.
+ */
+/** A redaction rectangle in PDF user space (bottom-left origin, points). */
+export interface UserRect {
+  left: number;
+  bottom: number;
+  right: number;
+  top: number;
+}
+
+/** Map a fractional top-left mark to its PDF user-space rect on `page`, honoring
+ *  `/Rotate` + MediaBox origin (via visualPlacer). The mapped rect is axis-aligned
+ *  for all quarter rotations, so we take the bounding box of the four corners. */
+export function markToUserRect(page: PdfLibPageLike, m: CoverMark): UserRect {
+  const { vw, vh, toPage } = visualPlacer(page);
+  const u0 = m.x * vw;
+  const u1 = (m.x + m.w) * vw;
+  const vBot = (1 - m.y - m.h) * vh;
+  const vTop = (1 - m.y) * vh;
+  const corners = [toPage(u0, vBot), toPage(u1, vBot), toPage(u0, vTop), toPage(u1, vTop)];
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  return { left: Math.min(...xs), bottom: Math.min(...ys), right: Math.max(...xs), top: Math.max(...ys) };
+}
+
+type PdfLibPageLike = Parameters<typeof visualPlacer>[0];
+
+/** Resolve every mark to a PDF user-space rect (with its page index) — used to
+ *  find the text objects a surgical redaction must remove. */
+export async function marksToUserRects(
+  srcBytes: Uint8Array,
+  marks: CoverMark[],
+): Promise<{ pageIndex: number; left: number; bottom: number; right: number; top: number }[]> {
+  const doc = await PDFDocument.load(srcBytes);
+  const pages = doc.getPages();
+  const out: { pageIndex: number; left: number; bottom: number; right: number; top: number }[] = [];
+  for (const m of marks) {
+    const page = pages[m.pageIndex];
+    if (page) out.push({ pageIndex: m.pageIndex, ...markToUserRect(page, m) });
+  }
+  return out;
+}
+
+/** Draw opaque black boxes at PDF user-space rects (e.g. the bounds of text
+ *  objects a surgical redaction removed, so removed text is always covered). */
+export async function buildCoveredRects(
+  srcBytes: Uint8Array,
+  rects: { pageIndex: number; left: number; bottom: number; right: number; top: number }[],
+): Promise<Uint8Array> {
+  const { rgb } = await import('pdf-lib');
+  const doc = await PDFDocument.load(srcBytes);
+  const pages = doc.getPages();
+  for (const r of rects) {
+    const page = pages[r.pageIndex];
+    if (!page) continue;
+    page.drawRectangle({ x: r.left, y: r.bottom, width: r.right - r.left, height: r.top - r.bottom, color: rgb(0, 0, 0), opacity: 1 });
+  }
+  return doc.save();
+}
+
+export async function buildCoveredPdf(srcBytes: Uint8Array, marks: CoverMark[]): Promise<Uint8Array> {
+  const { rgb } = await import('pdf-lib');
+  const doc = await PDFDocument.load(srcBytes);
+  const pages = doc.getPages();
+  for (const m of marks) {
+    const page = pages[m.pageIndex];
+    if (!page) continue;
+    const r = markToUserRect(page, m);
+    page.drawRectangle({
+      x: r.left,
+      y: r.bottom,
+      width: r.right - r.left,
+      height: r.top - r.bottom,
+      color: rgb(0, 0, 0),
+      opacity: 1,
+    });
+  }
+  return doc.save();
+}
 
 /** A page rebuilt from a flattened, black-boxed raster image (native orientation). */
 export interface FlattenedPage {

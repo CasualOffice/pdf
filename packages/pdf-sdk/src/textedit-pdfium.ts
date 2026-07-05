@@ -642,3 +642,94 @@ export async function replaceTextOnPage(src: Uint8Array, pageIndex: number, find
     return saveDoc(p, doc);
   });
 }
+
+/** A redaction region in PDF user space (bottom-left origin, points). */
+export interface RedactUserRect {
+  pageIndex: number;
+  left: number;
+  bottom: number;
+  right: number;
+  top: number;
+}
+
+/**
+ * SURGICAL text redaction (user decision 2026-07-06): remove the text objects
+ * that fall within the marked regions from the page content stream, keeping the
+ * rest of the page as real, selectable text. PDFium rebuilds the content stream
+ * (FPDFPage_GenerateContent) and saves NON-INCREMENTAL, so cleared text is gone
+ * from the output bytes — NOT hidden.
+ *
+ * Caveat handled by the caller via verification + fallback: on subsetted fonts
+ * `FPDFText_SetText(' ')` can fail; we then move the object off-page (its glyphs
+ * REMAIN in the bytes) and flag that page in `residualPages`. The caller must
+ * treat a residual page as NOT securely redacted and fall back to flattening it.
+ * Object-level granularity: a text object overlapping a region is removed whole.
+ */
+export async function redactTextInRegion(
+  src: Uint8Array,
+  rects: RedactUserRect[],
+): Promise<{ bytes: Uint8Array; residualPages: number[]; suppressed: number; removedBounds: RedactUserRect[] }> {
+  const p = await ensurePdfium();
+  const m = p.pdfium;
+  const srcPtr = m._malloc(src.length);
+  m.HEAPU8.set(src, srcPtr);
+  const doc = p.FPDF_LoadMemDocument(srcPtr, src.length, '');
+  if (!doc) {
+    m._free(srcPtr);
+    throw new Error('Could not open the document for redaction.');
+  }
+  const residual = new Set<number>();
+  const removedBounds: RedactUserRect[] = [];
+  let suppressed = 0;
+  const byPage = new Map<number, RedactUserRect[]>();
+  for (const r of rects) {
+    const a = byPage.get(r.pageIndex);
+    if (a) a.push(r);
+    else byPage.set(r.pageIndex, [r]);
+  }
+  const fl = m._malloc(16);
+  try {
+    for (const [pi, prs] of byPage) {
+      const page = p.FPDF_LoadPage(doc, pi);
+      if (!page) continue;
+      try {
+        const n = p.FPDFPage_CountObjects(page);
+        for (let i = 0; i < n; i++) {
+          const obj = p.FPDFPage_GetObject(page, i);
+          if (!obj || p.FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_TEXT) continue;
+          if (!p.FPDFPageObj_GetBounds(obj, fl, fl + 4, fl + 8, fl + 12)) continue;
+          const f = new Float32Array(m.HEAPU8.buffer, fl, 4);
+          const [ol, ob, or_, ot] = [f[0], f[1], f[2], f[3]];
+          // Overlap the object bbox with any region rect (both PDF user space).
+          if (!prs.some((r) => ol < r.right && or_ > r.left && ob < r.top && ot > r.bottom)) continue;
+          suppressed += 1;
+          // Record the removed object's bounds so the caller can box the ACTUAL
+          // removed text (often a whole line), not just the marked sub-region —
+          // otherwise removed neighbours would vanish with no black box over them.
+          removedBounds.push({ pageIndex: pi, left: ol, bottom: ob, right: or_, top: ot });
+          const sp = allocUtf16(p, ' ');
+          const ok = p.FPDFText_SetText(obj, sp);
+          m._free(sp);
+          if (!ok) {
+            // Space-clear failed (subsetted font) → hide off-page, but the glyphs
+            // stay in the bytes: mark this page residual so the caller flattens it.
+            const mtx = readMatrix(p, obj);
+            mtx[4] = -99999;
+            mtx[5] = -99999;
+            setMatrix(p, obj, mtx);
+            residual.add(pi);
+          }
+        }
+        p.FPDFPage_GenerateContent(page);
+      } finally {
+        p.FPDF_ClosePage(page);
+      }
+    }
+    const bytes = saveDoc(p, doc);
+    return { bytes, residualPages: [...residual], suppressed, removedBounds };
+  } finally {
+    m._free(fl);
+    p.FPDF_CloseDocument(doc);
+    m._free(srcPtr);
+  }
+}
