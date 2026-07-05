@@ -31,6 +31,10 @@
     "./extract": {
       "types": "./src/extract.ts",
       "import": "./src/extract.ts"
+    },
+    "./ai": {
+      "types": "./src/ai/index.ts",
+      "import": "./src/ai/index.ts"
     }
   },
   "scripts": {
