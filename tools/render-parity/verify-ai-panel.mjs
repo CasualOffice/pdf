@@ -98,6 +98,9 @@ try {
   await page.locator('[data-testid=ai-thinking]').waitFor({ state: 'visible', timeout: 5000 });
   assert(true, 'processing indicator ("Thinking…") appears while busy');
 
+  // While busy, the Send button is replaced by a Stop button.
+  assert(await page.locator('[data-testid=ai-stop]').isVisible(), 'Stop button shown while busy');
+
   // Live streaming bubble shows partial text during the turn.
   const streamed = await page.locator('[data-testid=ai-streaming]').first().textContent({ timeout: 5000 }).catch(() => null);
   assert(!!streamed && streamed.length > 0, `streaming text renders live (${JSON.stringify((streamed || '').slice(0, 40))})`);
@@ -114,6 +117,11 @@ try {
   // Indicator clears when done.
   await page.locator('[data-testid=ai-thinking]').waitFor({ state: 'hidden', timeout: 5000 });
   assert(true, 'processing indicator clears when the turn completes');
+
+  // Clear conversation returns to the empty state.
+  await page.locator('[data-testid=ai-clear]').click();
+  await page.locator('[data-testid=ai-empty]').waitFor({ state: 'visible', timeout: 5000 });
+  assert((await page.locator('[data-testid=ai-answer]').count()) === 0, 'Clear removes the conversation (empty state returns)');
 
   assert(errors.length === 0, `no page errors (${errors.length})`);
 } catch (e) {

@@ -812,13 +812,14 @@ export function App() {
                 data-testid="ai-toggle"
                 onClick={() => setAiOpen(true)}
                 aria-pressed={aiOpen}
-                style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 20, padding: '10px 16px', borderRadius: 24, border: 'none', background: 'var(--cpdf-accent, #2563eb)', color: '#fff', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}
+                style={{ position: 'absolute', right: 'var(--space-4, 16px)', bottom: 'var(--space-4, 16px)', zIndex: 20, display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2, 8px)', padding: '10px 16px', borderRadius: 'var(--radius-pill, 999px)', border: 'none', background: 'var(--color-accent, #2563eb)', color: 'var(--color-text-on-accent, #fff)', cursor: 'pointer', boxShadow: 'var(--shadow-2, 0 2px 8px rgba(0,0,0,.2))', font: 'inherit', fontWeight: 500 }}
               >
+                <Icon name="comments" size={18} />
                 Ask AI
               </button>
             )}
             {aiOpen && (
-              <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 360, zIndex: 19, borderLeft: '1px solid var(--cpdf-border, #e5e7eb)', background: 'var(--cpdf-surface, #fff)', boxShadow: '-2px 0 12px rgba(0,0,0,.08)' }}>
+              <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 360, zIndex: 19, background: 'var(--color-surface, #fff)', boxShadow: 'var(--shadow-3, -2px 0 16px rgba(0,0,0,.14))' }}>
                 <AiPanel
                   getApi={() => api.current}
                   onClose={() => setAiOpen(false)}

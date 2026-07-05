@@ -155,6 +155,36 @@ test('runDocOpsTurn streams, toggles the processing indicator, and runs the tool
   assert.equal(last.content[0].text, 'You have 3 pages.');
 });
 
+test('runDocOpsTurn rejects on abort and still clears the processing indicator', async () => {
+  const { api } = mockApi();
+  const bridge = new PdfOpsBridge(() => api);
+  const controller = new AbortController();
+  const abortTransport = {
+    drivesLoop: true,
+    label: 'Abort',
+    async call(payload: LlmCallPayload): Promise<LlmCallResult> {
+      controller.abort(); // user hit Stop mid-turn
+      if (payload.signal?.aborted) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
+      return { data: { ok: true }, status: 200, updatedHistory: [] };
+    },
+  } as DocOpsTransport;
+  const busy: boolean[] = [];
+  await assert.rejects(
+    runDocOpsTurn({
+      transport: abortTransport,
+      model: 'm',
+      system: 's',
+      userText: 'hi',
+      tools: PDF_CATALOG,
+      bridge,
+      signal: controller.signal,
+      callbacks: { onBusy: (b) => busy.push(b) },
+    }),
+    /AbortError/,
+  );
+  assert.deepEqual(busy, [true, false]); // indicator cleared on abort
+});
+
 test('runDocOpsTurn clears the processing indicator even on transport error', async () => {
   const { api } = mockApi();
   const bridge = new PdfOpsBridge(() => api);
