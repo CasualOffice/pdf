@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
+import { CasualPdf, Icon, allowedModes, type Mode, type Role, type CasualPdfApi } from '@casualoffice/pdf';
 import { signPdf } from '@casualoffice/pdf/sign';
 import { AiPanel } from '@casualoffice/pdf/ai';
 import { MenuBar, type MenuDef } from './Menu';
@@ -115,6 +115,20 @@ export function App() {
     () => (collab ? { name: `Guest ${Math.floor(Math.random() * 900 + 100)}`, color: `hsl(${Math.floor(Math.random() * 360)} 70% 50%)` } : undefined),
     [collab],
   );
+  // Granted role (from `?role=`, accepting the collab server's short names too).
+  // The collab server enforces the real gate; this only reflects it in the UI.
+  const role = useMemo<Role | undefined>(() => {
+    const raw = new URLSearchParams(window.location.search).get('role');
+    if (!raw) return undefined;
+    const m: Record<string, Role> = { view: 'viewer', viewer: 'viewer', comment: 'commenter', commenter: 'commenter', edit: 'editor', editor: 'editor', sign: 'signer', signer: 'signer' };
+    return m[raw.toLowerCase()];
+  }, []);
+  const modeAllowed = useMemo(() => (role ? allowedModes(role) : null), [role]);
+  // Keep the app's mode within the role's allowance (clamp to the highest allowed
+  // if some action tried to enter a disallowed mode). The SDK also clamps.
+  useEffect(() => {
+    if (modeAllowed && !modeAllowed.includes(mode)) setMode(modeAllowed[modeAllowed.length - 1]);
+  }, [modeAllowed, mode]);
   // True inside the Casual Office desktop shell (?desk=1). Routes Open/Save and
   // the initial document load through the native Tauri bridge instead of the
   // browser file picker / <a download>. A no-op in a plain browser.
@@ -714,22 +728,26 @@ export function App() {
           )}
           {src && <span className="appbar__sep" aria-hidden="true" />}
           {src && <div className="modeseg" role="tablist" aria-label="Editing mode">
-            {MODES.map(({ id, label, icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={mode === id}
-                aria-label={`${label} mode`}
-                title={`${label} mode`}
-                className="modeseg__btn"
-                data-active={mode === id ? 'true' : undefined}
-                onClick={() => setMode(id)}
-              >
-                <Icon name={icon} filled={mode === id} size={16} />
-                <span>{label}</span>
-              </button>
-            ))}
+            {MODES.map(({ id, label, icon }) => {
+              const disabled = modeAllowed ? !modeAllowed.includes(id) : false;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === id}
+                  aria-label={`${label} mode`}
+                  title={disabled ? `${label} mode — not permitted by your access` : `${label} mode`}
+                  className="modeseg__btn"
+                  data-active={mode === id ? 'true' : undefined}
+                  disabled={disabled}
+                  onClick={() => { if (!disabled) setMode(id); }}
+                >
+                  <Icon name={icon} filled={mode === id} size={16} />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
           </div>}
           <button
             type="button"
@@ -827,6 +845,7 @@ export function App() {
               onRedo={() => { if (api.current?.canRedo()) api.current.redo(); else versionRedo(); }}
               collab={collab}
               identity={identity}
+              role={role}
               className="viewer"
             />
             {!aiOpen && (

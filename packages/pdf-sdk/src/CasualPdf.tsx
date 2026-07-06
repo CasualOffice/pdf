@@ -169,6 +169,7 @@ import { Viewer } from './ui/chrome';
 import { Icon } from './ui/icons';
 import './ui/viewer.css';
 import type { CasualPdfProps } from './modes';
+import { clampMode } from './modes';
 
 /**
  * The single embeddable surface for all of Casual PDF. The same component backs
@@ -197,8 +198,11 @@ function ViewerHost({ isLoaded, loading, children }: { isLoaded: boolean; loadin
   return <>{everLoaded.current ? children : loading}</>;
 }
 
-export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, onUndo, onRedo, collab, identity, className, style }: CasualPdfProps) {
+export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, onUndo, onRedo, collab, identity, role, className, style }: CasualPdfProps) {
   const { engine, isLoading, error } = usePdfiumEngine();
+  // Clamp the requested mode to what the role permits (defense-in-depth — the
+  // collab server is the real enforcer). A viewer asked to `edit` renders `view`.
+  const effectiveMode = role ? clampMode(mode, role) : mode;
 
   // Wrap the engine so geometry runs are sorted in visual reading order.
   // This fixes drag-selection on PDFs whose content stream order ≠ visual order.
@@ -242,7 +246,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
 
   if (error) {
     return (
-      <div className={className} style={style} data-casual-pdf-mode={mode}>
+      <div className={className} style={style} data-casual-pdf-mode={effectiveMode}>
         <div className="cpdf__status" role="alert">
           <span className="cpdf__status-icon cpdf__status-icon--error">
             <Icon name="warning" size={40} />
@@ -256,7 +260,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
 
   if (isLoading || !engine || !patchedEngine) {
     return (
-      <div className={className} style={style} data-casual-pdf-mode={mode}>
+      <div className={className} style={style} data-casual-pdf-mode={effectiveMode}>
         <div className="cpdf__status">
           <span className="cpdf__spinner" aria-hidden="true" />
           <span className="cpdf__status-title">Loading PDF engine…</span>
@@ -266,7 +270,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
   }
 
   return (
-    <div className={className} style={style} data-casual-pdf-mode={mode}>
+    <div className={className} style={style} data-casual-pdf-mode={effectiveMode}>
       <EmbedPDF engine={patchedEngine} plugins={plugins}>
         {({ activeDocumentId }) =>
           activeDocumentId ? (
@@ -290,7 +294,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
                       </div>
                     }
                   >
-                    <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} collab={collab} identity={identity} engine={patchedEngine} />
+                    <Viewer documentId={activeDocumentId} mode={effectiveMode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} collab={collab} identity={identity} engine={patchedEngine} />
                   </ViewerHost>
                 )
               }
