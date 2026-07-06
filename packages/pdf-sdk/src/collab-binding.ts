@@ -22,7 +22,7 @@
  * `useAnnotation` capability to this interface.
  */
 import * as Y from 'yjs';
-import type { CasualPdfDoc, AnnotationData, AnnotationType } from './model';
+import type { CasualPdfDoc, AnnotationData, AnnotationType, EntryState } from './model';
 
 // Re-export the Yjs namespace so consumers/tests that only depend on this SDK can
 // construct docs + apply updates without a direct `yjs` dependency of their own.
@@ -59,6 +59,9 @@ export interface AnnotationBridge {
 export interface BindOptions {
   /** Author recorded on entries this client creates. */
   author: string;
+  /** State stamped on entries this client CREATES (updates preserve the existing
+   *  state). In Suggest mode return `'suggested'`; defaults to `'applied'`. */
+  getState?: () => EntryState;
 }
 
 /** Yjs transaction origin marking writes the binding made from local plugin
@@ -88,7 +91,8 @@ function toRect(raw: RawAnnotation): [number, number, number, number] {
 }
 
 /** Build the structured overlay fields for an annotation entry, keeping the raw
- *  object under `props` for lossless round-tripping back to the plugin. */
+ *  object under `props` for lossless round-tripping back to the plugin. `state` is
+ *  set separately (create-time only) so updates don't clobber a suggestion. */
 function toEntryFields(raw: RawAnnotation, pageIndex: number, author: string): Partial<AnnotationData> {
   return {
     id: raw.id,
@@ -97,7 +101,6 @@ function toEntryFields(raw: RawAnnotation, pageIndex: number, author: string): P
     rect: toRect(raw),
     props: raw as unknown as Record<string, unknown>,
     author,
-    state: 'applied',
   };
 }
 
@@ -132,11 +135,15 @@ export function bindAnnotations(bridge: AnnotationBridge, model: CasualPdfDoc, o
       const fields = toEntryFields(ev.annotation, ev.pageIndex, opts.author);
       const i = indexOfId(ev.annotation.id);
       if (i >= 0) {
+        // Update: overwrite geometry/props but PRESERVE the entry's state (an
+        // edit to a pending suggestion stays pending).
         const entry = model.annotations.get(i);
         for (const [k, v] of Object.entries(fields)) entry.set(k, v);
       } else {
+        // Create: stamp the create-time state (Suggest mode → 'suggested').
         const entry = new Y.Map<unknown>();
         entry.set('createdAt', 0); // stamped by the app; kept stable for tests
+        entry.set('state', opts.getState ? opts.getState() : 'applied');
         for (const [k, v] of Object.entries(fields)) entry.set(k, v);
         model.annotations.push([entry]);
       }

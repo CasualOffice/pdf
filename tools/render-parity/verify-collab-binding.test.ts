@@ -228,3 +228,53 @@ test('allowedModes + clampMode reflect the role ladder', () => {
   assert.equal(roleToMode('viewer'), 'view');
   assert.equal(roleToMode('signer'), 'edit');
 });
+
+import { readSuggestions, acceptSuggestion, rejectSuggestion } from '../../packages/pdf-sdk/src/model.ts';
+
+/** Like setup(), but bridgeA authors in Suggest mode (creates → 'suggested'). */
+function setupSuggest() {
+  const docA = createCasualPdfDoc('base-v1', new Y.Doc());
+  const docB = createCasualPdfDoc('base-v1', new Y.Doc());
+  Y.applyUpdate(docB.doc, Y.encodeStateAsUpdate(docA.doc), 'remote');
+  Y.applyUpdate(docA.doc, Y.encodeStateAsUpdate(docB.doc), 'remote');
+  relay(docA.doc, docB.doc);
+  const bridgeA = new FakeBridge();
+  const bridgeB = new FakeBridge();
+  const offA = bindAnnotations(bridgeA, docA, { author: 'alice', getState: () => 'suggested' });
+  const offB = bindAnnotations(bridgeB, docB, { author: 'bob' });
+  return { docA, docB, bridgeA, bridgeB, teardown: () => { offA(); offB(); } };
+}
+const stateOf = (d: ReturnType<typeof createCasualPdfDoc>, id: string) =>
+  d.annotations.toArray().find((m) => m.get('id') === id)?.get('state');
+
+test('a Suggest-mode create is tagged suggested + the state syncs to the peer', () => {
+  const { docA, docB, bridgeB, bridgeA, teardown } = setupSuggest();
+  bridgeA.userCreate(0, anno('s1'));
+  assert.equal(stateOf(docA, 's1'), 'suggested', 'author records it as a suggestion');
+  assert.equal(stateOf(docB, 's1'), 'suggested', 'suggestion state syncs to the peer');
+  assert.ok(bridgeB.store.has('s1'), 'still rendered on the peer plugin');
+  assert.equal(readSuggestions(docA).length, 1, 'readSuggestions surfaces the pending one');
+  teardown();
+});
+
+test('accepting a suggestion flips it to applied everywhere; annotation stays', () => {
+  const { docA, docB, bridgeA, bridgeB, teardown } = setupSuggest();
+  bridgeA.userCreate(0, anno('s1'));
+  acceptSuggestion(docB, 's1', 'bob'); // reviewer on the peer accepts
+  assert.equal(stateOf(docB, 's1'), 'applied');
+  assert.equal(stateOf(docA, 's1'), 'applied', 'accept syncs back to the author');
+  assert.ok(bridgeA.store.has('s1') && bridgeB.store.has('s1'), 'the annotation remains rendered');
+  assert.equal(readSuggestions(docA).length, 0, 'no longer pending');
+  teardown();
+});
+
+test('rejecting a suggestion removes it everywhere (model + both plugins)', () => {
+  const { docA, docB, bridgeA, bridgeB, teardown } = setupSuggest();
+  bridgeA.userCreate(0, anno('s1'));
+  rejectSuggestion(docB, 's1'); // reviewer rejects
+  assert.equal(docA.annotations.length, 0, 'gone from the author model');
+  assert.equal(docB.annotations.length, 0, 'gone from the reviewer model');
+  assert.ok(!bridgeA.store.has('s1'), 'removed from the author plugin');
+  assert.ok(!bridgeB.store.has('s1'), 'removed from the reviewer plugin');
+  teardown();
+});

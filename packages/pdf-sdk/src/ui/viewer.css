@@ -1329,3 +1329,66 @@
   background: var(--color-surface-raised, #64748b) !important;
   color: var(--color-text, #1e293b);
 }
+
+/* ── Collab suggestions review panel (floating, top-right below presence) ──── */
+.cpdf__suggestions {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  z-index: 208;
+  width: 260px;
+  max-height: 45vh;
+  overflow: auto;
+  background: var(--color-surface, #fff);
+  border-radius: var(--radius-2, 10px);
+  box-shadow: var(--shadow-2, 0 2px 12px rgba(0, 0, 0, 0.18));
+  font-size: 13px;
+}
+.cpdf__suggestions-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  position: sticky;
+  top: 0;
+  background: inherit;
+}
+.cpdf__suggestions-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+}
+.cpdf__suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-1, 6px);
+}
+.cpdf__suggestion:hover {
+  background: var(--color-surface-raised, #f1f5f9);
+}
+.cpdf__suggestion-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cpdf__suggestion-type {
+  text-transform: capitalize;
+  font-weight: 500;
+}
+.cpdf__suggestion-sub {
+  color: var(--color-text-muted, #64748b);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cpdf__suggestion-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
