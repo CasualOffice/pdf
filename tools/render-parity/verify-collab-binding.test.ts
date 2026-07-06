@@ -210,3 +210,21 @@ test('initials builds up to two uppercase letters', () => {
   assert.equal(initials('a b c'), 'AC');
   assert.equal(initials('   '), '?');
 });
+
+import { roleToMode, allowedModes, clampMode } from '../../packages/pdf-sdk/src/modes.ts';
+
+test('allowedModes + clampMode reflect the role ladder', () => {
+  assert.deepEqual(allowedModes('viewer'), ['view']);
+  assert.deepEqual(allowedModes('commenter'), ['view', 'suggest']);
+  assert.deepEqual(allowedModes('editor'), ['view', 'suggest', 'edit']);
+  assert.deepEqual(allowedModes('signer'), ['view', 'suggest', 'edit']);
+  // clamp: a viewer asked to edit gets view; commenter asked to edit gets suggest.
+  assert.equal(clampMode('edit', 'viewer'), 'view');
+  assert.equal(clampMode('suggest', 'viewer'), 'view');
+  assert.equal(clampMode('edit', 'commenter'), 'suggest');
+  assert.equal(clampMode('suggest', 'commenter'), 'suggest');
+  assert.equal(clampMode('edit', 'editor'), 'edit');
+  // roleToMode is the highest allowed.
+  assert.equal(roleToMode('viewer'), 'view');
+  assert.equal(roleToMode('signer'), 'edit');
+});

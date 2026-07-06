@@ -19,7 +19,7 @@ export type Mode = 'view' | 'edit' | 'suggest';
 /** Role granted on a share link / room, enforced server-side by services/collab. */
 export type Role = 'viewer' | 'commenter' | 'editor' | 'signer';
 
-/** Map a granted role to the mode it permits. */
+/** Map a granted role to the HIGHEST mode it permits. */
 export function roleToMode(role: Role): Mode {
   switch (role) {
     case 'viewer':
@@ -30,6 +30,27 @@ export function roleToMode(role: Role): Mode {
     case 'signer':
       return 'edit';
   }
+}
+
+/** Every mode a role may use, least- to most-privileged. `view` is always allowed.
+ *  The UI uses this to disable higher modes; the collab server enforces the real
+ *  gate (`connection.readOnly`), so this is a reflection, not the security boundary. */
+export function allowedModes(role: Role): Mode[] {
+  switch (role) {
+    case 'viewer':
+      return ['view'];
+    case 'commenter':
+      return ['view', 'suggest'];
+    case 'editor':
+    case 'signer':
+      return ['view', 'suggest', 'edit'];
+  }
+}
+
+/** Clamp a requested mode to what `role` permits — a viewer asked to `edit` gets
+ *  `view`. Defense-in-depth so the editor never renders write UI above the role. */
+export function clampMode(mode: Mode, role: Role): Mode {
+  return allowedModes(role).includes(mode) ? mode : roleToMode(role);
 }
 
 /** Collab connection. Omit on `CasualPdfProps` for solo / local-persistence mode. */
@@ -131,6 +152,10 @@ export interface CasualPdfProps {
   collab?: CollabConfig;
   /** Local user identity (authorship + presence). */
   identity?: Identity;
+  /** The viewer's granted role. When set, the effective mode is clamped to what
+   *  the role permits (`allowedModes`) — a reflection of the server-enforced
+   *  rights, not the security boundary. Omit → all modes available (solo). */
+  role?: Role;
   /** Receives an imperative API once the document is ready (for host menus). */
   apiRef?: MutableRefObject<CasualPdfApi | null>;
   /** Fired the first time the document is edited (annotation added/changed,
