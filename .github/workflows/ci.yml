@@ -190,6 +190,7 @@ jobs:
           fail=0
           for t in \
             verify-drive \
+            verify-collab-2client \
             verify-redact-split \
             verify-redact-xobject \
             verify-textedit-overlay \

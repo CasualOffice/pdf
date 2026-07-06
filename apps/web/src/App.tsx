@@ -104,11 +104,12 @@ export function App() {
   // carries a `?room=`. The share token (→ role, server-enforced) rides `?share=`.
   // The Yjs endpoint is `/yjs` on the collab server.
   const collab = useMemo(() => {
-    if (!COLLAB_WS_URL) return undefined;
     const p = new URLSearchParams(window.location.search);
+    // `?collab=` overrides the build-time env (used by the co-editing E2E + demos).
+    const server = p.get('collab') || COLLAB_WS_URL;
     const room = p.get('room');
-    if (!room) return undefined;
-    const base = COLLAB_WS_URL.replace(/\/+$/, '');
+    if (!server || !room) return undefined;
+    const base = server.replace(/\/+$/, '');
     return { url: base.endsWith('/yjs') ? base : `${base}/yjs`, room, token: p.get('share') ?? undefined };
   }, []);
   const identity = useMemo(
