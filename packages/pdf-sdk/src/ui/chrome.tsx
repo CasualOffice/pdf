@@ -2372,29 +2372,28 @@ export function Viewer({
 
       let out: Uint8Array;
       if (redactMode === 'text') {
-        // Surgical: remove text objects in the regions, keep the rest as text.
-        const { redactTextInRegion } = await import('../textedit-pdfium');
-        const { marksToUserRects, buildCoveredPdf, buildCoveredRects } = await import('../redact');
-        const userRects = await marksToUserRects(srcBytes, redactions);
-        const surgical = await redactTextInRegion(srcBytes, userRects);
-        // Verify each redacted page is actually text-free in its regions; any page
-        // that isn't (residual off-page fallback, or leftover text) is flattened.
-        const { extractPageText } = await import('../extract');
-        const bad = new Set(surgical.residualPages);
-        for (const pi of pageIndices) {
-          if (bad.has(pi)) continue;
-          const pt = await extractPageText(surgical.bytes, pi);
-          const rs = userRects.filter((r) => r.pageIndex === pi);
-          const leftover = (pt?.runs ?? []).some((run) =>
-            rs.some((r) => run.userSpace.left < r.right && run.userSpace.right > r.left && run.userSpace.bottom < r.top && run.userSpace.top > r.bottom),
-          );
-          if (leftover) bad.add(pi);
+        // CHAR-LEVEL surgical via the Rust core (lopdf, wasm): removes ONLY the
+        // glyphs under each mark at the byte level (position-preserving, whole
+        // removed runs collapsed to one advance so per-glyph widths don't leak),
+        // handles simple + Type0/Identity-CID fonts, and paints the black boxes —
+        // the rest of the page stays selectable text. Then VERIFY each page and
+        // flatten any the core couldn't fully clear (exotic CMaps) so nothing leaks.
+        const { redactSurgical } = await import('../redact-core');
+        let surgical: Awaited<ReturnType<typeof redactSurgical>> | null = null;
+        try {
+          surgical = await redactSurgical(srcBytes, redactions);
+        } catch {
+          surgical = null; // core couldn't process → whole fallback below
         }
-        out = bad.size ? await flattenPages(surgical.bytes, [...bad]) : surgical.bytes;
-        // Cover the ACTUAL removed text objects (often whole lines) so nothing
-        // vanishes without a black box, plus the marked regions themselves.
-        out = await buildCoveredRects(out, surgical.removedBounds);
-        out = await buildCoveredPdf(out, redactions);
+        if (!surgical) {
+          out = await flattenPages(srcBytes, pageIndices);
+        } else {
+          // The core self-reports the pages it couldn't remove confidently (a
+          // font/CMap it can't decode, or a Form XObject it doesn't descend into);
+          // flatten exactly those so nothing leaks, keep the rest as real text.
+          const bad = surgical.lowConfidencePages.filter((pi) => pageIndices.includes(pi));
+          out = bad.length ? await flattenPages(surgical.bytes, bad) : surgical.bytes;
+        }
       } else {
         out = await flattenPages(srcBytes, pageIndices);
       }

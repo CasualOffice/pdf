@@ -47,11 +47,22 @@ function packSpec(marks: SurgicalMark[]): Float64Array {
   return new Float64Array(spec);
 }
 
-/** Surgically redact, returning new PDF bytes (text under the marks removed,
- *  surrounding text preserved). Throws if the core can't process the document —
+export interface SurgicalResult {
+  /** New PDF bytes: text under the marks removed, surrounding text preserved. */
+  bytes: Uint8Array;
+  /** 0-based pages the core could NOT redact confidently (a font/CMap it can't
+   *  decode, or a Form XObject it doesn't descend into) — the caller should
+   *  flatten these so nothing is left behind. */
+  lowConfidencePages: number[];
+}
+
+/** Surgically redact. Throws if the core can't process the document at all —
  *  callers should fall back to the flatten path so a redaction never silently
  *  no-ops. */
-export async function redactSurgical(pdf: Uint8Array, marks: SurgicalMark[]): Promise<Uint8Array> {
+export async function redactSurgical(pdf: Uint8Array, marks: SurgicalMark[]): Promise<SurgicalResult> {
   await ensureInit();
-  return redact_pdf_wasm(pdf, packSpec(marks));
+  const r = redact_pdf_wasm(pdf, packSpec(marks));
+  const result = { bytes: r.bytes, lowConfidencePages: Array.from(r.low_confidence_pages) };
+  r.free();
+  return result;
 }

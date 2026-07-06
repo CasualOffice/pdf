@@ -2,6 +2,18 @@
 /* eslint-disable */
 
 /**
+ * Redaction result across the wasm boundary: the new PDF bytes plus the pages
+ * the core couldn't redact confidently (caller flattens those).
+ */
+export class RedactResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly bytes: Uint8Array;
+    readonly low_confidence_pages: Uint32Array;
+}
+
+/**
  * Build identifier — proves the same crate compiles to wasm32. The PDFium
  * render path (mirroring the native module) is wired through a wasm PDFium
  * build in Phase 0.5.
@@ -25,9 +37,10 @@ export function move_text_run_wasm(pdf: Uint8Array, page_index: number, run_id: 
 
 /**
  * Surgically redact `pdf` (true byte removal, surrounding text preserved),
- * returning the new PDF bytes. `spec` is the flat array from `parse_spec`.
+ * returning the new PDF bytes + any pages that need flattening. `spec` is the
+ * flat array from `parse_spec`.
  */
-export function redact_pdf_wasm(pdf: Uint8Array, spec: Float64Array): Uint8Array;
+export function redact_pdf_wasm(pdf: Uint8Array, spec: Float64Array): RedactResult;
 
 /**
  * Apply a detached PDF signature as an incremental update.
@@ -38,11 +51,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_redactresult_free: (a: number, b: number) => void;
     readonly core_version: () => [number, number];
     readonly edit_text_run_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly list_text_runs_wasm: (a: number, b: number, c: number) => [number, number, number, number];
     readonly move_text_run_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly redact_pdf_wasm: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly redact_pdf_wasm: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly redactresult_bytes: (a: number) => [number, number];
+    readonly redactresult_low_confidence_pages: (a: number) => [number, number];
     readonly sign_pdf_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;

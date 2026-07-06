@@ -184,9 +184,13 @@ jobs:
         working-directory: tools/render-parity
         run: |
           cp fixtures/sample.pdf ../../apps/web/dist/sample.pdf
+          # PyMuPDF decodes CID→unicode for the char-level redaction test (the
+          # naive extractor can't read embedded/CID fonts).
+          python3 -m pip install --quiet --break-system-packages pymupdf || python3 -m pip install --quiet pymupdf
           fail=0
           for t in \
             verify-drive \
+            verify-redact-split \
             verify-textedit-overlay \
             verify-textedit-optionc \
             verify-textedit-persist \
