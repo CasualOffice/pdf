@@ -191,6 +191,7 @@ jobs:
           for t in \
             verify-drive \
             verify-redact-split \
+            verify-redact-xobject \
             verify-textedit-overlay \
             verify-textedit-optionc \
             verify-textedit-persist \
