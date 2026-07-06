@@ -197,7 +197,7 @@ function ViewerHost({ isLoaded, loading, children }: { isLoaded: boolean; loadin
   return <>{everLoaded.current ? children : loading}</>;
 }
 
-export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, onUndo, onRedo, className, style }: CasualPdfProps) {
+export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, onDocumentReplaced, onUndo, onRedo, collab, identity, className, style }: CasualPdfProps) {
   const { engine, isLoading, error } = usePdfiumEngine();
 
   // Wrap the engine so geometry runs are sorted in visual reading order.
@@ -290,7 +290,7 @@ export function CasualPdf({ src, mode = 'view', onModeChange, apiRef, onEdited, 
                       </div>
                     }
                   >
-                    <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} engine={patchedEngine} />
+                    <Viewer documentId={activeDocumentId} mode={mode} onModeChange={onModeChange} apiRef={apiRef} onEdited={onEdited} onDocumentReplaced={onDocumentReplaced} onUndo={onUndo} onRedo={onRedo} collab={collab} identity={identity} engine={patchedEngine} />
                   </ViewerHost>
                 )
               }

@@ -23,8 +23,22 @@ export async function attachCollab(
   identity?: Identity,
 ): Promise<CollabHandle> {
   const { HocuspocusProvider } = await import('@hocuspocus/provider');
+  // services/collab's `onAuthenticate` reads the share token from the WS query
+  // string (`?share=`), not the Hocuspocus auth message — see
+  // services/collab/src/yjs.ts:101-134. Append it to the URL so the server
+  // authenticates; also pass it via `token` for servers that read the auth message.
+  let url = cfg.url;
+  if (cfg.token) {
+    try {
+      const u = new URL(cfg.url);
+      u.searchParams.set('share', cfg.token);
+      url = u.toString();
+    } catch {
+      /* non-absolute URL — leave as-is; token still goes via the auth message */
+    }
+  }
   const provider = new HocuspocusProvider({
-    url: cfg.url,
+    url,
     name: cfg.room,
     token: cfg.token,
     document: doc,

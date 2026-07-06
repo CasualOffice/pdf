@@ -53,7 +53,9 @@ import { useExportCapability } from '@embedpdf/plugin-export/react';
 import { useRenderCapability } from '@embedpdf/plugin-render/react';
 import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
-import type { Mode, CasualPdfApi, OutlineNode } from '../modes';
+import type { Mode, CasualPdfApi, OutlineNode, CollabConfig, Identity } from '../modes';
+import { useCollab } from '../use-collab';
+import type { AnnotationCapabilityLike } from '../collab-binding';
 import type { PdfTextRun } from '../textedit-pdfium';
 import './viewer.css';
 
@@ -1904,6 +1906,8 @@ export function Viewer({
   onDocumentReplaced,
   onUndo,
   onRedo,
+  collab,
+  identity,
   engine,
 }: {
   documentId: string;
@@ -1914,6 +1918,8 @@ export function Viewer({
   onDocumentReplaced?: (bytes: Uint8Array) => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  collab?: CollabConfig;
+  identity?: Identity;
   engine?: MergeEngine;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1998,6 +2004,9 @@ export function Viewer({
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
+  // Live collaboration (no-op when `collab` is omitted): bind this document's
+  // annotation plugin bidirectionally to a Yjs room. See use-collab.ts.
+  useCollab((annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined, documentId, collab, identity);
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
