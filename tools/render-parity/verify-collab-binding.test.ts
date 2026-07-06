@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCasualPdfDoc } from '../../packages/pdf-sdk/src/model.ts';
-import { bindAnnotations, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation } from '../../packages/pdf-sdk/src/collab-binding.ts';
+import { bindAnnotations, annotationBridge, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
 
 /** In-memory stand-in for the EmbedPDF annotation plugin. `create/update/delete`
  *  mutate the store AND emit an event (as the real plugin does), so the binding's
@@ -137,6 +137,37 @@ test('concurrent creates from both peers converge (both annotations on both)', (
   assert.ok(bridgeA.store.has('b1'), 'A received B’s annotation');
   assert.ok(bridgeB.store.has('a1'), 'B received A’s annotation');
   teardown();
+});
+
+test('annotationBridge adapts the EmbedPDF capability (mapping + doc filter)', () => {
+  const calls: unknown[][] = [];
+  let listener: ((ev: PluginAnnotationEvent) => void) | null = null;
+  const cap: AnnotationCapabilityLike = {
+    onAnnotationEvent(cb) { listener = cb; return () => { listener = null; }; },
+    getAnnotations() { return [{ object: { id: 'x', pageIndex: 2, foo: 1 } }]; },
+    createAnnotation(pageIndex, a) { calls.push(['create', pageIndex, a.id]); },
+    updateAnnotations(patches) { calls.push(['update', patches[0].id]); },
+    deleteAnnotations(anns) { calls.push(['delete', anns[0].id]); },
+  };
+  const bridge = annotationBridge(cap, 'doc-1');
+
+  assert.deepEqual(
+    bridge.listAnnotations(),
+    [{ pageIndex: 2, annotation: { id: 'x', pageIndex: 2, foo: 1 } }],
+    'listAnnotations lifts .object → {pageIndex, annotation}',
+  );
+
+  bridge.createAnnotation(0, { id: 'a' });
+  bridge.updateAnnotation(1, 'a', { id: 'a' });
+  bridge.deleteAnnotation(1, 'a');
+  assert.deepEqual(calls, [['create', 0, 'a'], ['update', 'a'], ['delete', 'a']], 'create/update/delete delegate');
+
+  const got: BridgeEvent[] = [];
+  bridge.onAnnotationEvent((ev) => got.push(ev));
+  listener!({ type: 'create', documentId: 'other', annotation: { id: 'z' }, pageIndex: 0, committed: true });
+  listener!({ type: 'loaded', documentId: 'doc-1', total: 3 });
+  listener!({ type: 'create', documentId: 'doc-1', annotation: { id: 'z' }, pageIndex: 0, committed: true });
+  assert.deepEqual(got.map((e) => e.type), ['loaded', 'create'], 'events for other documents are dropped');
 });
 
 test('the raw annotation round-trips losslessly through the model', () => {

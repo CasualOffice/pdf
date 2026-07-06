@@ -181,3 +181,59 @@ export function bindAnnotations(bridge: AnnotationBridge, model: CasualPdfDoc, o
     model.annotations.unobserveDeep(observer);
   };
 }
+
+/* ── EmbedPDF adapter ─────────────────────────────────────────────────────────
+   Adapt the real `useAnnotation` capability to the `AnnotationBridge` the binding
+   consumes. Kept a pure function (not a hook) so it unit-tests without React. */
+
+/** A raw annotation as the plugin tracks it (carries its own `pageIndex`). */
+type TrackedLike = { object: RawAnnotation & { pageIndex: number } };
+
+/** The EmbedPDF annotation-plugin event shape (a superset of `BridgeEvent`). */
+export interface PluginAnnotationEvent {
+  type: 'create' | 'update' | 'delete' | 'loaded';
+  documentId?: string;
+  annotation?: RawAnnotation;
+  pageIndex?: number;
+  committed?: boolean;
+  total?: number;
+}
+
+/** The subset of EmbedPDF's `useAnnotation` capability the adapter consumes. */
+export interface AnnotationCapabilityLike {
+  onAnnotationEvent(cb: (ev: PluginAnnotationEvent) => void): () => void;
+  getAnnotations(): TrackedLike[];
+  createAnnotation(pageIndex: number, annotation: RawAnnotation): void;
+  updateAnnotations(patches: { pageIndex: number; id: string; patch: RawAnnotation }[]): void;
+  deleteAnnotations(annotations: { pageIndex: number; id: string }[]): void;
+}
+
+/** Wrap the plugin capability as an `AnnotationBridge`. Events for other documents
+ *  (the capability is doc-scoped, but events carry a `documentId`) are dropped. */
+export function annotationBridge(cap: AnnotationCapabilityLike, documentId: string): AnnotationBridge {
+  return {
+    onAnnotationEvent(cb) {
+      return cap.onAnnotationEvent((ev) => {
+        if (ev.documentId && ev.documentId !== documentId) return;
+        if (ev.type === 'loaded') {
+          cb({ type: 'loaded', total: ev.total ?? 0 });
+          return;
+        }
+        if (!ev.annotation || ev.pageIndex == null) return;
+        cb({ type: ev.type, committed: !!ev.committed, pageIndex: ev.pageIndex, annotation: ev.annotation });
+      });
+    },
+    listAnnotations() {
+      return cap.getAnnotations().map((t) => ({ pageIndex: t.object.pageIndex, annotation: t.object }));
+    },
+    createAnnotation(pageIndex, annotation) {
+      cap.createAnnotation(pageIndex, annotation);
+    },
+    updateAnnotation(pageIndex, id, annotation) {
+      cap.updateAnnotations([{ pageIndex, id, patch: annotation }]);
+    },
+    deleteAnnotation(pageIndex, id) {
+      cap.deleteAnnotations([{ pageIndex, id }]);
+    },
+  };
+}

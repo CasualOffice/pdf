@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CasualPdf, Icon, type Mode, type CasualPdfApi } from '@casualoffice/pdf';
 import { signPdf } from '@casualoffice/pdf/sign';
 import { AiPanel } from '@casualoffice/pdf/ai';
@@ -100,6 +100,21 @@ export function App() {
   const objectUrl = useRef<string | null>(null);
   const api = useRef<CasualPdfApi | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  // Live co-editing opt-in: enable when a collab server is configured AND the URL
+  // carries a `?room=`. The share token (→ role, server-enforced) rides `?share=`.
+  // The Yjs endpoint is `/yjs` on the collab server.
+  const collab = useMemo(() => {
+    if (!COLLAB_WS_URL) return undefined;
+    const p = new URLSearchParams(window.location.search);
+    const room = p.get('room');
+    if (!room) return undefined;
+    const base = COLLAB_WS_URL.replace(/\/+$/, '');
+    return { url: base.endsWith('/yjs') ? base : `${base}/yjs`, room, token: p.get('share') ?? undefined };
+  }, []);
+  const identity = useMemo(
+    () => (collab ? { name: `Guest ${Math.floor(Math.random() * 900 + 100)}`, color: `hsl(${Math.floor(Math.random() * 360)} 70% 50%)` } : undefined),
+    [collab],
+  );
   // True inside the Casual Office desktop shell (?desk=1). Routes Open/Save and
   // the initial document load through the native Tauri bridge instead of the
   // browser file picker / <a download>. A no-op in a plain browser.
@@ -810,6 +825,8 @@ export function App() {
               onDocumentReplaced={onDocumentReplaced}
               onUndo={() => { if (api.current?.canUndo()) api.current.undo(); else versionUndo(); }}
               onRedo={() => { if (api.current?.canRedo()) api.current.redo(); else versionRedo(); }}
+              collab={collab}
+              identity={identity}
               className="viewer"
             />
             {!aiOpen && (
