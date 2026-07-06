@@ -205,8 +205,15 @@ pub fn redact_pdf(bytes: &[u8], pages: &[PageRects]) -> Result<RedactOutcome, Re
     let mut doc = Document::load_mem(bytes).map_err(|e| RedactError::Parse(e.to_string()))?;
     // page_index → ObjectId (get_pages is ordered by page number).
     let page_ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+    // How many times each Form XObject is invoked doc-wide (only single-use ones
+    // are safe to edit in place — see `descend_form_xobject`).
+    let use_count = count_xobject_uses(&doc);
     let mut low_confidence_pages: Vec<usize> = Vec::new();
 
+    // Phase 1 — immutable reads: walk each page (descending into single-use Form
+    // XObjects), collecting the new page content + any redacted XObject streams.
+    let mut page_edits: Vec<(ObjectId, Vec<u8>)> = Vec::new();
+    let mut xobject_edits: Vec<(ObjectId, Vec<u8>)> = Vec::new();
     for pr in pages {
         let Some(&page_id) = page_ids.get(pr.page_index) else {
             continue;
@@ -216,23 +223,49 @@ pub fn redact_pdf(bytes: &[u8], pages: &[PageRects]) -> Result<RedactOutcome, Re
         }
         let mb = page_media_box(&doc, page_id);
         let rects: Vec<Rect> = pr.rects.iter().map(|r| frac_to_user(r, mb)).collect();
-        let widths = collect_font_widths(&doc, page_id);
+        let fonts = collect_font_widths(&doc, page_id);
+        let resources = page_resources(&doc, page_id);
         let content = doc
             .get_and_decode_page_content(page_id)
             .map_err(|e| RedactError::Parse(e.to_string()))?;
-        let (new_ops, confident) = redact_content(content.operations, &rects, &widths);
-        // Flatten the page if we couldn't decode a font OR it has Form XObjects
-        // whose (possibly text-bearing) content we don't descend into.
-        if !confident || page_has_form_xobject(&doc, page_id) {
+        let mut ctx = XCtx {
+            doc: &doc,
+            use_count: &use_count,
+            edits: Vec::new(),
+            depth: 0,
+        };
+        let (new_ops, confident) = redact_content(
+            content.operations,
+            IDENTITY,
+            &rects,
+            &fonts,
+            &resources,
+            &mut ctx,
+        );
+        if !confident {
             low_confidence_pages.push(pr.page_index);
         }
+        xobject_edits.extend(ctx.edits);
         let mut out = Content {
             operations: new_ops,
         };
         append_black_boxes(&mut out, &rects);
         let encoded = out.encode().map_err(|e| RedactError::Save(e.to_string()))?;
+        page_edits.push((page_id, encoded));
+    }
+
+    // Phase 2 — mutable: apply the page + XObject stream edits.
+    for (page_id, encoded) in page_edits {
         doc.change_page_content(page_id, encoded)
             .map_err(|e| RedactError::Save(e.to_string()))?;
+    }
+    for (id, content) in xobject_edits {
+        if let Ok(Object::Stream(s)) = doc.get_object_mut(id) {
+            s.set_content(content);
+            // We wrote DECODED content → drop the filter so the bytes are read raw.
+            s.dict.remove(b"Filter");
+            s.dict.remove(b"DecodeParms");
+        }
     }
 
     let mut buf = Vec::new();
@@ -244,30 +277,132 @@ pub fn redact_pdf(bytes: &[u8], pages: &[PageRects]) -> Result<RedactOutcome, Re
     })
 }
 
-/// Does the page reference any Form XObject? We walk only the page's own content
-/// stream, not the content of Form XObjects it invokes with `Do`, so text hidden
-/// inside one wouldn't be removed. When a page has one we can't guarantee complete
-/// removal → the caller flattens it. (Descending into XObjects is a follow-up.)
-fn page_has_form_xobject(doc: &Document, page_id: ObjectId) -> bool {
-    let Ok(page) = doc.get_dictionary(page_id) else {
-        return false;
-    };
-    let Some(Object::Dictionary(resources)) =
-        page.get(b"Resources").ok().and_then(|o| resolve(doc, o))
+/// The page's `/Resources` dictionary, walking `/Parent` for the inherited value.
+fn page_resources(doc: &Document, page_id: ObjectId) -> Dictionary {
+    let mut id = page_id;
+    for _ in 0..32 {
+        let Ok(dict) = doc.get_dictionary(id) else {
+            break;
+        };
+        if let Some(Object::Dictionary(r)) =
+            dict.get(b"Resources").ok().and_then(|o| resolve(doc, o))
+        {
+            return r.clone();
+        }
+        match dict.get(b"Parent") {
+            Ok(Object::Reference(r)) => id = *r,
+            _ => break,
+        }
+    }
+    Dictionary::new()
+}
+
+/// Glyph metrics for every font in a `/Resources` dictionary (used for XObject
+/// content, which carries its own `/Font` resources).
+fn fonts_from_resources(doc: &Document, resources: &Dictionary) -> BTreeMap<String, FontInfo> {
+    let mut out = BTreeMap::new();
+    let Some(Object::Dictionary(fonts)) = resources.get(b"Font").ok().and_then(|o| resolve(doc, o))
     else {
-        return false;
+        return out;
     };
+    for (name, v) in fonts.iter() {
+        if let Some(Object::Dictionary(font_dict)) = resolve(doc, v) {
+            if let Some(info) = font_info(doc, font_dict) {
+                out.insert(String::from_utf8_lossy(name).into_owned(), info);
+            }
+        }
+    }
+    out
+}
+
+/// Resolve a `Do /name` to a Form XObject: its ObjectId (so we can edit it), its
+/// `/Matrix`, its decoded content operators, and the `/Resources` its content
+/// draws with (inheriting the parent's if it has none). `None` for image / external
+/// / non-indirect XObjects (nothing text-bearing for us to redact in place).
+fn resolve_form_xobject(
+    doc: &Document,
+    resources: &Dictionary,
+    name: &[u8],
+) -> Option<(ObjectId, Mat, Vec<Operation>, Dictionary)> {
     let Some(Object::Dictionary(xobjects)) =
         resources.get(b"XObject").ok().and_then(|o| resolve(doc, o))
     else {
-        return false;
+        return None;
     };
-    xobjects.iter().any(|(_, v)| {
-        matches!(
-            resolve(doc, v),
-            Some(Object::Stream(s)) if matches!(s.dict.get(b"Subtype"), Ok(Object::Name(n)) if n.as_slice() == b"Form")
-        )
-    })
+    let id = match xobjects.get(name).ok()? {
+        Object::Reference(id) => *id,
+        _ => return None, // must be indirect so we can rewrite the stream
+    };
+    let Ok(Object::Stream(stream)) = doc.get_object(id) else {
+        return None;
+    };
+    if !matches!(stream.dict.get(b"Subtype"), Ok(Object::Name(n)) if n.as_slice() == b"Form") {
+        return None; // image XObject → no text
+    }
+    let matrix = match stream.dict.get(b"Matrix") {
+        Ok(Object::Array(a)) if a.len() == 6 => [
+            num(&a[0]),
+            num(&a[1]),
+            num(&a[2]),
+            num(&a[3]),
+            num(&a[4]),
+            num(&a[5]),
+        ],
+        _ => IDENTITY,
+    };
+    // Uncompressed streams make `decompressed_content` error in some lopdf
+    // versions → fall back to the raw content bytes.
+    let content = stream
+        .decompressed_content()
+        .unwrap_or_else(|_| stream.content.clone());
+    let ops = Content::decode(&content).ok()?.operations;
+    let sub_resources = match stream
+        .dict
+        .get(b"Resources")
+        .ok()
+        .and_then(|o| resolve(doc, o))
+    {
+        Some(Object::Dictionary(d)) => d.clone(),
+        _ => resources.clone(), // inherit the invoking context's resources
+    };
+    Some((id, matrix, ops, sub_resources))
+}
+
+/// Count how many times each Form XObject is invoked across the whole document
+/// (page contents + nested XObject contents). Only single-use XObjects are safe to
+/// redact in place — see `descend_form_xobject`.
+fn count_xobject_uses(doc: &Document) -> BTreeMap<ObjectId, usize> {
+    let mut counts = BTreeMap::new();
+    for &page_id in doc.get_pages().values() {
+        let resources = page_resources(doc, page_id);
+        if let Ok(content) = doc.get_and_decode_page_content(page_id) {
+            count_uses_in(doc, &content.operations, &resources, &mut counts, 0);
+        }
+    }
+    counts
+}
+
+fn count_uses_in(
+    doc: &Document,
+    ops: &[Operation],
+    resources: &Dictionary,
+    counts: &mut BTreeMap<ObjectId, usize>,
+    depth: u8,
+) {
+    if depth >= 8 {
+        return;
+    }
+    for op in ops {
+        if op.operator == "Do" {
+            if let Some(Object::Name(name)) = op.operands.first() {
+                if let Some((id, _, sub_ops, sub_res)) = resolve_form_xobject(doc, resources, name)
+                {
+                    *counts.entry(id).or_insert(0) += 1;
+                    count_uses_in(doc, &sub_ops, &sub_res, counts, depth + 1);
+                }
+            }
+        }
+    }
 }
 
 /// The page MediaBox `[llx, lly, urx, ury]`, walking the `/Parent` chain for the
@@ -416,14 +551,28 @@ fn parse_cid_widths(doc: &Document, w: &[Object], out: &mut BTreeMap<u32, f64>) 
     }
 }
 
+/// Shared context for a redaction walk: the document (to resolve XObjects), how
+/// many times each Form XObject is invoked document-wide (only single-use ones are
+/// safe to edit in place), the redacted-XObject-stream edits collected so far, and
+/// the current recursion depth (guards against XObject cycles).
+struct XCtx<'a> {
+    doc: &'a Document,
+    use_count: &'a BTreeMap<ObjectId, usize>,
+    edits: Vec<(ObjectId, Vec<u8>)>,
+    depth: u8,
+}
+
 /* ── The content walk ───────────────────────────────────────────────────────── */
 fn redact_content(
     ops: Vec<Operation>,
+    base_ctm: Mat,
     rects: &[Rect],
     fonts: &BTreeMap<String, FontInfo>,
+    resources: &Dictionary,
+    ctx: &mut XCtx,
 ) -> (Vec<Operation>, bool) {
     let mut out: Vec<Operation> = Vec::with_capacity(ops.len());
-    let mut ctm = IDENTITY;
+    let mut ctm = base_ctm;
     let mut ctm_stack: Vec<Mat> = Vec::new();
     let mut ts = TextState::default();
     // Cleared if we redact from a font we can't decode precisely (→ flatten page).
@@ -569,10 +718,66 @@ fn redact_content(
                 }
                 out.push(op);
             }
+            // Invoke an XObject. If it's a Form XObject we descend into it (its
+            // text is drawn in the current CTM); the `Do` itself stays — only the
+            // XObject's own content stream is edited. Image XObjects have no text.
+            "Do" if op.operands.len() == 1 => {
+                if let Object::Name(name) = &op.operands[0] {
+                    if !descend_form_xobject(name, ctm, rects, resources, ctx) {
+                        confident = false; // couldn't safely descend → flatten page
+                    }
+                }
+                out.push(op);
+            }
             _ => out.push(op),
         }
     }
     (out, confident)
+}
+
+/// Redact a Form XObject invoked by `Do /name` at the given CTM. Returns `true`
+/// when it's safe (not a Form XObject, or successfully redacted in place) and
+/// `false` when the page must be flattened instead (a shared XObject we mustn't
+/// mutate, deep nesting, or an encode failure). Fail-closed by construction.
+fn descend_form_xobject(
+    name: &[u8],
+    ctm: Mat,
+    rects: &[Rect],
+    resources: &Dictionary,
+    ctx: &mut XCtx,
+) -> bool {
+    if ctx.depth >= 8 {
+        return false; // pathological nesting / cycle → flatten
+    }
+    let Some((id, matrix, content_ops, sub_resources)) =
+        resolve_form_xobject(ctx.doc, resources, name)
+    else {
+        return true; // not a Form XObject (image / external / unresolved) → no text
+    };
+    // Only edit an XObject invoked EXACTLY once document-wide: editing a shared
+    // stream would wrongly strip text from its other placements.
+    if ctx.use_count.get(&id).copied().unwrap_or(0) != 1 {
+        return false;
+    }
+    // The XObject draws in (its /Matrix) ∘ (CTM at the Do). Rects stay in page
+    // space; the composed CTM maps the XObject's glyphs there for hit-testing.
+    let sub_ctm = mul(matrix, ctm);
+    let sub_fonts = fonts_from_resources(ctx.doc, &sub_resources);
+    ctx.depth += 1;
+    let (new_ops, confident) =
+        redact_content(content_ops, sub_ctm, rects, &sub_fonts, &sub_resources, ctx);
+    ctx.depth -= 1;
+    match (Content {
+        operations: new_ops,
+    })
+    .encode()
+    {
+        Ok(bytes) => {
+            ctx.edits.push((id, bytes));
+            confident
+        }
+        Err(_) => false,
+    }
 }
 
 /// Advance of one glyph along text x, in unscaled text-space units. Word spacing
@@ -1046,6 +1251,126 @@ mod tests {
         assert!(
             !bytes.windows(2).any(|w| w == [0, 2]),
             "CID 2 removed: {bytes:?}"
+        );
+    }
+
+    /// Build a PDF whose page(s) draw their text via `Do /Fm0`, where Fm0 is a
+    /// Form XObject containing "SECRET PUBLIC". With `pages == 2` the SAME XObject
+    /// is invoked on both → shared → must be flattened, not edited in place.
+    fn build_xobject_pdf(pages: usize) -> Vec<u8> {
+        let mut doc = Document::with_version("1.5");
+        let glyph_w = 600.0;
+        let widths: Vec<Object> = (32u8..=126).map(|_| Object::Real(glyph_w as f32)).collect();
+        let font_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+            "FirstChar" => 32i64, "LastChar" => 126i64, "Widths" => Object::Array(widths),
+        });
+        let xobj_dict = lopdf::dictionary! {
+            "Type" => "XObject", "Subtype" => "Form",
+            "BBox" => Object::Array(vec![0.into(), 0.into(), 612.into(), 792.into()]),
+            "Resources" => lopdf::dictionary! { "Font" => lopdf::dictionary! { "F1" => font_id } },
+        };
+        let fm0_id = doc.add_object(Stream::new(
+            xobj_dict,
+            b"BT /F1 24 Tf 100 700 Td (SECRET PUBLIC) Tj ET".to_vec(),
+        ));
+        let page_res = lopdf::dictionary! { "XObject" => lopdf::dictionary! { "Fm0" => fm0_id } };
+        let pages_id = doc.new_object_id();
+        let mut kids = Vec::new();
+        for _ in 0..pages {
+            let content_id = doc.add_object(Stream::new(Dictionary::new(), b"/Fm0 Do".to_vec()));
+            let page_id = doc.add_object(lopdf::dictionary! {
+                "Type" => "Page", "Parent" => pages_id, "Contents" => content_id,
+                "Resources" => page_res.clone(),
+                "MediaBox" => Object::Array(vec![0.into(), 0.into(), 612.into(), 792.into()]),
+            });
+            kids.push(page_id.into());
+        }
+        let count = kids.len() as i64;
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(lopdf::dictionary! {
+                "Type" => "Pages", "Kids" => Object::Array(kids), "Count" => count,
+            }),
+        );
+        let catalog_id =
+            doc.add_object(lopdf::dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog_id);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    /// Shown text of the (first) Form XObject stream in a document.
+    fn xobject_shown_text(doc: &Document) -> String {
+        for obj in doc.objects.values() {
+            if let Object::Stream(s) = obj {
+                if matches!(s.dict.get(b"Subtype"), Ok(Object::Name(n)) if n.as_slice() == b"Form")
+                {
+                    let content = s
+                        .decompressed_content()
+                        .unwrap_or_else(|_| s.content.clone());
+                    if let Ok(c) = Content::decode(&content) {
+                        return extract_shown_text(&c);
+                    }
+                }
+            }
+        }
+        String::new()
+    }
+
+    #[test]
+    fn redacts_text_inside_a_single_use_form_xobject() {
+        let pdf = build_xobject_pdf(1);
+        let adv = 600.0 / 1000.0 * 24.0;
+        let end = 100.0 + 6.0 * adv;
+        let out = redact_pdf(
+            &pdf,
+            &[PageRects {
+                page_index: 0,
+                rects: vec![frac(95.0, 695.0, end + 1.0, 730.0)],
+            }],
+        )
+        .expect("redact");
+        assert!(
+            out.low_confidence_pages.is_empty(),
+            "single-use XObject is redacted in place, not flattened"
+        );
+        let doc = Document::load_mem(&out.bytes).unwrap();
+        let shown = xobject_shown_text(&doc);
+        assert!(
+            !shown.contains("SECRET"),
+            "XObject text redacted, got {shown:?}"
+        );
+        assert!(
+            shown.contains("PUBLIC"),
+            "XObject surrounding text kept, got {shown:?}"
+        );
+    }
+
+    #[test]
+    fn flattens_a_shared_form_xobject() {
+        let pdf = build_xobject_pdf(2); // Fm0 invoked on both pages → shared
+        let adv = 600.0 / 1000.0 * 24.0;
+        let end = 100.0 + 6.0 * adv;
+        let out = redact_pdf(
+            &pdf,
+            &[PageRects {
+                page_index: 0,
+                rects: vec![frac(95.0, 695.0, end + 1.0, 730.0)],
+            }],
+        )
+        .expect("redact");
+        assert_eq!(
+            out.low_confidence_pages,
+            vec![0],
+            "a shared XObject can't be edited in place → page flagged for flatten"
+        );
+        // The shared stream must be left intact (editing it would corrupt page 2).
+        let doc = Document::load_mem(&out.bytes).unwrap();
+        assert!(
+            xobject_shown_text(&doc).contains("SECRET"),
+            "shared XObject left untouched (page is flattened by the caller instead)"
         );
     }
 
