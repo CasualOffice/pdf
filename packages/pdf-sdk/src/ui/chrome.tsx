@@ -57,6 +57,7 @@ import type { Mode, CasualPdfApi, OutlineNode, CollabConfig, Identity } from '..
 import { useCollab } from '../use-collab';
 import type { AnnotationCapabilityLike } from '../collab-binding';
 import { initials, type Peer } from '../presence';
+import type { AnnotationData } from '../model';
 import type { PdfTextRun } from '../textedit-pdfium';
 import './viewer.css';
 
@@ -1925,6 +1926,61 @@ function PresenceStack({ peers }: { peers: Peer[] }) {
   );
 }
 
+/* ── Collab suggestions (pending Suggest-mode proposals) ──────────────────── */
+function SuggestionsPanel({
+  suggestions,
+  onAccept,
+  onReject,
+}: {
+  suggestions: AnnotationData[];
+  onAccept: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
+  return (
+    <aside
+      className="cpdf__suggestions"
+      aria-label={`${suggestions.length} pending suggestion${suggestions.length === 1 ? '' : 's'}`}
+    >
+      <div className="cpdf__suggestions-head">
+        <Icon name="suggest" size={16} />
+        <span>Suggestions ({suggestions.length})</span>
+      </div>
+      <ul className="cpdf__suggestions-list">
+        {suggestions.map((s) => (
+          <li key={s.id} className="cpdf__suggestion">
+            <div className="cpdf__suggestion-meta">
+              <span className="cpdf__suggestion-type">{s.type}</span>
+              <span className="cpdf__suggestion-sub">
+                {s.author || 'someone'} · p.{(s.page ?? 0) + 1}
+              </span>
+            </div>
+            <div className="cpdf__suggestion-actions">
+              <button
+                type="button"
+                className="cpdf-iconbtn"
+                title="Accept suggestion"
+                aria-label={`Accept ${s.type} suggestion`}
+                onClick={() => onAccept(s.id)}
+              >
+                <Icon name="check" size={16} />
+              </button>
+              <button
+                type="button"
+                className="cpdf-iconbtn"
+                title="Reject suggestion"
+                aria-label={`Reject ${s.type} suggestion`}
+                onClick={() => onReject(s.id)}
+              >
+                <Icon name="trash" size={16} />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
 /* ── The viewer ───────────────────────────────────────────────────────────── */
 export function Viewer({
   documentId,
@@ -2034,8 +2090,15 @@ export function Viewer({
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
   // Live collaboration (no-op when `collab` is omitted): bind this document's
-  // annotation plugin bidirectionally to a Yjs room + surface remote peers.
-  const { peers } = useCollab((annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined, documentId, collab, identity);
+  // annotation plugin bidirectionally to a Yjs room + surface remote peers and
+  // pending suggestions.
+  const { peers, suggestions, acceptSuggestion, rejectSuggestion } = useCollab(
+    (annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined,
+    documentId,
+    collab,
+    identity,
+    mode,
+  );
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
@@ -2914,6 +2977,9 @@ export function Viewer({
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
         {peers.length > 0 && <PresenceStack peers={peers} />}
+        {suggestions.length > 0 && (
+          <SuggestionsPanel suggestions={suggestions} onAccept={acceptSuggestion} onReject={rejectSuggestion} />
+        )}
         <div className="cpdf__main">
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => { closeInlineEditors(); setOrganizing(true); }} onSign={() => { closeInlineEditors(); setSigning(true); }} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}

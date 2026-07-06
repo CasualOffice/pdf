@@ -112,3 +112,8 @@ export function rejectSuggestion(model: CasualPdfDoc, id: string): void {
 export function readAnnotations(model: CasualPdfDoc): AnnotationData[] {
   return model.annotations.toArray().map((m) => m.toJSON() as AnnotationData);
 }
+
+/** The pending suggestions (entries in the `suggested` state), for a review UI. */
+export function readSuggestions(model: CasualPdfDoc): AnnotationData[] {
+  return readAnnotations(model).filter((a) => a.state === 'suggested');
+}
