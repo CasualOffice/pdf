@@ -106,12 +106,41 @@ mod wasm {
         Ok(pages)
     }
 
-    /// Surgically redact `pdf` (true byte removal, surrounding text preserved),
-    /// returning the new PDF bytes. `spec` is the flat array from `parse_spec`.
+    /// Redaction result across the wasm boundary: the new PDF bytes plus the pages
+    /// the core couldn't redact confidently (caller flattens those).
     #[wasm_bindgen]
-    pub fn redact_pdf_wasm(pdf: &[u8], spec: &[f64]) -> Result<Vec<u8>, JsValue> {
+    pub struct RedactResult {
+        bytes: Vec<u8>,
+        low_confidence_pages: Vec<u32>,
+    }
+
+    #[wasm_bindgen]
+    impl RedactResult {
+        #[wasm_bindgen(getter)]
+        pub fn bytes(&self) -> Vec<u8> {
+            self.bytes.clone()
+        }
+        #[wasm_bindgen(getter)]
+        pub fn low_confidence_pages(&self) -> Vec<u32> {
+            self.low_confidence_pages.clone()
+        }
+    }
+
+    /// Surgically redact `pdf` (true byte removal, surrounding text preserved),
+    /// returning the new PDF bytes + any pages that need flattening. `spec` is the
+    /// flat array from `parse_spec`.
+    #[wasm_bindgen]
+    pub fn redact_pdf_wasm(pdf: &[u8], spec: &[f64]) -> Result<RedactResult, JsValue> {
         let pages = parse_spec(spec).map_err(JsValue::from_str)?;
-        redact_pdf(pdf, &pages).map_err(|e| JsValue::from_str(&e.to_string()))
+        let outcome = redact_pdf(pdf, &pages).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(RedactResult {
+            bytes: outcome.bytes,
+            low_confidence_pages: outcome
+                .low_confidence_pages
+                .into_iter()
+                .map(|p| p as u32)
+                .collect(),
+        })
     }
 
     /* ── Tier-2 text editing ──────────────────────────────────────────────── */

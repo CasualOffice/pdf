@@ -1,6 +1,48 @@
 /* @ts-self-types="./casual_pdf_core.d.ts" */
 
 /**
+ * Redaction result across the wasm boundary: the new PDF bytes plus the pages
+ * the core couldn't redact confidently (caller flattens those).
+ */
+export class RedactResult {
+    static __wrap(ptr) {
+        const obj = Object.create(RedactResult.prototype);
+        obj.__wbg_ptr = ptr;
+        RedactResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        RedactResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_redactresult_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get bytes() {
+        const ret = wasm.redactresult_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    get low_confidence_pages() {
+        const ret = wasm.redactresult_low_confidence_pages(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) RedactResult.prototype[Symbol.dispose] = RedactResult.prototype.free;
+
+/**
  * Build identifier — proves the same crate compiles to wasm32. The PDFium
  * render path (mirroring the native module) is wired through a wasm PDFium
  * build in Phase 0.5.
@@ -91,10 +133,11 @@ export function move_text_run_wasm(pdf, page_index, run_id, dx, dy) {
 
 /**
  * Surgically redact `pdf` (true byte removal, surrounding text preserved),
- * returning the new PDF bytes. `spec` is the flat array from `parse_spec`.
+ * returning the new PDF bytes + any pages that need flattening. `spec` is the
+ * flat array from `parse_spec`.
  * @param {Uint8Array} pdf
  * @param {Float64Array} spec
- * @returns {Uint8Array}
+ * @returns {RedactResult}
  */
 export function redact_pdf_wasm(pdf, spec) {
     const ptr0 = passArray8ToWasm0(pdf, wasm.__wbindgen_malloc);
@@ -102,12 +145,10 @@ export function redact_pdf_wasm(pdf, spec) {
     const ptr1 = passArrayF64ToWasm0(spec, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.redact_pdf_wasm(ptr0, len0, ptr1, len1);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v3;
+    return RedactResult.__wrap(ret[0]);
 }
 
 /**
@@ -190,10 +231,19 @@ function __wbg_get_imports() {
     };
 }
 
+const RedactResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_redactresult_free(ptr, 1));
+
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
     wasm.__wbindgen_externrefs.set(idx, obj);
     return idx;
+}
+
+function getArrayU32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 function getArrayU8FromWasm0(ptr, len) {
@@ -219,6 +269,14 @@ function getFloat64ArrayMemory0() {
 
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -335,6 +393,7 @@ function __wbg_finalize_init(instance, module) {
     wasmModule = module;
     cachedDataViewMemory0 = null;
     cachedFloat64ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

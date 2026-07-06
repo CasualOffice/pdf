@@ -25,6 +25,11 @@ fn main() {
         }],
     )
     .expect("redact");
-    std::fs::write(&a[7], &out).expect("write output");
-    eprintln!("wrote {} ({} bytes)", a[7], out.len());
+    std::fs::write(&a[7], &out.bytes).expect("write output");
+    eprintln!(
+        "wrote {} ({} bytes, low-confidence pages: {:?})",
+        a[7],
+        out.bytes.len(),
+        out.low_confidence_pages
+    );
 }
