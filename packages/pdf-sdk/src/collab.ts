@@ -3,10 +3,14 @@
 
 import type * as Y from 'yjs';
 import type { CollabConfig, Identity } from './modes';
+import { readPeers, type Peer } from './presence';
 
 /** A live collab connection that can be torn down. */
 export interface CollabHandle {
   disconnect(): void;
+  /** Subscribe to the room's remote peers (awareness). Fires immediately with the
+   *  current set, then on every join/leave/identity change. Returns unsubscribe. */
+  onPresence(cb: (peers: Peer[]) => void): () => void;
 }
 
 /**
@@ -51,5 +55,13 @@ export async function attachCollab(
   }
   return {
     disconnect: () => provider.destroy(),
+    onPresence: (cb) => {
+      const aw = provider.awareness;
+      if (!aw) return () => {};
+      const emit = () => cb(readPeers(aw.getStates() as Map<number, { user?: { name?: string; color?: string } }>, aw.clientID));
+      aw.on('change', emit);
+      emit(); // fire with the current set immediately
+      return () => aw.off('change', emit);
+    },
   };
 }

@@ -56,6 +56,7 @@ import { Icon, type IconName } from './icons';
 import type { Mode, CasualPdfApi, OutlineNode, CollabConfig, Identity } from '../modes';
 import { useCollab } from '../use-collab';
 import type { AnnotationCapabilityLike } from '../collab-binding';
+import { initials, type Peer } from '../presence';
 import type { PdfTextRun } from '../textedit-pdfium';
 import './viewer.css';
 
@@ -1896,6 +1897,34 @@ function PlacementBanner({ documentId }: { documentId: string }) {
   );
 }
 
+/* ── Collab presence (remote peers) ───────────────────────────────────────── */
+function PresenceStack({ peers }: { peers: Peer[] }) {
+  const shown = peers.slice(0, 5);
+  const extra = peers.length - shown.length;
+  return (
+    <div
+      className="cpdf__presence"
+      role="group"
+      aria-label={`${peers.length} collaborator${peers.length === 1 ? '' : 's'} online`}
+    >
+      {shown.map((p) => (
+        <span
+          key={p.clientId}
+          className="cpdf__presence-avatar"
+          title={p.name}
+          aria-label={p.name}
+          style={{ background: p.color ?? 'var(--color-accent, #2563eb)' }}
+        >
+          {initials(p.name)}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="cpdf__presence-avatar cpdf__presence-more" title={`${extra} more`}>+{extra}</span>
+      )}
+    </div>
+  );
+}
+
 /* ── The viewer ───────────────────────────────────────────────────────────── */
 export function Viewer({
   documentId,
@@ -2005,8 +2034,8 @@ export function Viewer({
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
   // Live collaboration (no-op when `collab` is omitted): bind this document's
-  // annotation plugin bidirectionally to a Yjs room. See use-collab.ts.
-  useCollab((annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined, documentId, collab, identity);
+  // annotation plugin bidirectionally to a Yjs room + surface remote peers.
+  const { peers } = useCollab((annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined, documentId, collab, identity);
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
@@ -2884,6 +2913,7 @@ export function Viewer({
           AnnotationLayer's annotationRenderers). */}
       <FormRendererRegistration />
       <div className="cpdf" id={ROOT_ID} data-tool={activeToolId ?? undefined}>
+        {peers.length > 0 && <PresenceStack peers={peers} />}
         <div className="cpdf__main">
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => { closeInlineEditors(); setOrganizing(true); }} onSign={() => { closeInlineEditors(); setSigning(true); }} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}

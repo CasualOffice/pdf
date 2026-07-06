@@ -12,6 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCasualPdfDoc } from '../../packages/pdf-sdk/src/model.ts';
 import { bindAnnotations, annotationBridge, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
+import { readPeers, initials, type AwarenessUserState } from '../../packages/pdf-sdk/src/presence.ts';
 
 /** In-memory stand-in for the EmbedPDF annotation plugin. `create/update/delete`
  *  mutate the store AND emit an event (as the real plugin does), so the binding's
@@ -186,4 +187,26 @@ test('the raw annotation round-trips losslessly through the model', () => {
   assert.equal(got!.pageIndex, 2, 'page index preserved');
   assert.deepEqual(got!.annotation, rich, 'every field (inkList, color, opacity) preserved');
   teardown();
+});
+
+test('readPeers excludes self + nameless entries, sorted by clientId', () => {
+  const states = new Map<number, AwarenessUserState>([
+    [5, { user: { name: 'Eve' } }],
+    [1, { user: { name: 'Alice', color: '#f00' } }],
+    [2, {}],
+    [3, { user: {} }],
+    [9, { user: { name: 'Self' } }],
+  ]);
+  assert.deepEqual(readPeers(states, 9), [
+    { clientId: 1, name: 'Alice', color: '#f00' },
+    { clientId: 5, name: 'Eve', color: undefined },
+  ]);
+  assert.deepEqual(readPeers(new Map(), 1), [], 'empty room → no peers');
+});
+
+test('initials builds up to two uppercase letters', () => {
+  assert.equal(initials('Ada Lovelace'), 'AL');
+  assert.equal(initials('Grace'), 'GR');
+  assert.equal(initials('a b c'), 'AC');
+  assert.equal(initials('   '), '?');
 });
