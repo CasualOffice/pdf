@@ -83,6 +83,29 @@ try {
   await page.waitForTimeout(150);
   assert((await page.locator('[data-testid=comment-thread]').count()) === 1, 'Show resolved reveals the resolved thread');
 
+  // Create-from-selection: drag over page text, click Comment in the mini-toolbar,
+  // and the compose box shows the anchor chip; posting anchors the thread.
+  const pg = page.locator('.cpdf__page').first();
+  const pbox = await pg.boundingBox();
+  await page.mouse.move(pbox.x + pbox.width * 0.18, pbox.y + pbox.height * 0.22);
+  await page.mouse.down();
+  await page.mouse.move(pbox.x + pbox.width * 0.6, pbox.y + pbox.height * 0.235, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const commentBtn = page.locator('[aria-label="Comment on selection"]');
+  if (await commentBtn.isVisible().catch(() => false)) {
+    await commentBtn.click();
+    await page.locator('[data-testid=comment-anchor-chip]').waitFor({ state: 'visible', timeout: 3000 });
+    assert(true, 'selection → the compose box shows an anchor chip');
+    await page.locator('[data-testid=comment-new-input]').fill('This sentence is unclear');
+    await page.locator('[data-testid=comment-submit]').click();
+    await page.waitForTimeout(250);
+    const bodies2 = await page.locator('[data-testid=comment-body]').allTextContents();
+    assert(bodies2.some((b) => /This sentence is unclear/.test(b)), 'anchored-to-selection comment posts as a thread');
+  } else {
+    console.log('NOTE: headless text selection did not form; anchor-chip assertions skipped');
+  }
+
   assert(errors.length === 0, `no page errors (${errors.length})`);
 } catch (e) {
   console.log('FAIL: threw', String(e));

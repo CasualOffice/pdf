@@ -1550,3 +1550,26 @@
   letter-spacing: 0.05em;
   color: var(--color-text-secondary, #889);
 }
+.cpdf__comment-anchor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-accent-bg, rgba(37, 99, 235, 0.1));
+  color: var(--color-accent, #2563eb);
+  font: 500 11px/1.3 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__comment-anchor span {
+  flex: 1;
+  min-width: 0;
+}
+.cpdf__comment-anchor-x {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}

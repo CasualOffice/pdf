@@ -1583,12 +1583,16 @@ function CommentsSidebar({
   comments,
   currentPage,
   canEdit,
+  anchor,
+  onAnchorUsed,
   onClose,
 }: {
   documentId: string;
   comments: CommentsState;
   currentPage: number;
   canEdit: boolean;
+  anchor: { page: number; rect: [number, number, number, number] } | null;
+  onAnchorUsed: () => void;
   onClose: () => void;
 }) {
   const { provides: scrollApi } = useScroll(documentId);
@@ -1610,12 +1614,16 @@ function CommentsSidebar({
     scrollApi?.scrollToPage({ pageNumber: pageIndex + 1 });
     scope?.selectAnnotation(pageIndex, id);
   };
-  const addOnCurrentPage = () => {
-    if (draft.trim()) {
-      // Anchor to the current page (rect null → page-level; region anchoring lands next slice).
+  const postComment = () => {
+    if (!draft.trim()) return;
+    // Anchor to the captured text selection (region) if present, else the page.
+    if (anchor) {
+      comments.addComment(anchor.page, anchor.rect, draft);
+      onAnchorUsed();
+    } else {
       comments.addComment(currentPage - 1, null, draft);
-      setDraft('');
     }
+    setDraft('');
   };
   const open = comments.threads.filter((t) => !t.resolved);
   const done = comments.threads.filter((t) => t.resolved);
@@ -1628,23 +1636,32 @@ function CommentsSidebar({
       </div>
       {canEdit && (
         <div className="cpdf__comment-new">
+          {anchor && (
+            <div className="cpdf__comment-anchor" data-testid="comment-anchor-chip">
+              <Icon name="comments" size={12} />
+              <span>Commenting on selected text · p.{anchor.page + 1}</span>
+              <button type="button" className="cpdf__comment-anchor-x" aria-label="Clear anchor" onClick={onAnchorUsed}>
+                ×
+              </button>
+            </div>
+          )}
           <textarea
             className="cpdf__comment-new-input"
             data-testid="comment-new-input"
-            placeholder={`Comment on page ${currentPage}… (@ to mention)`}
+            placeholder={anchor ? 'Comment on the selected text… (@ to mention)' : `Comment on page ${currentPage}… (@ to mention)`}
             value={draft}
             rows={2}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                addOnCurrentPage();
+                postComment();
               }
             }}
           />
           <div className="cpdf__comment-new-actions">
             <span className="cpdf__comment-new-hint">⌘⏎ to post</span>
-            <button type="button" className="cpdf__reply-send" data-testid="comment-submit" disabled={!draft.trim()} onClick={addOnCurrentPage}>
+            <button type="button" className="cpdf__reply-send" data-testid="comment-submit" disabled={!draft.trim()} onClick={postComment}>
               Comment
             </button>
           </div>
@@ -2178,6 +2195,9 @@ export function Viewer({
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
+  // Pending comment anchor captured from a text selection (page + rect in page
+  // points) → the next comment posted in the panel anchors to it, not the page.
+  const [commentAnchor, setCommentAnchor] = useState<{ page: number; rect: [number, number, number, number] } | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [signing, setSigning] = useState(false);
@@ -2343,6 +2363,20 @@ export function Viewer({
   };
   const copySelection = () => {
     selectionCap?.copyToClipboard(documentId);
+    selectionCap?.clear(documentId);
+  };
+  // Anchor a comment to the current text selection: capture the first segment's
+  // page + bounding rect (page points), open the Comments panel, clear selection.
+  const commentSelection = () => {
+    const sel = selectionCap?.getFormattedSelection(documentId) ?? [];
+    if (!sel.length) return;
+    const s = sel[0];
+    const r = s.rect as { origin: { x: number; y: number }; size: { width: number; height: number } };
+    setCommentAnchor({
+      page: s.pageIndex,
+      rect: [r.origin.x, r.origin.y, r.origin.x + r.size.width, r.origin.y + r.size.height],
+    });
+    setLeftPanel('comments');
     selectionCap?.clear(documentId);
   };
   // Track whether text is selected, to show the selection mini-toolbar. Gate on
@@ -3161,7 +3195,7 @@ export function Viewer({
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => { closeInlineEditors(); setOrganizing(true); }} onSign={() => { closeInlineEditors(); setSigning(true); }} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
-          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} comments={comments} currentPage={currentPage ?? 1} canEdit={mode !== 'view'} onClose={() => setLeftPanel(null)} />}
+          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} comments={comments} currentPage={currentPage ?? 1} canEdit={mode !== 'view'} anchor={commentAnchor} onAnchorUsed={() => setCommentAnchor(null)} onClose={() => { setCommentAnchor(null); setLeftPanel(null); }} />}
           {/* Ctrl/⌘ + wheel and pinch-to-zoom over the document. */}
           <ZoomGestureWrapper documentId={documentId} className="cpdf__zoomwrap">
             <Viewport documentId={documentId} className="cpdf__viewport">
@@ -3253,6 +3287,9 @@ export function Viewer({
             <span className="cpdf__sep" aria-hidden="true" />
             <button type="button" className="cpdf-iconbtn" title="Copy" aria-label="Copy" onClick={copySelection}>
               <Icon name="copy" size={18} />
+            </button>
+            <button type="button" className="cpdf-iconbtn" title="Comment on selection" aria-label="Comment on selection" onClick={commentSelection}>
+              <Icon name="comments" size={18} />
             </button>
             <button type="button" className="cpdf-iconbtn" title="Redact selected text" aria-label="Redact selected text" onClick={redactSelection}>
               <Icon name="redact" size={18} />
