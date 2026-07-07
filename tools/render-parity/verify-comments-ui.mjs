@@ -102,6 +102,17 @@ try {
     await page.waitForTimeout(250);
     const bodies2 = await page.locator('[data-testid=comment-body]').allTextContents();
     assert(bodies2.some((b) => /This sentence is unclear/.test(b)), 'anchored-to-selection comment posts as a thread');
+
+    // The anchored thread renders an on-page marker; clicking it re-focuses the
+    // thread (and works even after the panel is closed).
+    await page.waitForTimeout(300);
+    const marker = page.locator('[data-testid=comment-marker]');
+    assert((await marker.count()) >= 1, 'anchored comment shows an on-page marker');
+    await page.locator('[aria-label="Comments & annotations"]').click(); // close panel
+    await page.waitForTimeout(200);
+    await marker.first().click();
+    await page.waitForTimeout(300);
+    assert(await page.locator('[data-testid=comment-new-input]').isVisible(), 'clicking a marker reopens the comments panel');
   } else {
     console.log('NOTE: headless text selection did not form; anchor-chip assertions skipped');
   }
