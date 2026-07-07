@@ -11,6 +11,9 @@ export interface CollabHandle {
   /** Subscribe to the room's remote peers (awareness). Fires immediately with the
    *  current set, then on every join/leave/identity change. Returns unsubscribe. */
   onPresence(cb: (peers: Peer[]) => void): () => void;
+  /** Run `cb` once the initial server sync completes (fires immediately if already
+   *  synced). Used to seed a fresh room from the base document. */
+  onSynced(cb: () => void): () => void;
 }
 
 /**
@@ -62,6 +65,13 @@ export async function attachCollab(
       aw.on('change', emit);
       emit(); // fire with the current set immediately
       return () => aw.off('change', emit);
+    },
+    onSynced: (cb) => {
+      // The provider fires `synced` with `{ state }` once step-2 sync completes.
+      const h = (data: { state: boolean }) => { if (data.state) cb(); };
+      provider.on('synced', h);
+      if (provider.synced) cb(); // already synced by the time we subscribe
+      return () => provider.off('synced', h);
     },
   };
 }

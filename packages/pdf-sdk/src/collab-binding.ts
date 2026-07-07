@@ -189,6 +189,37 @@ export function bindAnnotations(bridge: AnnotationBridge, model: CasualPdfDoc, o
   };
 }
 
+/**
+ * Seed a fresh room with annotations already present in the base document (the
+ * plugin's loaded batch) so they become shared. Idempotent by id — only adds ids
+ * not already in the overlay, so it's safe to call more than once. Writes under
+ * `LOCAL_ORIGIN` so the LOCAL binding doesn't re-apply them to the plugin (they're
+ * already there); they still sync to peers, whose reconcile creates them.
+ *
+ * Caller must gate this to avoid double-seeding a room (see `useCollab`'s
+ * `meta.seeded` guard). A rare simultaneous first-join race can still add
+ * duplicate entries; the reconcile de-dups by id for rendering, so they never
+ * paint twice — a follow-up would move seeding server-side to remove the race.
+ */
+export function seedAnnotations(
+  model: CasualPdfDoc,
+  entries: { pageIndex: number; annotation: RawAnnotation }[],
+  author: string,
+): void {
+  const present = new Set(model.annotations.toArray().map((m) => m.get('id')));
+  model.doc.transact(() => {
+    for (const { pageIndex, annotation } of entries) {
+      if (present.has(annotation.id)) continue;
+      const entry = new Y.Map<unknown>();
+      entry.set('createdAt', 0);
+      entry.set('state', 'applied');
+      for (const [k, v] of Object.entries(toEntryFields(annotation, pageIndex, author))) entry.set(k, v);
+      model.annotations.push([entry]);
+      present.add(annotation.id);
+    }
+  }, LOCAL_ORIGIN);
+}
+
 /* ── EmbedPDF adapter ─────────────────────────────────────────────────────────
    Adapt the real `useAnnotation` capability to the `AnnotationBridge` the binding
    consumes. Kept a pure function (not a hook) so it unit-tests without React. */
