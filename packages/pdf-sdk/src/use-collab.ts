@@ -48,6 +48,13 @@ export function useCollab(
   // create-time to stamp `suggested` vs `applied`.
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  // Hold the capability in a ref and gate the effect on its AVAILABILITY, not its
+  // object identity — the plugin returns a fresh `provides` each render, so
+  // depending on `cap` directly would tear down + reconnect every render (a
+  // WebSocket storm). We connect once when it becomes available.
+  const capRef = useRef(cap);
+  capRef.current = cap;
+  const hasCap = !!cap;
 
   const url = collab?.url;
   const room = collab?.room;
@@ -56,6 +63,7 @@ export function useCollab(
   const color = identity?.color;
 
   useEffect(() => {
+    const cap = capRef.current;
     if (!cap || !url || !room) {
       setPeers([]);
       setSuggestions([]);
@@ -103,8 +111,8 @@ export function useCollab(
       setPeers([]);
       setSuggestions([]);
     };
-    // Primitive deps so a new-but-equal collab/identity object doesn't reconnect.
-  }, [cap, documentId, url, room, token, name, color]);
+    // Availability + primitive config only — NOT the `cap` object identity.
+  }, [hasCap, documentId, url, room, token, name, color]);
 
   const accept = useCallback(
     (sid: string) => {
