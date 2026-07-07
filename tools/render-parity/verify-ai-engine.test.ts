@@ -13,7 +13,7 @@ import { PDF_CATALOG, PDF_SYSTEM_PROMPT, toolProgressLabel } from '../../package
 import { PdfOpsBridge } from '../../packages/pdf-sdk/src/ai/bridge.ts';
 import { chunkPages, rankChunks, cosineSimilarity, reciprocalRankFusion, hybridRankChunks } from '../../packages/pdf-sdk/src/ai/retrieve.ts';
 import { toAnnotationRect, findRunsForText } from '../../packages/pdf-sdk/src/ai/highlight.ts';
-import { luhnValid, verhoeffValid, ibanValid, abaValid, nhsValid, cpfValid, spainDniValid, isinValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
+import { luhnValid, verhoeffValid, ibanValid, abaValid, nhsValid, cpfValid, bsnValid, spainDniValid, isinValid, detectPii, PII_TYPES } from '../../packages/pdf-sdk/src/ai/pii.ts';
 import { listFormFields, fillFormFields } from '../../packages/pdf-sdk/src/ai/form.ts';
 import { linkifyCitations } from '../../packages/pdf-sdk/src/ai/cite.ts';
 import { runDocOpsTurn } from '../../packages/pdf-sdk/src/ai/loop.ts';
@@ -199,6 +199,8 @@ test('checksums: Luhn, Verhoeff (Aadhaar), IBAN mod-97, ABA routing', () => {
   assert.equal(spainDniValid('12345678A'), false);
   assert.equal(isinValid('US0378331005'), true); // valid ISIN (Apple)
   assert.equal(isinValid('US0378331006'), false);
+  assert.equal(bsnValid('111222333'), true); // valid Netherlands BSN (elfproef 11-test)
+  assert.equal(bsnValid('111222334'), false);
 });
 
 test('detectPii finds validated structured PII and skips non-checksum candidates', () => {
