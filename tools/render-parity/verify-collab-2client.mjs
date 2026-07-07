@@ -100,6 +100,30 @@ try {
   console.log('B annotations after sync:', afterB);
   assert(afterB > beforeB, 'the annotation drawn in A synced to B over the collab server');
 
+  // ── Suggest mode: A draws a suggestion → B renders the distinct on-canvas
+  //    overlay, positioned in the upper region where A drew (confirms the y-flip
+  //    isn't inverted). The overlay is display-only (never mutates the annotation).
+  await a.page.getByRole('tab', { name: 'Suggest mode' }).click();
+  await a.page.waitForTimeout(300);
+  const sbox = await a.page.locator('.cpdf__page').first().boundingBox();
+  await a.page.keyboard.press('r');
+  await a.page.mouse.move(sbox.x + sbox.width * 0.25, sbox.y + sbox.height * 0.28);
+  await a.page.mouse.down();
+  await a.page.mouse.move(sbox.x + sbox.width * 0.55, sbox.y + sbox.height * 0.4, { steps: 10 });
+  await a.page.mouse.up();
+  await a.page.waitForTimeout(500);
+  await b.page.waitForTimeout(2500);
+  const sCount = await b.page.locator('[data-testid=suggestion-box]').count();
+  console.log('B suggestion overlays:', sCount);
+  assert(sCount >= 1, 'a Suggest-mode annotation renders a distinct overlay on the peer');
+  const bpage = await b.page.locator('.cpdf__page').first().boundingBox();
+  const bb = await b.page.locator('[data-testid=suggestion-box]').first().boundingBox();
+  if (bb && bpage) {
+    const relTop = (bb.y - bpage.y) / bpage.height;
+    console.log('suggestion overlay relTop:', relTop.toFixed(2));
+    assert(relTop < 0.5, 'the overlay sits in the upper region where it was drawn (y-flip correct, not inverted)');
+  }
+
   await a.ctx.close();
   await b.ctx.close();
 } catch (e) {

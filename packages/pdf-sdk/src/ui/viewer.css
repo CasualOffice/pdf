@@ -1611,3 +1611,11 @@
     box-shadow: none;
   }
 }
+
+/* ── Pending-suggestion on-canvas styling (display-only overlay) ─────────── */
+.cpdf__suggestion-box {
+  border: 1.5px dashed var(--color-suggest, #7c3aed);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-suggest, #7c3aed) 12%, transparent);
+  box-sizing: border-box;
+}
