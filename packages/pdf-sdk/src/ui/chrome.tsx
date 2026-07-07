@@ -37,7 +37,7 @@ import {
 } from '@embedpdf/plugin-annotation/react';
 import { LockModeType } from '@embedpdf/plugin-annotation';
 import { Rotation } from '@embedpdf/models';
-import { FormRendererRegistration, formRenderers } from '@embedpdf/plugin-form/react';
+import { FormRendererRegistration, formRenderers, useFormCapability } from '@embedpdf/plugin-form/react';
 import {
   SignatureDrawPad,
   SignatureTypePad,
@@ -58,6 +58,7 @@ import { useCollab } from '../use-collab';
 import { useComments, type CommentsState } from '../use-comments';
 import type { CommentThread } from '../comments';
 import type { AnnotationCapabilityLike } from '../collab-binding';
+import type { FormCapabilityLike } from '../form-binding';
 import { initials, type Peer } from '../presence';
 import type { AnnotationData } from '../model';
 import type { PdfTextRun } from '../textedit-pdfium';
@@ -2460,15 +2461,17 @@ export function Viewer({
 
   const { state: anno, provides: annoApi } = useAnnotation(documentId);
   const { provides: annoCap } = useAnnotationCapability();
+  const { provides: formCap } = useFormCapability();
   // Live collaboration (no-op when `collab` is omitted): bind this document's
   // annotation plugin bidirectionally to a Yjs room + surface remote peers and
-  // pending suggestions.
+  // pending suggestions. The form capability powers co-filling AcroForm fields.
   const { peers, suggestions, acceptSuggestion, rejectSuggestion, setActivePage, setCursor, model: collabModel } = useCollab(
     (annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined,
     documentId,
     collab,
     identity,
     mode,
+    (formCap ?? undefined) as unknown as FormCapabilityLike | undefined,
   );
   // Threaded comments ride the shared Yjs doc when collab is on (sync peer→peer),
   // or a local per-document doc when solo. Same panel either way.
