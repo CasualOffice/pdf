@@ -15,6 +15,7 @@
 
 // Pure-Rust structure ops (lopdf) — compile on BOTH native and wasm32, no PDFium.
 pub mod redact;
+pub mod restrict;
 pub mod sign;
 pub mod textedit;
 
@@ -124,6 +125,25 @@ mod wasm {
         pub fn low_confidence_pages(&self) -> Vec<u32> {
             self.low_confidence_pages.clone()
         }
+    }
+
+    /// Restrict PDF permissions via AES-256 (empty open password + owner password).
+    /// `perms` is a bitmask: 1=print, 2=copy, 4=modify, 8=annotate (set = allowed).
+    #[wasm_bindgen]
+    pub fn restrict_pdf_wasm(
+        pdf: &[u8],
+        owner_password: &str,
+        perms: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        use crate::restrict::{restrict_pdf, RestrictSpec};
+        let spec = RestrictSpec {
+            owner_password: owner_password.to_string(),
+            allow_print: perms & 1 != 0,
+            allow_copy: perms & 2 != 0,
+            allow_modify: perms & 4 != 0,
+            allow_annotate: perms & 8 != 0,
+        };
+        restrict_pdf(pdf, &spec).map_err(|e| JsValue::from_str(&e))
     }
 
     /// Surgically redact `pdf` (true byte removal, surrounding text preserved),

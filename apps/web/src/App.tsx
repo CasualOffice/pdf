@@ -11,6 +11,7 @@ import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
 import { SignatureInfoDialog } from './SignatureInfoDialog';
 import { PageFurnitureDialog } from './PageFurnitureDialog';
+import { RestrictDialog, type RestrictPermissions } from './RestrictDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 import { isDesktop } from './desk-bridge-bootstrap';
 
@@ -92,6 +93,8 @@ export function App() {
   const [signBusy, setSignBusy] = useState(false);
   const [pendingVisibleSignature, setPendingVisibleSignature] = useState(false);
   const [pageFurniture, setPageFurniture] = useState(false);
+  const [restricting, setRestricting] = useState(false);
+  const [restrictBusy, setRestrictBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [signatureStatus, setSignatureStatus] = useState<SignatureStatus>('unknown');
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
@@ -494,6 +497,33 @@ export function App() {
     }
   };
 
+  // Restrict permissions: AES-256 encrypt with an empty open password + owner
+  // password + permission flags. Downloads a protected copy (the editor keeps the
+  // unencrypted original — we never reload the encrypted bytes into the viewer).
+  const restrictDocument = async (ownerPassword: string, allow: RestrictPermissions) => {
+    if (!src || restrictBusy) return;
+    setRestrictBusy(true);
+    try {
+      let bytes = await api.current?.getBytes();
+      if (!bytes) {
+        const res = await fetch(src);
+        bytes = new Uint8Array(await res.arrayBuffer());
+      }
+      if (!bytes) throw new Error('Could not read the current document.');
+      const { restrictPdf } = await import('@casualoffice/pdf/restrict'); // lazy: wasm core
+      const restricted = await restrictPdf(bytes, ownerPassword, allow);
+      const buffer = restricted.buffer.slice(restricted.byteOffset, restricted.byteOffset + restricted.byteLength) as ArrayBuffer;
+      const name = /\.pdf$/i.test(title) ? title.replace(/\.pdf$/i, '.protected.pdf') : `${title}.protected.pdf`;
+      downloadBlob(new Blob([buffer], { type: 'application/pdf' }), name);
+      setRestricting(false);
+    } catch (e) {
+      console.error('Restrict permissions failed', e);
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRestrictBusy(false);
+    }
+  };
+
   const insertPdf = async (file: File) => {
     if (!src) return;
     let primaryBytes: Uint8Array | null = null;
@@ -620,6 +650,7 @@ export function App() {
         { label: 'Add visible signature…', disabled: !src, onSelect: addVisibleSignature },
         { label: 'Sign document…', disabled: !src, onSelect: () => setCertSigning(true) },
         { label: 'Watermark / Header / Bates…', disabled: !src, onSelect: () => setPageFurniture(true) },
+        { label: 'Restrict permissions…', disabled: !src, onSelect: () => setRestricting(true) },
         { divider: true },
         { label: 'About Casual PDF', onSelect: () => setAbout(true) },
       ],
@@ -912,6 +943,9 @@ export function App() {
           onSignWithOwnCert={(p12, passphrase) => signDocument({ p12, passphrase })}
           busy={signBusy}
         />
+      )}
+      {restricting && (
+        <RestrictDialog onRestrict={restrictDocument} onClose={() => setRestricting(false)} busy={restrictBusy} />
       )}
       {pageFurniture && (
         <PageFurnitureDialog

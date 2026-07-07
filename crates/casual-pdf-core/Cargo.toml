@@ -17,6 +17,10 @@ crate-type = ["cdylib", "rlib"]
 # off to stay wasm-clean. (lopdf is MIT — locked decision #4.)
 [dependencies]
 lopdf = { version = "0.36", default-features = false }
+# 32-byte AES-256 file-encryption key for permission restriction (src/restrict.rs).
+# Base dep so it's available on native too (OS backend); the wasm target below adds
+# the wasm_js browser backend. Native (desktop/Tauri) is unaffected by the rustflag.
+getrandom = "0.3"
 cms = "0.3.0-pre.2"
 sha2 = "0.10"
 time = { version = "0.3", features = ["formatting"] }

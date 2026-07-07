@@ -43,6 +43,12 @@ export function move_text_run_wasm(pdf: Uint8Array, page_index: number, run_id: 
 export function redact_pdf_wasm(pdf: Uint8Array, spec: Float64Array): RedactResult;
 
 /**
+ * Restrict PDF permissions via AES-256 (empty open password + owner password).
+ * `perms` is a bitmask: 1=print, 2=copy, 4=modify, 8=annotate (set = allowed).
+ */
+export function restrict_pdf_wasm(pdf: Uint8Array, owner_password: string, perms: number): Uint8Array;
+
+/**
  * Apply a detached PDF signature as an incremental update.
  */
 export function sign_pdf_wasm(pdf: Uint8Array, signer_name: string, reason: string, location?: string | null, contact_info?: string | null): Uint8Array;
@@ -59,6 +65,7 @@ export interface InitOutput {
     readonly redact_pdf_wasm: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly redactresult_bytes: (a: number) => [number, number];
     readonly redactresult_low_confidence_pages: (a: number) => [number, number];
+    readonly restrict_pdf_wasm: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly sign_pdf_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;

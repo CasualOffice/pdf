@@ -87,6 +87,7 @@ import {
   MdError,
   MdErrorOutline,
   MdHistoryEdu,
+  MdLock,
   MdGesture,
   MdKeyboard,
   MdRefresh,
@@ -96,6 +97,7 @@ import {
 } from 'react-icons/md';
 
 export type IconName =
+  | 'lock'
   | 'chevron-left'
   | 'chevron-right'
   | 'zoom-in'
@@ -204,6 +206,7 @@ const MAP: Record<IconName, { filled: IconType; outline?: IconType }> = {
   info: { filled: MdInfo, outline: MdInfoOutline },
   warning: { filled: MdError, outline: MdErrorOutline },
   sign: { filled: MdHistoryEdu },
+  lock: { filled: MdLock },
   draw: { filled: MdGesture },
   keyboard: { filled: MdKeyboard },
   refresh: { filled: MdRefresh },
