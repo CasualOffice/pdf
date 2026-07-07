@@ -204,6 +204,7 @@ jobs:
             verify-ai-highlight \
             verify-ai-redact \
             verify-ai-summarize \
+            verify-comments-ui \
             verify-redact-text; do
             echo "::group::$t"
             node "$t.mjs" || { echo "::error::$t failed"; fail=1; }

@@ -55,6 +55,8 @@ import { IconButton } from './IconButton';
 import { Icon, type IconName } from './icons';
 import type { Mode, CasualPdfApi, OutlineNode, CollabConfig, Identity } from '../modes';
 import { useCollab } from '../use-collab';
+import { useComments, type CommentsState } from '../use-comments';
+import type { CommentThread } from '../comments';
 import type { AnnotationCapabilityLike } from '../collab-binding';
 import { initials, type Peer } from '../presence';
 import type { AnnotationData } from '../model';
@@ -1478,63 +1480,227 @@ function OutlineSidebar({ documentId, onClose }: { documentId: string; onClose: 
 
 /* ── Comments / annotations review panel: every annotation in the document,
    click to scroll to + select it. ─────────────────────────────────────────── */
-function CommentsSidebar({ documentId, onClose }: { documentId: string; onClose: () => void }) {
-  const { state: anno, provides: scope } = useAnnotation(documentId);
-  const { provides: scrollApi } = useScroll(documentId);
-  // Re-read on any annotation state change (anno) so the list stays live.
-  void anno;
-  const items = (scope?.getAnnotations() ?? [])
-    .slice()
-    .sort(
-      (a, b) =>
-        a.object.pageIndex - b.object.pageIndex ||
-        (a.object.rect?.origin.y ?? 0) - (b.object.rect?.origin.y ?? 0),
-    );
-  const meta = (obj: { contents?: string }, toolId?: string): { icon: IconName; label: string } => {
-    if (toolId === 'textComment') {
-      const text = (obj.contents ?? '').trim();
-      return { icon: 'note', label: text || 'Empty comment' };
+/** Relative "2m ago" style time from an epoch-ms stamp. */
+function agoLabel(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+/** Render a body with @handles emphasised. */
+function renderBody(body: string): React.ReactNode {
+  return body.split(/(@[A-Za-z0-9._-]+)/g).map((part, i) =>
+    part.startsWith('@') ? (
+      <strong key={i} className="cpdf__mention">
+        {part}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
+/** One thread: root + replies + a reply box; resolve/reopen + delete. */
+function CommentThreadCard({
+  thread,
+  canEdit,
+  onJump,
+  onReply,
+  onResolve,
+  onDelete,
+}: {
+  thread: CommentThread;
+  canEdit: boolean;
+  onJump: (page: number) => void;
+  onReply: (threadId: string, body: string) => void;
+  onResolve: (threadId: string, resolved: boolean) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [reply, setReply] = useState('');
+  const { root, replies, resolved } = thread;
+  const submit = () => {
+    if (reply.trim()) {
+      onReply(root.threadId, reply);
+      setReply('');
     }
+  };
+  return (
+    <div className={`cpdf__thread${resolved ? ' cpdf__thread--resolved' : ''}`} data-testid="comment-thread">
+      <div className="cpdf__thread-head">
+        <button type="button" className="cpdf__thread-anchor" onClick={() => onJump(root.page)} title="Go to page">
+          <Icon name="comments" size={13} /> p.{root.page + 1}
+        </button>
+        <span className="cpdf__thread-spacer" />
+        {resolved && <span className="cpdf__thread-badge">Resolved</span>}
+        {canEdit && (
+          <IconButton
+            icon={resolved ? 'undo' : 'check'}
+            label={resolved ? 'Reopen thread' : 'Resolve thread'}
+            onClick={() => onResolve(root.threadId, !resolved)}
+          />
+        )}
+        {canEdit && <IconButton icon="trash" label="Delete thread" onClick={() => onDelete(root.id)} />}
+      </div>
+      {[root, ...replies].map((c) => (
+        <div key={c.id} className="cpdf__msg">
+          <div className="cpdf__msg-meta">
+            <span className="cpdf__msg-author">{c.author}</span>
+            <span className="cpdf__msg-time">{agoLabel(c.createdAt)}</span>
+          </div>
+          <div className="cpdf__msg-body" data-testid="comment-body">{renderBody(c.body)}</div>
+        </div>
+      ))}
+      {canEdit && !resolved && (
+        <div className="cpdf__reply">
+          <input
+            className="cpdf__reply-input"
+            data-testid="comment-reply-input"
+            placeholder="Reply… (@ to mention)"
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <button type="button" className="cpdf__reply-send" disabled={!reply.trim()} onClick={submit}>
+            Reply
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommentsSidebar({
+  documentId,
+  comments,
+  currentPage,
+  canEdit,
+  onClose,
+}: {
+  documentId: string;
+  comments: CommentsState;
+  currentPage: number;
+  canEdit: boolean;
+  onClose: () => void;
+}) {
+  const { provides: scrollApi } = useScroll(documentId);
+  const { state: anno, provides: scope } = useAnnotation(documentId);
+  void anno; // re-read the annotation index on any change
+  const [draft, setDraft] = useState('');
+  const [showResolved, setShowResolved] = useState(false);
+  const jump = (page: number) => scrollApi?.scrollToPage({ pageNumber: page + 1 });
+  // Secondary "Annotations" index (the panel is labelled "Comments & annotations").
+  const annos = (scope?.getAnnotations() ?? [])
+    .slice()
+    .sort((a, b) => a.object.pageIndex - b.object.pageIndex || (a.object.rect?.origin.y ?? 0) - (b.object.rect?.origin.y ?? 0));
+  const annoMeta = (obj: { contents?: string }, toolId?: string): { icon: IconName; label: string } => {
     const t = TOOLS.find((x) => x.id === toolId);
     const note = (obj.contents ?? '').trim();
     return { icon: t?.icon ?? 'note', label: note || t?.label?.replace(' box', '') || 'Annotation' };
   };
-  const go = (pageIndex: number, id: string) => {
+  const goAnno = (pageIndex: number, id: string) => {
     scrollApi?.scrollToPage({ pageNumber: pageIndex + 1 });
     scope?.selectAnnotation(pageIndex, id);
   };
+  const addOnCurrentPage = () => {
+    if (draft.trim()) {
+      // Anchor to the current page (rect null → page-level; region anchoring lands next slice).
+      comments.addComment(currentPage - 1, null, draft);
+      setDraft('');
+    }
+  };
+  const open = comments.threads.filter((t) => !t.resolved);
+  const done = comments.threads.filter((t) => t.resolved);
+  const shown = showResolved ? comments.threads : open;
   return (
     <aside className="cpdf__panel" aria-label="Comments">
       <div className="cpdf__panel-head">
         <span>Comments</span>
         <IconButton icon="close" label="Close comments" onClick={onClose} />
       </div>
+      {canEdit && (
+        <div className="cpdf__comment-new">
+          <textarea
+            className="cpdf__comment-new-input"
+            data-testid="comment-new-input"
+            placeholder={`Comment on page ${currentPage}… (@ to mention)`}
+            value={draft}
+            rows={2}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                addOnCurrentPage();
+              }
+            }}
+          />
+          <div className="cpdf__comment-new-actions">
+            <span className="cpdf__comment-new-hint">⌘⏎ to post</span>
+            <button type="button" className="cpdf__reply-send" data-testid="comment-submit" disabled={!draft.trim()} onClick={addOnCurrentPage}>
+              Comment
+            </button>
+          </div>
+        </div>
+      )}
       <div className="cpdf__panel-body">
-        {items.length ? (
-          items.map((a) => {
-            const m = meta(a.object, scope?.findToolForAnnotation(a.object)?.id);
-            return (
-              <button
-                key={a.object.id}
-                type="button"
-                className="cpdf__comment-row"
-                onClick={() => go(a.object.pageIndex, a.object.id)}
-              >
-                <span className="cpdf__comment-row-icon">
-                  <Icon name={m.icon} size={16} />
-                </span>
-                <span className="cpdf__comment-row-text">{m.label}</span>
-                <span className="cpdf__comment-row-page">p.{a.object.pageIndex + 1}</span>
-              </button>
-            );
-          })
-        ) : (
+        {comments.threads.length === 0 ? (
           <div className="cpdf__empty">
             <span className="cpdf__empty-icon">
               <Icon name="comments" size={28} />
             </span>
             <span className="cpdf__empty-title">No comments yet</span>
-            <span className="cpdf__empty-hint">Annotations and comments you add will appear here.</span>
+            <span className="cpdf__empty-hint">
+              {canEdit ? 'Start a discussion on this page above.' : 'Comments will appear here.'}
+            </span>
+          </div>
+        ) : (
+          <>
+            {shown.map((t) => (
+              <CommentThreadCard
+                key={t.root.id}
+                thread={t}
+                canEdit={canEdit}
+                onJump={jump}
+                onReply={comments.addReply}
+                onResolve={comments.resolve}
+                onDelete={comments.remove}
+              />
+            ))}
+            {done.length > 0 && (
+              <button type="button" className="cpdf__comment-resolved-toggle" onClick={() => setShowResolved((v) => !v)}>
+                {showResolved ? 'Hide' : 'Show'} {done.length} resolved
+              </button>
+            )}
+          </>
+        )}
+        {annos.length > 0 && (
+          <div className="cpdf__anno-index">
+            <div className="cpdf__anno-index-head">Annotations</div>
+            {annos.map((a) => {
+              const m = annoMeta(a.object, scope?.findToolForAnnotation(a.object)?.id);
+              return (
+                <button
+                  key={a.object.id}
+                  type="button"
+                  className="cpdf__comment-row"
+                  onClick={() => goAnno(a.object.pageIndex, a.object.id)}
+                >
+                  <span className="cpdf__comment-row-icon">
+                    <Icon name={m.icon} size={16} />
+                  </span>
+                  <span className="cpdf__comment-row-text">{m.label}</span>
+                  <span className="cpdf__comment-row-page">p.{a.object.pageIndex + 1}</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -2095,13 +2261,16 @@ export function Viewer({
   // Live collaboration (no-op when `collab` is omitted): bind this document's
   // annotation plugin bidirectionally to a Yjs room + surface remote peers and
   // pending suggestions.
-  const { peers, suggestions, acceptSuggestion, rejectSuggestion, setActivePage } = useCollab(
+  const { peers, suggestions, acceptSuggestion, rejectSuggestion, setActivePage, model: collabModel } = useCollab(
     (annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined,
     documentId,
     collab,
     identity,
     mode,
   );
+  // Threaded comments ride the shared Yjs doc when collab is on (sync peer→peer),
+  // or a local per-document doc when solo. Same panel either way.
+  const comments = useComments(documentId, collabModel, identity?.name ?? 'You');
   // Broadcast our current page to peers (presence "where"). No-op in solo mode.
   const currentPage = docScroll?.currentPage;
   useEffect(() => {
@@ -2992,7 +3161,7 @@ export function Viewer({
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => { closeInlineEditors(); setOrganizing(true); }} onSign={() => { closeInlineEditors(); setSigning(true); }} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
-          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
+          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} comments={comments} currentPage={currentPage ?? 1} canEdit={mode !== 'view'} onClose={() => setLeftPanel(null)} />}
           {/* Ctrl/⌘ + wheel and pinch-to-zoom over the document. */}
           <ZoomGestureWrapper documentId={documentId} className="cpdf__zoomwrap">
             <Viewport documentId={documentId} className="cpdf__viewport">
