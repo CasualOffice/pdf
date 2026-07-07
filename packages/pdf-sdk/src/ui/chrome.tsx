@@ -1794,6 +1794,56 @@ function CommentMarkersLayer({
   );
 }
 
+/* ── Pending-suggestion styling (collab Suggest mode). A DISPLAY-ONLY overlay that
+   outlines each suggested annotation's rect — it reads the suggestion list from the
+   Yjs model and never touches the annotation object, so (unlike the reverted opacity
+   fade) it can't pollute the round-trip on echo/edit. Maps the stored PDF-point rect
+   → page fraction (y-flipped, matching the redact-from-selection math). The container
+   is overflow-hidden so a stray box can never create a scrollbar. ────────────── */
+function SuggestionOverlayLayer({
+  documentId,
+  pageIndex,
+  suggestions,
+}: {
+  documentId: string;
+  pageIndex: number;
+  suggestions: AnnotationData[];
+}) {
+  const { provides: docCap } = useDocumentManagerCapability();
+  const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as
+    | { width: number; height: number }
+    | undefined;
+  const onPage = suggestions.filter((s) => s.page === pageIndex && Array.isArray(s.rect) && s.rect.length === 4);
+  if (!size || !onPage.length) return null;
+  return (
+    <div
+      className="cpdf__suggestion-overlay"
+      style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}
+      aria-hidden="true"
+    >
+      {onPage.map((s) => {
+        const [x0, y0, x1, y1] = s.rect;
+        // The annotation plugin's rect is TOP-LEFT origin (unlike selection rects,
+        // which are PDF bottom-left) — verified by the 2-client E2E's position
+        // check — so map directly with NO y-flip.
+        const left = (Math.min(x0, x1) / size.width) * 100;
+        const top = (Math.min(y0, y1) / size.height) * 100;
+        const w = (Math.abs(x1 - x0) / size.width) * 100;
+        const h = (Math.abs(y1 - y0) / size.height) * 100;
+        return (
+          <div
+            key={s.id}
+            className="cpdf__suggestion-box"
+            data-testid="suggestion-box"
+            style={{ position: 'absolute', left: `${left}%`, top: `${top}%`, width: `${w}%`, height: `${h}%` }}
+            title={`Suggested by ${s.author}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── Read-only sticky-note popup shown on the page when a comment is selected
    (used in View mode for reading). Editing happens in the properties panel —
    EmbedPDF's selection-menu container can't host a focusable textarea. ────── */
@@ -3312,6 +3362,7 @@ export function Viewer({
                         setLeftPanel('comments');
                       }}
                     />
+                    {suggestions.length > 0 && <SuggestionOverlayLayer documentId={documentId} pageIndex={pageIndex} suggestions={suggestions} />}
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && textEditing && editBytes && (
                       <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} editBusy={editBusy} />
