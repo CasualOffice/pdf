@@ -56,6 +56,8 @@ import { Icon, type IconName } from './icons';
 import type { Mode, CasualPdfApi, OutlineNode, CollabConfig, Identity } from '../modes';
 import { useCollab } from '../use-collab';
 import { useComments, type CommentsState } from '../use-comments';
+import { useSigning, type SigningState, type NewRecipient } from '../use-signing';
+import { canSign, type SigningEnvelope, type EnvelopeStatus } from '../signing';
 import type { CommentThread } from '../comments';
 import type { AnnotationCapabilityLike } from '../collab-binding';
 import type { FormCapabilityLike } from '../form-binding';
@@ -66,7 +68,7 @@ import './viewer.css';
 
 const ROOT_ID = 'cpdf-root';
 
-type LeftPanel = 'thumbs' | 'outline' | 'comments' | null;
+type LeftPanel = 'thumbs' | 'outline' | 'comments' | 'signatures' | null;
 
 interface Bookmark {
   title: string;
@@ -801,7 +803,7 @@ function LeftRail({
   documentId: string;
   mode: Mode;
   leftPanel: LeftPanel;
-  onToggleLeft: (p: 'thumbs' | 'outline' | 'comments') => void;
+  onToggleLeft: (p: 'thumbs' | 'outline' | 'comments' | 'signatures') => void;
   onOrganize: () => void;
   onSign: () => void;
   onInsertImage: () => void;
@@ -835,6 +837,7 @@ function LeftRail({
       <RailBtn icon="thumbnails" label="Pages" title="Page thumbnails" active={leftPanel === 'thumbs'} onClick={() => onToggleLeft('thumbs')} />
       <RailBtn icon="outline" label="Outline" title="Document outline" active={leftPanel === 'outline'} onClick={() => onToggleLeft('outline')} />
       <RailBtn icon="comments" label="Comments" title="Comments & annotations" active={leftPanel === 'comments'} onClick={() => onToggleLeft('comments')} />
+      <RailBtn icon="sign" label="Signatures" title="Request signatures" active={leftPanel === 'signatures'} onClick={() => onToggleLeft('signatures')} />
       {editing && (
         <>
           <span className="cpdf__rail-sep" aria-hidden="true" />
@@ -1795,6 +1798,144 @@ function CommentMarkersLayer({
   );
 }
 
+/* ── Signatures panel: request-to-sign (recipients + order), signing status, the
+   audit trail, and certificate download. Rides the collab signing model. ─────── */
+const SIGN_STATUS_LABEL: Record<EnvelopeStatus, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  viewed: 'Viewed',
+  partially_signed: 'Partially signed',
+  completed: 'Completed',
+  declined: 'Declined',
+  voided: 'Voided',
+};
+
+function RequestSignaturesForm({ signing }: { signing: SigningState }) {
+  const [title, setTitle] = useState('');
+  const [order, setOrder] = useState<'parallel' | 'sequential'>('parallel');
+  const [recips, setRecips] = useState<NewRecipient[]>([{ name: '', email: '', role: 'signer' }]);
+  const [busy, setBusy] = useState(false);
+  const update = (i: number, patch: Partial<NewRecipient>) => setRecips((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const clean = recips.filter((r) => r.name.trim() && r.email.trim());
+  const submit = async () => {
+    if (!clean.length || busy) return;
+    setBusy(true);
+    try {
+      await signing.createRequest(title.trim() || 'Signature request', order, clean);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="cpdf__sign-form">
+      <input className="cpdf__sign-input" placeholder="Document title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      {recips.map((r, i) => (
+        <div key={i} className="cpdf__sign-recip">
+          <input className="cpdf__sign-input" placeholder="Name" value={r.name} onChange={(e) => update(i, { name: e.target.value })} />
+          <input className="cpdf__sign-input" type="email" placeholder="Email" value={r.email} onChange={(e) => update(i, { email: e.target.value })} />
+          <select className="cpdf__sign-input" value={r.role} onChange={(e) => update(i, { role: e.target.value as NewRecipient['role'] })} aria-label="Role">
+            <option value="signer">Signer</option>
+            <option value="cc">CC</option>
+          </select>
+          {recips.length > 1 && (
+            <button type="button" className="cpdf__sign-recip-x" aria-label="Remove recipient" onClick={() => setRecips((rs) => rs.filter((_, j) => j !== i))}>
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" className="cpdf__sign-add" onClick={() => setRecips((rs) => [...rs, { name: '', email: '', role: 'signer' }])}>
+        + Add recipient
+      </button>
+      <label className="cpdf__sign-order">
+        <input type="checkbox" checked={order === 'sequential'} onChange={(e) => setOrder(e.target.checked ? 'sequential' : 'parallel')} />
+        <span>Sign in order (each waits for the previous)</span>
+      </label>
+      <button type="button" className="cpdf__reply-send" data-testid="sign-request-submit" disabled={!clean.length || busy} onClick={submit}>
+        {busy ? 'Sending…' : 'Request signatures'}
+      </button>
+    </div>
+  );
+}
+
+function SigningStatus({ signing, envelope, canEdit }: { signing: SigningState; envelope: SigningEnvelope; canEdit: boolean }) {
+  const terminal = envelope.status === 'completed' || envelope.status === 'voided' || envelope.status === 'declined';
+  return (
+    <div className="cpdf__sign-status">
+      <div className="cpdf__sign-envelope">
+        <span className="cpdf__sign-doctitle">{envelope.title}</span>
+        <span className={`cpdf__sign-badge cpdf__sign-badge--${envelope.status}`} data-testid="sign-status">
+          {SIGN_STATUS_LABEL[envelope.status]}
+        </span>
+      </div>
+      {envelope.signers.map((s) => (
+        <div key={s.id} className="cpdf__sign-signer" data-testid="sign-signer">
+          <div className="cpdf__sign-signer-id">
+            <strong>{s.name}</strong> <span>{s.email}</span>
+          </div>
+          <div className="cpdf__sign-signer-meta">
+            {s.role} · <span data-testid="sign-signer-status">{s.status}</span>
+          </div>
+          {canEdit && canSign(envelope, s.id) && (
+            <button type="button" className="cpdf__reply-send" data-testid="sign-now" onClick={() => signing.sign(s.id)}>
+              Sign as {s.name.split(' ')[0] || 'signer'}
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="cpdf__sign-actions">
+        {envelope.status === 'completed' && (
+          <button type="button" className="cpdf__reply-send" data-testid="sign-download-cert" onClick={() => signing.downloadCertificate()}>
+            Download certificate
+          </button>
+        )}
+        {canEdit && !terminal && (
+          <button type="button" className="cpdf__sign-void" onClick={() => signing.voidRequest()}>
+            Void request
+          </button>
+        )}
+      </div>
+      <div className="cpdf__sign-audit">
+        <div className="cpdf__sign-audit-head">Audit trail</div>
+        {envelope.events.map((e, i) => (
+          <div key={i} className="cpdf__sign-event">
+            <span className="cpdf__sign-event-type">{e.type}</span> · {e.actor}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SigningSidebar({ signing, canEdit, onClose }: { signing: SigningState; canEdit: boolean; onClose: () => void }) {
+  const { envelope } = signing;
+  return (
+    <aside className="cpdf__panel" aria-label="Signatures">
+      <div className="cpdf__panel-head">
+        <span>Signatures</span>
+        <IconButton icon="close" label="Close signatures" onClick={onClose} />
+      </div>
+      <div className="cpdf__panel-body">
+        {!envelope ? (
+          canEdit ? (
+            <RequestSignaturesForm signing={signing} />
+          ) : (
+            <div className="cpdf__empty">
+              <span className="cpdf__empty-icon">
+                <Icon name="sign" size={28} />
+              </span>
+              <span className="cpdf__empty-title">No signature request</span>
+              <span className="cpdf__empty-hint">Switch to Edit to request signatures.</span>
+            </div>
+          )
+        ) : (
+          <SigningStatus signing={signing} envelope={envelope} canEdit={canEdit} />
+        )}
+      </div>
+    </aside>
+  );
+}
+
 /* ── Pending-suggestion styling (collab Suggest mode). A DISPLAY-ONLY overlay that
    outlines each suggested annotation's rect — it reads the suggestion list from the
    Yjs model and never touches the annotation object, so (unlike the reverted opacity
@@ -2454,7 +2595,7 @@ export function Viewer({
   // 'flatten' = secure whole-page image (removes text/images/vectors — for
   // non-text content). Text is the common case, so it's the default.
   const [redactMode, setRedactMode] = useState<'text' | 'flatten'>('text');
-  const toggleLeft = (p: 'thumbs' | 'outline' | 'comments') => setLeftPanel((cur) => (cur === p ? null : p));
+  const toggleLeft = (p: 'thumbs' | 'outline' | 'comments' | 'signatures') => setLeftPanel((cur) => (cur === p ? null : p));
   const { state: docScroll, provides: scrollProvides } = useScroll(documentId);
   const totalPages = docScroll?.totalPages ?? 0;
   const { provides: bookmarkCap } = useBookmarkCapability();
@@ -2488,6 +2629,13 @@ export function Viewer({
   const { provides: exportCap } = useExportCapability();
   const { provides: renderCap } = useRenderCapability();
   const { provides: docCap } = useDocumentManagerCapability();
+  // Request-to-sign workflow (rides the shared doc in collab, local when solo).
+  const signingGetBytes = useCallback(async (): Promise<Uint8Array | null> => {
+    if (!exportCap) return null;
+    const ab = await exportCap.saveAsCopy().toPromise();
+    return ab ? new Uint8Array(ab) : null;
+  }, [exportCap]);
+  const signingFlow = useSigning(documentId, collabModel, identity?.name ?? 'You', signingGetBytes);
   // Ref so text-edit undo/redo callbacks (defined in the apiRef effect) can
   // access the latest docCap without listing it as an effect dependency.
   const docCapRef = useRef(docCap);
@@ -3383,6 +3531,7 @@ export function Viewer({
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} comments={comments} currentPage={currentPage ?? 1} canEdit={mode !== 'view'} anchor={commentAnchor} onAnchorUsed={() => setCommentAnchor(null)} focusThreadId={commentFocus} onFocusHandled={() => setCommentFocus(null)} onClose={() => { setCommentAnchor(null); setLeftPanel(null); }} />}
+          {!presenting && leftPanel === 'signatures' && <SigningSidebar signing={signingFlow} canEdit={mode !== 'view'} onClose={() => setLeftPanel(null)} />}
           {/* Ctrl/⌘ + wheel and pinch-to-zoom over the document. */}
           <ZoomGestureWrapper documentId={documentId} className="cpdf__zoomwrap">
             <Viewport documentId={documentId} className="cpdf__viewport">
