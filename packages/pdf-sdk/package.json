@@ -28,6 +28,10 @@
       "types": "./src/merge.ts",
       "import": "./src/merge.ts"
     },
+    "./restrict": {
+      "types": "./src/restrict.ts",
+      "import": "./src/restrict.ts"
+    },
     "./extract": {
       "types": "./src/extract.ts",
       "import": "./src/extract.ts"
