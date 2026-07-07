@@ -1774,3 +1774,8 @@
   text-transform: uppercase;
   color: var(--color-text, #1b1c1f);
 }
+.cpdf__sign-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-danger, #b45309);
+}

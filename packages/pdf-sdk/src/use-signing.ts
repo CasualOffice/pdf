@@ -18,6 +18,7 @@ import {
   markDeclined,
   voidEnvelope,
   readEnvelope,
+  hasEnvelope,
   type SigningEnvelope,
   type SigningOrder,
   type SignerRole,
@@ -70,21 +71,29 @@ export function useSigning(
 
   const createRequest = useCallback(
     async (title: string, order: SigningOrder, recipients: NewRecipient[]) => {
+      if (hasEnvelope(model)) return; // one envelope per document (H1: don't clobber)
       const bytes = await getBytes();
       let docHash: string | undefined;
       if (bytes) {
         const { computeDocHash } = await import('./signing-certificate');
         docHash = await computeDocHash(bytes);
       }
+      if (hasEnvelope(model)) return; // re-check after the await (double-submit window)
       const now = Date.now();
-      createEnvelope(model, { id: uid(), title, createdBy: author, createdAt: now, order, docHash });
-      recipients.forEach((r, i) => addSigner(model, { id: uid(), name: r.name, email: r.email, role: r.role, order: i + 1 }));
-      sendEnvelope(model, Date.now());
+      // One atomic transaction (L2) so peers never see a half-built envelope.
+      model.doc.transact(() => {
+        createEnvelope(model, { id: uid(), title, createdBy: author, createdAt: now, order, docHash });
+        recipients.forEach((r, i) => addSigner(model, { id: uid(), name: r.name, email: r.email, role: r.role, order: i + 1 }));
+        sendEnvelope(model, now);
+      });
     },
     [model, author, getBytes],
   );
 
-  const sign = useCallback((signerId: string) => markSigned(model, signerId, Date.now(), 'email'), [model]);
+  // Honest auth method: this client is authenticated only by collab-room membership,
+  // NOT identity-verified as the named signer (see H3 note in signing.ts). The model
+  // enforces whose-turn; server-side identity binding is a documented follow-up.
+  const sign = useCallback((signerId: string) => markSigned(model, signerId, Date.now(), 'collab-session'), [model]);
   const decline = useCallback((signerId: string, reason?: string) => markDeclined(model, signerId, Date.now(), reason), [model]);
   const voidRequest = useCallback((reason?: string) => voidEnvelope(model, author, Date.now(), reason), [model, author]);
 

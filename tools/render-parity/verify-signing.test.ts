@@ -20,6 +20,8 @@ import {
   markDeclined,
   voidEnvelope,
   readEnvelope,
+  readEvents,
+  recordEvent,
   deriveStatus,
   whoseTurn,
   canSign,
@@ -146,4 +148,58 @@ test('envelope + signing syncs peer→peer over a shared Y.Doc', () => {
     assert.equal(e.status, 'completed', 'both converge to completed');
     assert.equal(e.signers[0].signedAt, 3, 'signature synced across');
   }
+});
+
+test('createEnvelope is idempotent — a second call does not clobber the first', () => {
+  const m = make();
+  createEnvelope(m, { id: 'env1', title: 'First', createdBy: 'alice', createdAt: 1 });
+  addSigner(m, { id: 's1', name: 'Bob', email: 'bob@x.com', order: 1 });
+  // A double-click / re-entry must NOT reset the envelope or drop the signer.
+  createEnvelope(m, { id: 'env2', title: 'Second', createdBy: 'mallory', createdAt: 2 });
+  const e = readEnvelope(m)!;
+  assert.equal(e.id, 'env1', 'the first envelope id is preserved');
+  assert.equal(e.title, 'First', 'not overwritten by the second create');
+  assert.equal(e.signers.length, 1, 'the signer was not clobbered by a fresh signers array');
+});
+
+test('M1: the MODEL rejects out-of-turn signing under sequential order (not just the UI)', () => {
+  const m = make();
+  envelope(m, 'sequential'); // s1 order 1, s2 order 2
+  sendEnvelope(m, 2);
+  markSigned(m, 's2', 3); // s2 tries to sign before s1
+  const e = readEnvelope(m)!;
+  assert.equal(e.signers.find((s) => s.id === 's2')?.status, 'pending', 'out-of-turn sign is a model no-op');
+  assert.equal(e.status, 'sent', 'status unchanged');
+});
+
+test('H2: a concurrent void beats a concurrent sign — terminal wins on BOTH peers', () => {
+  const a = make();
+  const b = createCasualPdfDoc('base-v1', new Y.Doc());
+  createEnvelope(a, { id: 'e', title: 't', createdBy: 'alice', createdAt: 1, order: 'parallel' });
+  addSigner(a, { id: 's1', name: 'Bob', email: 'bob@x.com', order: 1 });
+  sendEnvelope(a, 2);
+  Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc), 'remote'); // baseline sync, then DISCONNECT
+  // Concurrent, offline: A voids; B signs the last signer.
+  voidEnvelope(a, 'alice', 3);
+  markSigned(b, 's1', 3);
+  // Merge both ways.
+  Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc), 'remote');
+  Y.applyUpdate(a.doc, Y.encodeStateAsUpdate(b.doc), 'remote');
+  for (const m of [a, b]) assert.equal(readEnvelope(m)!.status, 'voided', 'the void (terminal event) wins, not completed');
+});
+
+test('M3: readEvents is chronological even when inserted out of timestamp order', () => {
+  const m = make();
+  createEnvelope(m, { id: 'e', title: 't', createdBy: 'a', createdAt: 100 });
+  recordEvent(m, { type: 'viewed', actor: 'x', at: 50 }); // earlier ts, later insertion
+  const times = readEvents(m).map((e) => e.at);
+  assert.deepEqual(times, [...times].sort((x, y) => x - y), 'events sorted by timestamp');
+});
+
+test('L1: addSigner is a no-op once the envelope is sent (no status regression)', () => {
+  const m = make();
+  envelope(m);
+  sendEnvelope(m, 2);
+  addSigner(m, { id: 's3', name: 'Late', email: 'late@x.com', order: 3 });
+  assert.equal(readEnvelope(m)!.signers.length, 2, 'no signer added after send');
 });

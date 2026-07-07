@@ -1815,14 +1815,18 @@ function RequestSignaturesForm({ signing }: { signing: SigningState }) {
   const [order, setOrder] = useState<'parallel' | 'sequential'>('parallel');
   const [recips, setRecips] = useState<NewRecipient[]>([{ name: '', email: '', role: 'signer' }]);
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false); // synchronous double-submit guard (M2)
   const update = (i: number, patch: Partial<NewRecipient>) => setRecips((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const clean = recips.filter((r) => r.name.trim() && r.email.trim());
+  const hasSigner = clean.some((r) => r.role === 'signer'); // an all-cc envelope can never complete (M4)
   const submit = async () => {
-    if (!clean.length || busy) return;
+    if (!clean.length || !hasSigner || submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     try {
       await signing.createRequest(title.trim() || 'Signature request', order, clean);
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -1851,7 +1855,8 @@ function RequestSignaturesForm({ signing }: { signing: SigningState }) {
         <input type="checkbox" checked={order === 'sequential'} onChange={(e) => setOrder(e.target.checked ? 'sequential' : 'parallel')} />
         <span>Sign in order (each waits for the previous)</span>
       </label>
-      <button type="button" className="cpdf__reply-send" data-testid="sign-request-submit" disabled={!clean.length || busy} onClick={submit}>
+      {!hasSigner && clean.length > 0 && <span className="cpdf__sign-hint">Add at least one Signer (CC recipients can’t complete a request).</span>}
+      <button type="button" className="cpdf__reply-send" data-testid="sign-request-submit" disabled={!clean.length || !hasSigner || busy} onClick={submit}>
         {busy ? 'Sending…' : 'Request signatures'}
       </button>
     </div>
