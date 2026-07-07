@@ -49,7 +49,7 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 ## Phase 4 — Signing & rights
 **Goal:** production-grade signing.
 - E-signature (draw/type/upload → flatten).
-- Certified digital signature (PKCS#7) via `@signpdf/signpdf` + `node-forge` (web) / native Rust path (desktop); visible appearance; verify on read.
+- Certified digital signature (PKCS#7) via `@signpdf/signpdf` + `node-forge` (web) / native Rust path (desktop); visible appearance; verify on read. **Own-cert signing shipped (2026-07-08):** the Sign dialog can use your own .p12/.pfx (+ passphrase) for a CA-issued (verified) identity, signed locally in-browser via `signPdfWithP12` — never uploaded; else a self-signed identity.
 - Signing workflows: request-to-sign, signing order, audit trail (Yjs `signing` map + collab tokens).
 - PDF-level permissions/encryption (`lopdf`/`pdfium-render`).
 **Reuse:** collab tokens/rooms for per-signer links + audit.

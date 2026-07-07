@@ -454,7 +454,10 @@ export function App() {
     if (confirmDiscard()) fileRef.current?.click();
   };
 
-  const signDocument = async () => {
+  // Sign the current PDF. With no argument → a self-signed identity (managed by
+  // the SDK). With an own-cert p12 → sign with the user's CA-issued .p12/.pfx so
+  // the signature carries a verified (not self-asserted) identity.
+  const signDocument = async (ownCert?: { p12: Uint8Array; passphrase: string }) => {
     if (!src) return;
     if (signBusy) return;
     setSignBusy(true);
@@ -465,12 +468,11 @@ export function App() {
         bytes = new Uint8Array(await res.arrayBuffer());
       }
       if (!bytes) throw new Error('Could not read the current document.');
-      const { signPdf } = await import('@casualoffice/pdf/sign'); // lazy: node-forge
-      const signed = await signPdf({
-        pdf: bytes,
-        signerName: title || 'Casual PDF Signer',
-        reason: 'Signed in Casual PDF',
-      });
+      const signMod = await import('@casualoffice/pdf/sign'); // lazy: node-forge
+      const opts = { signerName: title || 'Casual PDF Signer', reason: 'Signed in Casual PDF' };
+      const signed = ownCert
+        ? await signMod.signPdfWithP12(bytes, ownCert.p12, ownCert.passphrase, opts)
+        : await signMod.signPdf({ pdf: bytes, ...opts });
       cancelSnapshot();
       void clearSnapshot();
       const buffer = signed.buffer.slice(signed.byteOffset, signed.byteOffset + signed.byteLength) as ArrayBuffer;
@@ -907,6 +909,7 @@ export function App() {
           onClose={() => setCertSigning(false)}
           onAddVisibleSignature={addVisibleSignature}
           onSignDocument={signDocument}
+          onSignWithOwnCert={(p12, passphrase) => signDocument({ p12, passphrase })}
           busy={signBusy}
         />
       )}
