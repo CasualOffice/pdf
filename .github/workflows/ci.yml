@@ -191,6 +191,7 @@ jobs:
           for t in \
             verify-drive \
             verify-collab-2client \
+            verify-collab-forms \
             verify-redact-split \
             verify-redact-xobject \
             verify-textedit-overlay \
