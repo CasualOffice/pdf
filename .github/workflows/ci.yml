@@ -199,6 +199,7 @@ jobs:
             verify-textedit-unicode \
             verify-textedit-googlefont \
             verify-signature-details \
+            verify-signature-owncert \
             verify-signature-openssl \
             verify-ai-panel \
             verify-ai-highlight \

@@ -1,20 +1,26 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@casualoffice/pdf';
 
 export function SignDialog({
   onClose,
   onAddVisibleSignature,
   onSignDocument,
+  onSignWithOwnCert,
   busy = false,
 }: {
   onClose: () => void;
   onAddVisibleSignature: () => void;
   onSignDocument: () => void;
+  onSignWithOwnCert: (p12: Uint8Array, passphrase: string) => void;
   busy?: boolean;
 }) {
+  const [useOwnCert, setUseOwnCert] = useState(false);
+  const [p12File, setP12File] = useState<File | null>(null);
+  const [passphrase, setPassphrase] = useState('');
+  const certInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const primaryRef = useRef<HTMLButtonElement>(null);
   // Stable ref so the mount effect runs exactly once — depending on `onClose`
@@ -69,6 +75,11 @@ export function SignDialog({
   const signNow = () => {
     onSignDocument();
   };
+  const signWithCert = async () => {
+    if (!p12File) return;
+    const bytes = new Uint8Array(await p12File.arrayBuffer());
+    onSignWithOwnCert(bytes, passphrase);
+  };
 
   return (
     <div className="dialog__scrim" role="presentation" onClick={() => !busy && onClose()}>
@@ -91,10 +102,59 @@ export function SignDialog({
           Add a cryptographic signature to the current PDF, or place a visible signature stamp on the page first.
         </p>
 
+        <label className="signdlg__owncert-toggle">
+          <input
+            type="checkbox"
+            checked={useOwnCert}
+            disabled={busy}
+            onChange={(e) => setUseOwnCert(e.target.checked)}
+          />
+          <span>Use my own certificate (.p12 / .pfx)</span>
+        </label>
+
+        {useOwnCert && (
+          <div className="signdlg__owncert">
+            <input
+              ref={certInputRef}
+              type="file"
+              accept=".p12,.pfx,application/x-pkcs12"
+              disabled={busy}
+              aria-label="Certificate file (.p12 or .pfx)"
+              onChange={(e) => setP12File(e.target.files?.[0] ?? null)}
+            />
+            <input
+              type="password"
+              className="signdlg__owncert-pass"
+              placeholder="Certificate passphrase"
+              autoComplete="off"
+              disabled={busy}
+              value={passphrase}
+              aria-label="Certificate passphrase"
+              onChange={(e) => setPassphrase(e.target.value)}
+            />
+            <p className="signdlg__owncert-hint">
+              Your certificate is used locally in the browser to sign this PDF — it is never uploaded.
+            </p>
+          </div>
+        )}
+
         <div className="signdlg__actions">
-          <button ref={primaryRef} type="button" className="signdlg__btn signdlg__btn--primary" onClick={signNow} disabled={busy} aria-live="polite">
-            {busy ? 'Signing…' : 'Sign and download'}
-          </button>
+          {useOwnCert ? (
+            <button
+              ref={primaryRef}
+              type="button"
+              className="signdlg__btn signdlg__btn--primary"
+              onClick={signWithCert}
+              disabled={busy || !p12File}
+              aria-live="polite"
+            >
+              {busy ? 'Signing…' : 'Sign with certificate'}
+            </button>
+          ) : (
+            <button ref={primaryRef} type="button" className="signdlg__btn signdlg__btn--primary" onClick={signNow} disabled={busy} aria-live="polite">
+              {busy ? 'Signing…' : 'Sign and download'}
+            </button>
+          )}
           <button type="button" className="signdlg__btn" onClick={continueToSignature} disabled={busy}>
             Add visible signature
           </button>
