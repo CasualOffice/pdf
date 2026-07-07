@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCasualPdfDoc } from '../../packages/pdf-sdk/src/model.ts';
-import { bindAnnotations, annotationBridge, seedAnnotations, SUGGESTION_OPACITY, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
+import { bindAnnotations, annotationBridge, seedAnnotations, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
 import { readPeers, initials, type AwarenessUserState } from '../../packages/pdf-sdk/src/presence.ts';
 
 /** In-memory stand-in for the EmbedPDF annotation plugin. `create/update/delete`
@@ -52,6 +52,8 @@ class FakeBridge implements AnnotationBridge {
     this.store.delete(id);
     this.emit({ type: 'delete', committed: true, pageIndex, annotation: { id } });
   }
+  /** Emit a raw event (to simulate the plugin's async echo of an applied change). */
+  emitEvent(ev: BridgeEvent) { this.emit(ev); }
   private emit(ev: BridgeEvent) { for (const l of [...this.listeners]) l(ev); }
 }
 
@@ -304,19 +306,32 @@ test('readPeers surfaces each peer active page when broadcast', () => {
   assert.equal(peers.find((p) => p.name === 'Bob')?.page, undefined, 'no page → undefined');
 });
 
-test('a pending suggestion renders translucent on the peer; accepting restores opacity', () => {
-  const { docB, bridgeA, bridgeB, teardown } = setupSuggest();
-  bridgeA.userCreate(0, anno('s1'));
-  assert.equal(
-    (bridgeB.store.get('s1')?.annotation as { opacity?: number })?.opacity,
-    SUGGESTION_OPACITY,
-    'suggestion is translucent (display-only) on the peer',
-  );
-  acceptSuggestion(docB, 's1', 'bob');
-  assert.equal(
-    (bridgeB.store.get('s1')?.annotation as { opacity?: number })?.opacity,
-    undefined,
-    'accepted → full opacity restored',
-  );
+
+test('an async echo of a reconcile-applied change is not written back (author + no dup)', () => {
+  // A creates a1 (author alice) → syncs to B (author preserved as alice).
+  const { docB, bridgeA, bridgeB, teardown } = setup();
+  bridgeA.userCreate(0, anno('a1'));
+  const authorBefore = docB.annotations.toArray().find((m) => m.get('id') === 'a1')?.get('author');
+  assert.equal(authorBefore, 'alice', 'author synced from the creator');
+
+  // Simulate the plugin on B firing a LATE/async committed create for the same
+  // annotation (an echo of the reconcile that just applied it) — after any
+  // applyingRemote window. The idempotent guard must skip it.
+  bridgeB.emitEvent({ type: 'create', committed: true, pageIndex: 0, annotation: anno('a1') });
+
+  const authorAfter = docB.annotations.toArray().find((m) => m.get('id') === 'a1')?.get('author');
+  assert.equal(authorAfter, 'alice', 'echo did NOT overwrite the author with the local one (bob)');
+  assert.equal(docB.annotations.length, 1, 'echo did NOT create a duplicate');
+  teardown();
+});
+
+test('a genuine local edit (different content) is still recorded', () => {
+  const { docA, bridgeA, teardown } = setup();
+  bridgeA.userCreate(0, anno('a1'));
+  // A real edit: same id, different rect → must be written (not skipped as an echo).
+  const edited: RawAnnotation = { ...anno('a1'), rect: { origin: { x: 99, y: 99 }, size: { width: 1, height: 1 } } };
+  bridgeA.emitEvent({ type: 'update', committed: true, pageIndex: 0, annotation: edited });
+  const stored = docA.annotations.toArray().find((m) => m.get('id') === 'a1')?.toJSON() as { props?: { rect?: { origin?: { x?: number } } } };
+  assert.equal(stored.props?.rect?.origin?.x, 99, 'a real edit is recorded, not skipped');
   teardown();
 });

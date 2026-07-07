@@ -96,8 +96,12 @@ export function acceptSuggestion(model: CasualPdfDoc, id: string, reviewer: stri
   if (i < 0) return;
   const entry = model.annotations.get(i);
   if (entry.get('state') !== 'suggested') return;
-  entry.set('state', 'applied');
-  entry.set('reviewedBy', reviewer);
+  // One transaction → one observer fire (two separate `set`s would run reconcile
+  // twice for a single accept).
+  model.doc.transact(() => {
+    entry.set('state', 'applied');
+    entry.set('reviewedBy', reviewer);
+  });
 }
 
 /** Reject a pending suggestion: remove it from the overlay. */
