@@ -681,7 +681,8 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden; /* never a horizontal scrollbar in the 200px panel */
   padding: var(--space-1, 2px) var(--space-2, 4px);
 }
 .cpdf__panel-empty {
@@ -1523,6 +1524,7 @@
 }
 .cpdf__reply .cpdf__reply-input {
   flex: 1;
+  min-width: 0; /* let the input shrink below its intrinsic width (no overflow) */
 }
 .cpdf__comment-resolved-toggle {
   width: calc(100% - 16px);

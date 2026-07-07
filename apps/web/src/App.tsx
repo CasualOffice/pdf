@@ -11,6 +11,7 @@ import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
 import { SignatureInfoDialog } from './SignatureInfoDialog';
 import { PageFurnitureDialog } from './PageFurnitureDialog';
+import { ChunkErrorBoundary } from './ChunkErrorBoundary';
 import { RestrictDialog, type RestrictPermissions } from './RestrictDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 import { isDesktop } from './desk-bridge-bootstrap';
@@ -899,13 +900,15 @@ export function App() {
             )}
             {aiOpen && (
               <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 360, zIndex: 19, background: 'var(--color-surface, #fff)', boxShadow: 'var(--shadow-3, -2px 0 16px rgba(0,0,0,.14))' }}>
-                <Suspense fallback={<div style={{ padding: 'var(--space-4, 16px)', color: 'var(--color-text-muted, #666)' }}>Loading AI…</div>}>
-                  <AiPanel
-                    getApi={() => api.current}
-                    onClose={() => setAiOpen(false)}
-                    provider={COLLAB_WS_URL ? { provider: 'auto', collabWsUrl: COLLAB_WS_URL } : undefined}
-                  />
-                </Suspense>
+                <ChunkErrorBoundary label="The AI panel">
+                  <Suspense fallback={<div style={{ padding: 'var(--space-4, 16px)', color: 'var(--color-text-muted, #666)' }}>Loading AI…</div>}>
+                    <AiPanel
+                      getApi={() => api.current}
+                      onClose={() => setAiOpen(false)}
+                      provider={COLLAB_WS_URL ? { provider: 'auto', collabWsUrl: COLLAB_WS_URL } : undefined}
+                    />
+                  </Suspense>
+                </ChunkErrorBoundary>
               </div>
             )}
           </>
