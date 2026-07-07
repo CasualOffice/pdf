@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { CasualPdf, Icon, allowedModes, type Mode, type Role, type CasualPdfApi } from '@casualoffice/pdf';
-import { signPdf } from '@casualoffice/pdf/sign';
-import { AiPanel } from '@casualoffice/pdf/ai';
+// The AI panel (agent loop, RAG, 50-type PII, transport) and the signing stack
+// (node-forge) are large and used ON DEMAND — load them lazily so they stay out of
+// the initial bundle. `signPdf` is dynamically imported at its call site.
+const AiPanel = lazy(() => import('@casualoffice/pdf/ai').then((m) => ({ default: m.AiPanel })));
 import { MenuBar, type MenuDef } from './Menu';
 import { SignDialog } from './SignDialog';
 import { SignatureInfoDialog } from './SignatureInfoDialog';
@@ -463,6 +465,7 @@ export function App() {
         bytes = new Uint8Array(await res.arrayBuffer());
       }
       if (!bytes) throw new Error('Could not read the current document.');
+      const { signPdf } = await import('@casualoffice/pdf/sign'); // lazy: node-forge
       const signed = await signPdf({
         pdf: bytes,
         signerName: title || 'Casual PDF Signer',
@@ -863,11 +866,13 @@ export function App() {
             )}
             {aiOpen && (
               <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 360, zIndex: 19, background: 'var(--color-surface, #fff)', boxShadow: 'var(--shadow-3, -2px 0 16px rgba(0,0,0,.14))' }}>
-                <AiPanel
-                  getApi={() => api.current}
-                  onClose={() => setAiOpen(false)}
-                  provider={COLLAB_WS_URL ? { provider: 'auto', collabWsUrl: COLLAB_WS_URL } : undefined}
-                />
+                <Suspense fallback={<div style={{ padding: 'var(--space-4, 16px)', color: 'var(--color-text-muted, #666)' }}>Loading AI…</div>}>
+                  <AiPanel
+                    getApi={() => api.current}
+                    onClose={() => setAiOpen(false)}
+                    provider={COLLAB_WS_URL ? { provider: 'auto', collabWsUrl: COLLAB_WS_URL } : undefined}
+                  />
+                </Suspense>
               </div>
             )}
           </>
