@@ -47,6 +47,9 @@ export function useCollab(
   const [suggestions, setSuggestions] = useState<AnnotationData[]>([]);
   const modelRef = useRef<CasualPdfDoc | null>(null);
   const handleRef = useRef<CollabHandle | null>(null);
+  // Last page requested; flushed once the connection resolves so an early
+  // broadcast (before attach completes) isn't lost.
+  const pendingPageRef = useRef<number | null>(null);
   // Live mode without re-running the connection effect — the binding reads it at
   // create-time to stamp `suggested` vs `applied`.
   const modeRef = useRef(mode);
@@ -100,6 +103,7 @@ export function useCollab(
         }
         handle = h;
         handleRef.current = h;
+        if (pendingPageRef.current != null) h.setActivePage(pendingPageRef.current);
         offPresence = h.onPresence(setPeers);
         // Source-of-truth seed: once the room has synced, if it's empty and not
         // yet seeded, publish the base document's annotations (already loaded in
@@ -141,6 +145,7 @@ export function useCollab(
     if (modelRef.current) rejectSuggestion(modelRef.current, sid);
   }, []);
   const setActivePage = useCallback((page: number) => {
+    pendingPageRef.current = page;
     handleRef.current?.setActivePage(page);
   }, []);
 

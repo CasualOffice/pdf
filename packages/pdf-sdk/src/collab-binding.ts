@@ -104,15 +104,25 @@ function toEntryFields(raw: RawAnnotation, pageIndex: number, author: string): P
   };
 }
 
-/** Suggested annotations render translucent on-canvas so pending proposals read
- *  as distinct from applied edits. This transform is DISPLAY-ONLY — applied in the
- *  reconcile to the copy sent to the plugin — so the overlay's raw annotation is
- *  untouched (accepting restores full opacity; no echo back into the model). */
-export const SUGGESTION_OPACITY = 0.5;
-export function displayFor(raw: RawAnnotation, state: EntryState | undefined): RawAnnotation {
-  if (state !== 'suggested') return raw;
-  const base = typeof raw.opacity === 'number' ? raw.opacity : 1;
-  return { ...raw, opacity: base * SUGGESTION_OPACITY };
+/** Order-insensitive canonical serialization for comparing two annotations. Keys
+ *  are recursively sorted (the model's stored props and the plugin's live object
+ *  can differ only in key order) and `pageIndex` is stripped (the plugin object
+ *  carries it, the stored raw may not) — so reconcile diffs on real content, not
+ *  cosmetics, and the echo guard can detect an already-applied change. */
+export function canon(raw: unknown): string {
+  const norm = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        if (k === 'pageIndex') continue;
+        out[k] = norm((v as Record<string, unknown>)[k]);
+      }
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(norm(raw));
 }
 
 /**
@@ -137,10 +147,24 @@ export function bindAnnotations(bridge: AnnotationBridge, model: CasualPdfDoc, o
     if (ev.type === 'loaded') return; // initial batch is already in the model/base
     if (!ev.committed) return; // only sync final commits, not in-progress previews
 
+    // Idempotent guard against ASYNC echo: EmbedPDF may emit the create/update
+    // event for a reconcile-applied change on a later tick — after `applyingRemote`
+    // has been reset — so the boolean guard alone is timing-fragile. If the model
+    // already holds this exact annotation, the event IS that echo: skip it, else
+    // we'd overwrite author/state and re-broadcast to peers (a ping-pong).
+    if (ev.type !== 'delete') {
+      const existing = indexOfId(ev.annotation.id);
+      if (existing >= 0) {
+        const storedRaw = model.annotations.get(existing).get('props') ?? { id: ev.annotation.id };
+        if (canon(storedRaw) === canon(ev.annotation)) return;
+      }
+    }
+
     model.doc.transact(() => {
       if (ev.type === 'delete') {
-        const i = indexOfId(ev.annotation.id);
-        if (i >= 0) model.annotations.delete(i, 1);
+        // Remove EVERY entry with this id (a rare seed race can leave duplicates).
+        let i: number;
+        while ((i = indexOfId(ev.annotation.id)) >= 0) model.annotations.delete(i, 1);
         return;
       }
       const fields = toEntryFields(ev.annotation, ev.pageIndex, opts.author);
@@ -169,15 +193,16 @@ export function bindAnnotations(bridge: AnnotationBridge, model: CasualPdfDoc, o
       for (const entry of model.annotations.toArray()) {
         const data = entry.toJSON() as AnnotationData;
         const raw = (data.props as unknown as RawAnnotation) ?? { id: data.id };
-        // Display-only: suggestions render translucent (the model raw is untouched).
-        modelById.set(data.id, { pageIndex: data.page, annotation: displayFor(raw, data.state) });
+        modelById.set(data.id, { pageIndex: data.page, annotation: raw });
       }
       const bridgeById = new Map(bridge.listAnnotations().map((a) => [a.annotation.id, a]));
 
       for (const [id, m] of modelById) {
         const b = bridgeById.get(id);
+        // Order-insensitive compare so identical content doesn't churn an update
+        // (which would fire an event that the async echo could write back).
         if (!b) bridge.createAnnotation(m.pageIndex, m.annotation);
-        else if (JSON.stringify(b.annotation) !== JSON.stringify(m.annotation)) {
+        else if (canon(b.annotation) !== canon(m.annotation)) {
           bridge.updateAnnotation(m.pageIndex, id, m.annotation);
         }
       }
