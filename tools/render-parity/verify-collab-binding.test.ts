@@ -292,3 +292,14 @@ test('seedAnnotations publishes base annotations into an empty room + syncs, ide
   assert.equal(docA.annotations.length, 1, 'seeding is idempotent (id already present)');
   teardown();
 });
+
+test('readPeers surfaces each peer active page when broadcast', () => {
+  const states = new Map<number, AwarenessUserState>([
+    [1, { user: { name: 'Alice' }, page: 5 }],
+    [2, { user: { name: 'Bob' } }],
+    [9, { user: { name: 'Self' }, page: 3 }],
+  ]);
+  const peers = readPeers(states, 9);
+  assert.equal(peers.find((p) => p.name === 'Alice')?.page, 5, 'page read from awareness');
+  assert.equal(peers.find((p) => p.name === 'Bob')?.page, undefined, 'no page → undefined');
+});
