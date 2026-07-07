@@ -1636,3 +1636,141 @@
   font: 600 10px/1.5 var(--font-sans, system-ui, sans-serif);
   white-space: nowrap;
 }
+
+/* ── Signatures panel (request-to-sign + status + audit) ─────────────────── */
+.cpdf__sign-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-3, 8px);
+}
+.cpdf__sign-input {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1b1c1f);
+  font: 400 12px/1.3 var(--font-sans, system-ui, sans-serif);
+  min-width: 0;
+}
+.cpdf__sign-recip {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.02));
+  position: relative;
+}
+.cpdf__sign-recip-x {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, #889);
+  cursor: pointer;
+  font-size: 15px;
+}
+.cpdf__sign-add,
+.cpdf__sign-void {
+  border: none;
+  background: transparent;
+  color: var(--color-accent, #2563eb);
+  font: 500 12px/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  padding: 6px;
+  text-align: left;
+  border-radius: var(--radius-md, 6px);
+}
+.cpdf__sign-void {
+  color: var(--color-danger, #dc2626);
+}
+.cpdf__sign-order {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 12px/1.3 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1b1c1f);
+}
+.cpdf__sign-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-3, 8px);
+}
+.cpdf__sign-envelope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cpdf__sign-doctitle {
+  font: 600 13px/1.3 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1b1c1f);
+  flex: 1;
+  min-width: 0;
+}
+.cpdf__sign-badge {
+  font: 600 10px/1.5 var(--font-sans, system-ui, sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.06));
+  color: var(--color-text-secondary, #556);
+}
+.cpdf__sign-badge--completed {
+  background: var(--color-success-bg, rgba(22, 121, 74, 0.14));
+  color: var(--color-success, #16794a);
+}
+.cpdf__sign-badge--declined,
+.cpdf__sign-badge--voided {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+.cpdf__sign-signer {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.02));
+}
+.cpdf__sign-signer-id strong {
+  font-size: 12px;
+}
+.cpdf__sign-signer-id span {
+  font-size: 11px;
+  color: var(--color-text-secondary, #889);
+}
+.cpdf__sign-signer-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary, #778);
+  text-transform: capitalize;
+}
+.cpdf__sign-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cpdf__sign-audit {
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  padding-top: 8px;
+}
+.cpdf__sign-audit-head {
+  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary, #889);
+  margin-bottom: 6px;
+}
+.cpdf__sign-event {
+  font: 400 11px/1.6 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text-secondary, #667);
+}
+.cpdf__sign-event-type {
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text, #1b1c1f);
+}

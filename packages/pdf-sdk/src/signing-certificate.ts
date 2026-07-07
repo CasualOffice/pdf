@@ -13,7 +13,7 @@ import type { SigningEnvelope } from './signing';
 /** SHA-256 hex of the document bytes — the attribution/tamper-evidence anchor
  *  stored on the envelope (`docHash`). WebCrypto (browser + Node). */
 export async function computeDocHash(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const digest = await crypto.subtle.digest('SHA-256', bytes as unknown as BufferSource);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 

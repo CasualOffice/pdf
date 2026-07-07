@@ -192,6 +192,7 @@ jobs:
             verify-drive \
             verify-collab-2client \
             verify-collab-forms \
+            verify-collab-signing \
             verify-redact-split \
             verify-redact-xobject \
             verify-textedit-overlay \
