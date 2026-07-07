@@ -32,6 +32,8 @@ export interface CollabState {
   acceptSuggestion(id: string): void;
   /** Reject a suggestion by id → it is removed from the overlay (and all peers). */
   rejectSuggestion(id: string): void;
+  /** Broadcast this client's current 1-based page to peers (presence "where"). */
+  setActivePage(page: number): void;
 }
 
 export function useCollab(
@@ -44,6 +46,7 @@ export function useCollab(
   const [peers, setPeers] = useState<Peer[]>([]);
   const [suggestions, setSuggestions] = useState<AnnotationData[]>([]);
   const modelRef = useRef<CasualPdfDoc | null>(null);
+  const handleRef = useRef<CollabHandle | null>(null);
   // Live mode without re-running the connection effect — the binding reads it at
   // create-time to stamp `suggested` vs `applied`.
   const modeRef = useRef(mode);
@@ -96,6 +99,7 @@ export function useCollab(
           return;
         }
         handle = h;
+        handleRef.current = h;
         offPresence = h.onPresence(setPeers);
         // Source-of-truth seed: once the room has synced, if it's empty and not
         // yet seeded, publish the base document's annotations (already loaded in
@@ -118,6 +122,7 @@ export function useCollab(
       model.annotations.unobserveDeep(refreshSuggestions);
       unbind();
       handle?.disconnect();
+      handleRef.current = null;
       ydoc.destroy();
       modelRef.current = null;
       setPeers([]);
@@ -135,6 +140,9 @@ export function useCollab(
   const reject = useCallback((sid: string) => {
     if (modelRef.current) rejectSuggestion(modelRef.current, sid);
   }, []);
+  const setActivePage = useCallback((page: number) => {
+    handleRef.current?.setActivePage(page);
+  }, []);
 
-  return { peers, suggestions, acceptSuggestion: accept, rejectSuggestion: reject };
+  return { peers, suggestions, acceptSuggestion: accept, rejectSuggestion: reject, setActivePage };
 }

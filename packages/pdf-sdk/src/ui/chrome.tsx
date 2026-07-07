@@ -1908,17 +1908,20 @@ function PresenceStack({ peers }: { peers: Peer[] }) {
       role="group"
       aria-label={`${peers.length} collaborator${peers.length === 1 ? '' : 's'} online`}
     >
-      {shown.map((p) => (
-        <span
-          key={p.clientId}
-          className="cpdf__presence-avatar"
-          title={p.name}
-          aria-label={p.name}
-          style={{ background: p.color ?? 'var(--color-accent, #2563eb)' }}
-        >
-          {initials(p.name)}
-        </span>
-      ))}
+      {shown.map((p) => {
+        const label = p.page ? `${p.name} · page ${p.page}` : p.name;
+        return (
+          <span
+            key={p.clientId}
+            className="cpdf__presence-avatar"
+            title={label}
+            aria-label={label}
+            style={{ background: p.color ?? 'var(--color-accent, #2563eb)' }}
+          >
+            {initials(p.name)}
+          </span>
+        );
+      })}
       {extra > 0 && (
         <span className="cpdf__presence-avatar cpdf__presence-more" title={`${extra} more`}>+{extra}</span>
       )}
@@ -2092,13 +2095,18 @@ export function Viewer({
   // Live collaboration (no-op when `collab` is omitted): bind this document's
   // annotation plugin bidirectionally to a Yjs room + surface remote peers and
   // pending suggestions.
-  const { peers, suggestions, acceptSuggestion, rejectSuggestion } = useCollab(
+  const { peers, suggestions, acceptSuggestion, rejectSuggestion, setActivePage } = useCollab(
     (annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined,
     documentId,
     collab,
     identity,
     mode,
   );
+  // Broadcast our current page to peers (presence "where"). No-op in solo mode.
+  const currentPage = docScroll?.currentPage;
+  useEffect(() => {
+    if (currentPage) setActivePage(currentPage);
+  }, [currentPage, setActivePage]);
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();

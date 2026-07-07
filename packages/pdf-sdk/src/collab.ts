@@ -14,7 +14,13 @@ export interface CollabHandle {
   /** Run `cb` once the initial server sync completes (fires immediately if already
    *  synced). Used to seed a fresh room from the base document. */
   onSynced(cb: () => void): () => void;
+  /** Broadcast this client's current 1-based page to peers (via awareness), so
+   *  presence can show WHERE each collaborator is, not just who's here. */
+  setActivePage(page: number): void;
 }
+
+/** Awareness state shape we read (identity + active page). */
+type AwarenessState = { user?: { name?: string; color?: string }; page?: number };
 
 /**
  * Attach a Y.Doc to a services/collab room for co-editing. Omitting this (the
@@ -61,7 +67,7 @@ export async function attachCollab(
     onPresence: (cb) => {
       const aw = provider.awareness;
       if (!aw) return () => {};
-      const emit = () => cb(readPeers(aw.getStates() as Map<number, { user?: { name?: string; color?: string } }>, aw.clientID));
+      const emit = () => cb(readPeers(aw.getStates() as Map<number, AwarenessState>, aw.clientID));
       aw.on('change', emit);
       emit(); // fire with the current set immediately
       return () => aw.off('change', emit);
@@ -73,5 +79,6 @@ export async function attachCollab(
       if (provider.synced) cb(); // already synced by the time we subscribe
       return () => provider.off('synced', h);
     },
+    setActivePage: (page) => provider.awareness?.setLocalStateField('page', page),
   };
 }

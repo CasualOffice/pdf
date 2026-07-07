@@ -16,12 +16,16 @@ export interface Peer {
   clientId: number;
   name: string;
   color?: string;
+  /** The peer's current 1-based page, if they've broadcast it (see `setActivePage`). */
+  page?: number;
 }
 
-/** The shape of an awareness state entry we care about (set by `attachCollab` as
- *  `awareness.setLocalStateField('user', identity)`). */
+/** The shape of an awareness state entry we care about: the identity (set by
+ *  `attachCollab` as `setLocalStateField('user', …)`) and the active page (set by
+ *  `setActivePage` as `setLocalStateField('page', n)`). */
 export interface AwarenessUserState {
   user?: { name?: string; color?: string };
+  page?: number;
 }
 
 /** Extract the remote peers from an awareness state map, excluding our own client
@@ -34,7 +38,11 @@ export function readPeers(
   for (const [clientId, state] of states) {
     if (clientId === selfClientId) continue;
     const user = state?.user;
-    if (user?.name) peers.push({ clientId, name: user.name, color: user.color });
+    if (user?.name) {
+      const peer: Peer = { clientId, name: user.name, color: user.color };
+      if (typeof state.page === 'number') peer.page = state.page;
+      peers.push(peer);
+    }
   }
   return peers.sort((a, b) => a.clientId - b.clientId);
 }
