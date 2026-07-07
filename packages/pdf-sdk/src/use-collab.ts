@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createCasualPdfDoc, readSuggestions, acceptSuggestion, rejectSuggestion, type CasualPdfDoc, type AnnotationData } from './model';
 import { annotationBridge, bindAnnotations, seedAnnotations, Y, type AnnotationCapabilityLike } from './collab-binding';
 import { attachCollab, type CollabHandle } from './collab';
+import { bindFormValues, formBridge, type FormCapabilityLike } from './form-binding';
 import type { Peer, PeerCursor } from './presence';
 import type { CollabConfig, Identity, Mode } from './modes';
 
@@ -47,6 +48,7 @@ export function useCollab(
   collab: CollabConfig | undefined,
   identity: Identity | undefined,
   mode?: Mode,
+  formCap?: FormCapabilityLike,
 ): CollabState {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [suggestions, setSuggestions] = useState<AnnotationData[]>([]);
@@ -67,6 +69,12 @@ export function useCollab(
   const capRef = useRef(cap);
   capRef.current = cap;
   const hasCap = !!cap;
+  // Form capability held in a ref (its `provides` object churns each render); the
+  // form binding runs in a SEPARATE effect gated on availability, so it never
+  // re-runs the connection effect (which would cause a reconnect storm).
+  const formCapRef = useRef(formCap);
+  formCapRef.current = formCap;
+  const hasFormCap = !!formCap;
 
   const url = collab?.url;
   const room = collab?.room;
@@ -143,6 +151,15 @@ export function useCollab(
     };
     // Availability + primitive config only — NOT the `cap` object identity.
   }, [hasCap, documentId, url, room, token, name, color]);
+
+  // Bind AcroForm field values to the shared doc once both the model (from the
+  // connection effect) and the form capability are available. Separate from the
+  // connection effect so form-cap churn can't trigger a reconnect.
+  useEffect(() => {
+    const fc = formCapRef.current;
+    if (!model || !fc) return;
+    return bindFormValues(formBridge(fc, documentId), model);
+  }, [model, hasFormCap, documentId]);
 
   const accept = useCallback(
     (sid: string) => {
