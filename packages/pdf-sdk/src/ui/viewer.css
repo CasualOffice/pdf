@@ -1392,3 +1392,161 @@
   gap: 2px;
   flex: none;
 }
+
+/* ── Threaded comments panel ──────────────────────────────────────────────── */
+.cpdf__comment-new {
+  padding: var(--space-3, 8px) var(--space-4, 10px);
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 6px);
+}
+.cpdf__comment-new-input,
+.cpdf__reply-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--space-2, 6px) var(--space-3, 8px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1b1c1f);
+  font: 400 13px/1.4 var(--font-sans, system-ui, sans-serif);
+}
+.cpdf__comment-new-input:focus,
+.cpdf__reply-input:focus {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.cpdf__comment-new-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cpdf__comment-new-hint {
+  color: var(--color-text-secondary, #889);
+  font-size: 11px;
+}
+.cpdf__reply-send {
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-accent, #2563eb);
+  color: var(--color-text-on-accent, #fff);
+  font: 500 12px/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+}
+.cpdf__reply-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cpdf__thread {
+  padding: var(--space-3, 8px) var(--space-4, 10px);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.02));
+  margin: var(--space-2, 6px) var(--space-3, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 6px);
+}
+.cpdf__thread--resolved {
+  opacity: 0.62;
+}
+.cpdf__thread-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 6px);
+}
+.cpdf__thread-spacer {
+  flex: 1;
+}
+.cpdf__thread-anchor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, #667);
+  font: 500 11px/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm, 4px);
+}
+.cpdf__thread-anchor:hover {
+  background: var(--color-hover, rgba(0, 0, 0, 0.05));
+  color: var(--color-accent, #2563eb);
+}
+.cpdf__thread-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-success, #16794a);
+  background: var(--color-success-bg, rgba(22, 121, 74, 0.12));
+  padding: 2px 6px;
+  border-radius: var(--radius-pill, 999px);
+}
+.cpdf__msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cpdf__msg-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2, 6px);
+}
+.cpdf__msg-author {
+  font: 600 12px/1.3 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1b1c1f);
+}
+.cpdf__msg-time {
+  font-size: 11px;
+  color: var(--color-text-secondary, #889);
+}
+.cpdf__msg-body {
+  font: 400 13px/1.45 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1b1c1f);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cpdf__mention {
+  color: var(--color-accent, #2563eb);
+  font-weight: 600;
+}
+.cpdf__reply {
+  display: flex;
+  gap: var(--space-2, 6px);
+  align-items: center;
+}
+.cpdf__reply .cpdf__reply-input {
+  flex: 1;
+}
+.cpdf__comment-resolved-toggle {
+  width: calc(100% - 16px);
+  margin: var(--space-2, 6px) var(--space-3, 8px);
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, #667);
+  font: 500 12px/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  border-radius: var(--radius-md, 6px);
+}
+.cpdf__comment-resolved-toggle:hover {
+  background: var(--color-hover, rgba(0, 0, 0, 0.05));
+}
+.cpdf__anno-index {
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  margin-top: var(--space-2, 6px);
+  padding: var(--space-2, 6px) var(--space-2, 6px) var(--space-3, 8px);
+}
+.cpdf__anno-index-head {
+  padding: var(--space-2, 6px) var(--space-3, 8px) var(--space-2, 4px);
+  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary, #889);
+}

@@ -34,6 +34,9 @@ export interface CollabState {
   rejectSuggestion(id: string): void;
   /** Broadcast this client's current 1-based page to peers (presence "where"). */
   setActivePage(page: number): void;
+  /** The shared Yjs overlay while connected (null in solo mode) — so threaded
+   *  comments can ride the same doc and sync peer→peer without a second connection. */
+  model: CasualPdfDoc | null;
 }
 
 export function useCollab(
@@ -45,6 +48,7 @@ export function useCollab(
 ): CollabState {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [suggestions, setSuggestions] = useState<AnnotationData[]>([]);
+  const [model, setModel] = useState<CasualPdfDoc | null>(null);
   const modelRef = useRef<CasualPdfDoc | null>(null);
   const handleRef = useRef<CollabHandle | null>(null);
   // Last page requested; flushed once the connection resolves so an early
@@ -73,6 +77,7 @@ export function useCollab(
     if (!cap || !url || !room) {
       setPeers([]);
       setSuggestions([]);
+      setModel(null);
       return;
     }
     const cfg: CollabConfig = { url, room, token };
@@ -81,6 +86,7 @@ export function useCollab(
     const ydoc = new Y.Doc();
     const model = createCasualPdfDoc(room, ydoc);
     modelRef.current = model;
+    setModel(model); // expose to consumers (threaded comments ride this doc)
     const bridge = annotationBridge(cap, documentId);
     const unbind = bindAnnotations(bridge, model, {
       author: name ?? 'anonymous',
@@ -129,6 +135,7 @@ export function useCollab(
       handleRef.current = null;
       ydoc.destroy();
       modelRef.current = null;
+      setModel(null);
       setPeers([]);
       setSuggestions([]);
     };
@@ -149,5 +156,5 @@ export function useCollab(
     handleRef.current?.setActivePage(page);
   }, []);
 
-  return { peers, suggestions, acceptSuggestion: accept, rejectSuggestion: reject, setActivePage };
+  return { peers, suggestions, acceptSuggestion: accept, rejectSuggestion: reject, setActivePage, model };
 }

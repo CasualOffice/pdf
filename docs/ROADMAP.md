@@ -40,7 +40,7 @@ Phased build, reuse-first. Each phase lists scope, what it reuses, and the **shi
 ## Phase 3 — Co-editing, comments, public links
 **Goal:** the differentiator.
 - Bind Y.Doc to `services/collab` (`HocuspocusProvider`); presence (cursors/avatars/selection).
-- Threaded comments anchored to regions; resolve; @-mention.
+- [~] Threaded comments anchored to regions; resolve; @-mention. **Panel + model shipped (2026-07-08):** page-anchored threads, replies, resolve/reopen, @-mentions; syncs over the shared Yjs doc (collab) or a local doc (solo). Region/selection anchoring + on-page markers are the next slice.
 - Public share links with roles `{viewer, commenter, editor, signer}`, **server-side enforced** (read-only Yjs for view/comment).
 - Store base PDF as immutable versions in collab host (`CASUAL_FILE_EXT=.pdf`).
 **Reuse:** `services/collab` end-to-end.
