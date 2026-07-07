@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createCasualPdfDoc, readSuggestions, acceptSuggestion, rejectSuggestion, type CasualPdfDoc, type AnnotationData } from './model';
 import { annotationBridge, bindAnnotations, seedAnnotations, Y, type AnnotationCapabilityLike } from './collab-binding';
 import { attachCollab, type CollabHandle } from './collab';
-import type { Peer } from './presence';
+import type { Peer, PeerCursor } from './presence';
 import type { CollabConfig, Identity, Mode } from './modes';
 
 /** Live collab state exposed to the UI. Empty/no-op in solo mode. */
@@ -34,6 +34,8 @@ export interface CollabState {
   rejectSuggestion(id: string): void;
   /** Broadcast this client's current 1-based page to peers (presence "where"). */
   setActivePage(page: number): void;
+  /** Broadcast this client's live cursor position (or null to clear it). */
+  setCursor(cursor: PeerCursor | null): void;
   /** The shared Yjs overlay while connected (null in solo mode) — so threaded
    *  comments can ride the same doc and sync peer→peer without a second connection. */
   model: CasualPdfDoc | null;
@@ -155,6 +157,10 @@ export function useCollab(
     pendingPageRef.current = page;
     handleRef.current?.setActivePage(page);
   }, []);
+  // Cursor is ephemeral — if the connection isn't up yet, dropping an update is fine.
+  const setCursor = useCallback((cursor: PeerCursor | null) => {
+    handleRef.current?.setCursor(cursor);
+  }, []);
 
-  return { peers, suggestions, acceptSuggestion: accept, rejectSuggestion: reject, setActivePage, model };
+  return { peers, suggestions, acceptSuggestion: accept, rejectSuggestion: reject, setActivePage, setCursor, model };
 }

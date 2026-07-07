@@ -306,6 +306,18 @@ test('readPeers surfaces each peer active page when broadcast', () => {
   assert.equal(peers.find((p) => p.name === 'Bob')?.page, undefined, 'no page → undefined');
 });
 
+test('readPeers surfaces a peer live cursor when broadcast (and ignores malformed)', () => {
+  const states = new Map<number, AwarenessUserState>([
+    [1, { user: { name: 'Alice' }, cursor: { page: 2, x: 0.4, y: 0.6 } }],
+    [2, { user: { name: 'Bob' }, cursor: { page: 1 } as unknown as { page: number; x: number; y: number } }],
+    [3, { user: { name: 'Cara' } }],
+  ]);
+  const peers = readPeers(states, 9);
+  assert.deepEqual(peers.find((p) => p.name === 'Alice')?.cursor, { page: 2, x: 0.4, y: 0.6 }, 'valid cursor read');
+  assert.equal(peers.find((p) => p.name === 'Bob')?.cursor, undefined, 'malformed cursor (no x/y) ignored');
+  assert.equal(peers.find((p) => p.name === 'Cara')?.cursor, undefined, 'no cursor → undefined');
+});
+
 
 test('an async echo of a reconcile-applied change is not written back (author + no dup)', () => {
   // A creates a1 (author alice) → syncs to B (author preserved as alice).
