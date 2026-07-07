@@ -14,6 +14,24 @@
  * Honest scope: an ESIGN/eIDAS-SES + integrity signature (the existing PKCS#7 seal
  * is the tamper-evidence) — NOT AES/QES. One envelope per document in v1.
  *
+ * TRUST BOUNDARIES (honest, documented limitations — this is SES, not AES/QES):
+ *  - IDENTITY (H3): the model enforces WHOSE-TURN, but it cannot verify that the
+ *    acting client IS the named signer — any room member can call `markSigned` for
+ *    a pending signer. Real identity binding must be enforced SERVER-SIDE at the
+ *    collab room (per-signer tokens); the client `authMethod` is 'collab-session',
+ *    not an identity-verified email/2FA challenge.
+ *  - CONCURRENT CREATE (H1): `createEnvelope` is idempotent (a no-op if one exists),
+ *    which covers double-clicks + post-sync re-entry; a TRUE simultaneous create by
+ *    two clients on a fresh doc (both see none) can still race — the robust fix is
+ *    server-side election / a deterministic id. Rare in practice.
+ *  - TAMPER-EVIDENCE (M5): `docHash` is the SHA-256 of the document AS SENT for
+ *    signature (a PDFium re-export), recorded at request time; the certificate
+ *    documents that hash. The final PDF (certificate appended) is a distinct
+ *    artifact. The cryptographic seal is the separate PKCS#7 signature.
+ *  - AUDIT AUTHORSHIP (L3): the log is client-authored (caller supplies at/actor),
+ *    so a malicious client could backdate/forge entries; a tamper-evident log needs
+ *    server-side event authorship. Acceptable for the SES scope.
+ *
  * Pure: ids + timestamps are caller-supplied, so the whole lifecycle unit-tests
  * without a clock. Structure: envelope fields on `signing` (Y.Map), `signers` and
  * `events` as Y.Arrays (events append-only → conflict-free).
@@ -97,12 +115,15 @@ export interface NewEnvelope {
   docHash?: string;
 }
 
-/** Create the signing envelope in `draft`. Idempotent-guarded by the caller. */
+/** Create the signing envelope in `draft`. Idempotent: a no-op if an envelope
+ *  already exists (one per document), so a double-click or a re-entry can't clobber
+ *  an in-progress request by resetting its signers/events arrays. */
 export function createEnvelope(model: CasualPdfDoc, e: NewEnvelope): void {
+  if (hasEnvelope(model)) return;
   model.doc.transact(() => {
     model.signing.set('id', e.id);
     model.signing.set('title', e.title);
-    model.signing.set('status', 'draft' as EnvelopeStatus);
+    // status is DERIVED at read time (effectiveStatus) — not stored as an LWW scalar.
     model.signing.set('order', e.order ?? 'parallel');
     model.signing.set('createdBy', e.createdBy);
     model.signing.set('createdAt', e.createdAt);
@@ -145,10 +166,11 @@ export interface NewSigner {
   order?: number;
 }
 
-/** Add a recipient to the (draft) envelope. */
+/** Add a recipient. Only while the envelope is still a draft — adding a signer to
+ *  an already-sent/completed envelope would regress its derived status (L1). */
 export function addSigner(model: CasualPdfDoc, s: NewSigner): void {
   const signers = signersArr(model);
-  if (!signers) return;
+  if (!signers || effectiveStatus(model) !== 'draft') return;
   model.doc.transact(() => {
     const m = new Y.Map<unknown>();
     m.set('id', s.id);
@@ -168,21 +190,22 @@ function findSigner(model: CasualPdfDoc, id: string): Y.Map<unknown> | null {
   return null;
 }
 
-function setEnvelopeStatus(model: CasualPdfDoc): void {
-  model.signing.set('status', deriveStatus(readSigners(model), currentStatus(model)));
+/** The envelope's status, DERIVED (not a stored LWW scalar) from the append-only
+ *  event log — terminal precedence: any voided/declined event wins — then the
+ *  signer records. So a concurrent void-vs-sign can't clobber the status to an
+ *  incoherent state (H2): the terminal event always wins on both clients. */
+function effectiveStatus(model: CasualPdfDoc): EnvelopeStatus {
+  const events = readEvents(model);
+  if (events.some((e) => e.type === 'voided')) return 'voided';
+  if (events.some((e) => e.type === 'declined')) return 'declined';
+  const sent = events.some((e) => e.type === 'sent');
+  return deriveStatus(readSigners(model), sent ? 'sent' : 'draft');
 }
 
-function currentStatus(model: CasualPdfDoc): EnvelopeStatus {
-  return (model.signing.get('status') as EnvelopeStatus) ?? 'draft';
-}
-
-/** Move draft → sent (recipients notified). Records a `sent` event. */
+/** Move draft → sent (recipients notified). Records a `sent` event; idempotent. */
 export function sendEnvelope(model: CasualPdfDoc, at: number): void {
-  if (currentStatus(model) !== 'draft') return;
-  model.doc.transact(() => {
-    model.signing.set('status', 'sent' as EnvelopeStatus);
-    pushEvent(model, { type: 'sent', actor: String(model.signing.get('createdBy') ?? ''), at });
-  });
+  if (effectiveStatus(model) !== 'draft') return;
+  model.doc.transact(() => pushEvent(model, { type: 'sent', actor: String(model.signing.get('createdBy') ?? ''), at }));
 }
 
 /** A signer opened the document. */
@@ -193,7 +216,6 @@ export function markViewed(model: CasualPdfDoc, signerId: string, at: number): v
     s.set('status', 'viewed' as SignerStatus);
     s.set('viewedAt', at);
     pushEvent(model, { type: 'viewed', actor: String(s.get('email') ?? s.get('name') ?? ''), at });
-    setEnvelopeStatus(model);
   });
 }
 
@@ -211,39 +233,41 @@ export function markConsented(model: CasualPdfDoc, signerId: string, at: number,
   );
 }
 
-/** A signer signed. Records the event, sets timestamp + auth method, recomputes status. */
-export function markSigned(model: CasualPdfDoc, signerId: string, at: number, authMethod = 'email'): void {
+/** A signer signed. ENFORCES whose-turn + non-terminal at the model layer (M1) —
+ *  not just the UI — sets the timestamp + auth method, records the event. Status is
+ *  derived (not set here). `authMethod` should reflect a real challenge; the caller
+ *  passes the acting identity — see the identity-binding note below. */
+export function markSigned(model: CasualPdfDoc, signerId: string, at: number, authMethod = 'unauthenticated'): void {
   const s = findSigner(model, signerId);
   if (!s || s.get('status') === 'signed' || s.get('status') === 'declined') return;
+  const env = readEnvelope(model);
+  if (!env || !canSign(env, signerId)) return; // sequential order + terminal enforcement
   model.doc.transact(() => {
     s.set('status', 'signed' as SignerStatus);
     s.set('signedAt', at);
     s.set('authMethod', authMethod);
     pushEvent(model, { type: 'signed', actor: String(s.get('email') ?? s.get('name') ?? ''), at });
-    setEnvelopeStatus(model);
   });
 }
 
-/** A signer declined — terminal for the envelope. */
+/** A signer declined — terminal for the envelope. Enforces whose-turn + non-terminal. */
 export function markDeclined(model: CasualPdfDoc, signerId: string, at: number, reason?: string): void {
   const s = findSigner(model, signerId);
   if (!s || s.get('status') === 'signed' || s.get('status') === 'declined') return;
+  const env = readEnvelope(model);
+  if (!env || !canSign(env, signerId)) return;
   model.doc.transact(() => {
     s.set('status', 'declined' as SignerStatus);
     s.set('declinedAt', at);
     pushEvent(model, { type: 'declined', actor: String(s.get('email') ?? s.get('name') ?? ''), at, detail: reason });
-    model.signing.set('status', 'declined' as EnvelopeStatus);
   });
 }
 
 /** Void the envelope (sender cancels) — terminal. */
 export function voidEnvelope(model: CasualPdfDoc, actor: string, at: number, reason?: string): void {
-  const st = currentStatus(model);
+  const st = effectiveStatus(model);
   if (st === 'completed' || st === 'voided' || st === 'declined') return;
-  model.doc.transact(() => {
-    model.signing.set('status', 'voided' as EnvelopeStatus);
-    pushEvent(model, { type: 'voided', actor, at, detail: reason });
-  });
+  model.doc.transact(() => pushEvent(model, { type: 'voided', actor, at, detail: reason }));
 }
 
 // ── reads / pure derivations ─────────────────────────────────────────────────
@@ -274,11 +298,16 @@ export function readSigners(model: CasualPdfDoc): Signer[] {
 export function readEvents(model: CasualPdfDoc): AuditEvent[] {
   const events = eventsArr(model);
   if (!events) return [];
-  return events.toArray().map((m) => {
-    const e: AuditEvent = { type: m.get('type') as AuditEventType, actor: String(m.get('actor') ?? ''), at: Number(m.get('at') ?? 0) };
-    if (m.get('detail') != null) e.detail = String(m.get('detail'));
-    return e;
-  });
+  return events
+    .toArray()
+    .map((m) => {
+      const e: AuditEvent = { type: m.get('type') as AuditEventType, actor: String(m.get('actor') ?? ''), at: Number(m.get('at') ?? 0) };
+      if (m.get('detail') != null) e.detail = String(m.get('detail'));
+      return e;
+    })
+    // Chronological by timestamp (M3) — CRDT insertion order can differ from `at`
+    // under concurrent signing; the audit trail must read in real time order.
+    .sort((a, b) => a.at - b.at);
 }
 
 /** The whole envelope, or null if none exists. */
@@ -287,7 +316,7 @@ export function readEnvelope(model: CasualPdfDoc): SigningEnvelope | null {
   return {
     id: String(model.signing.get('id')),
     title: String(model.signing.get('title') ?? ''),
-    status: currentStatus(model),
+    status: effectiveStatus(model),
     order: (model.signing.get('order') as SigningOrder) ?? 'parallel',
     createdBy: String(model.signing.get('createdBy') ?? ''),
     createdAt: Number(model.signing.get('createdAt') ?? 0),
