@@ -124,6 +124,30 @@ try {
     assert(relTop < 0.5, 'the overlay sits in the upper region where it was drawn (y-flip correct, not inverted)');
   }
 
+  // ── Remote cursors: A moves the pointer over the page → B shows A's cursor at
+  //    the matching fractional position.
+  await a.page.getByRole('tab', { name: 'Edit mode' }).click();
+  await a.page.keyboard.press('Escape'); // deactivate any tool → Select (pointerMode active)
+  await a.page.waitForTimeout(200);
+  const cbox = await a.page.locator('.cpdf__page').first().boundingBox();
+  // A few moves (with waits past the 55ms throttle) converging on (45%, 55%).
+  for (const [fx, fy] of [[0.3, 0.35], [0.4, 0.45], [0.45, 0.55], [0.45, 0.55]]) {
+    await a.page.mouse.move(cbox.x + cbox.width * fx, cbox.y + cbox.height * fy, { steps: 3 });
+    await a.page.waitForTimeout(90);
+  }
+  await b.page.waitForTimeout(1500);
+  const curCount = await b.page.locator('[data-testid=remote-cursor]').count();
+  console.log('B remote cursors:', curCount);
+  assert(curCount >= 1, 'A pointer movement shows a remote cursor on B');
+  const bpg = await b.page.locator('.cpdf__page').first().boundingBox();
+  const cb = await b.page.locator('[data-testid=remote-cursor]').first().boundingBox();
+  if (cb && bpg) {
+    const relX = (cb.x - bpg.x) / bpg.width;
+    const relY = (cb.y - bpg.y) / bpg.height;
+    console.log('remote cursor rel:', relX.toFixed(2), relY.toFixed(2));
+    assert(Math.abs(relX - 0.45) < 0.18 && Math.abs(relY - 0.55) < 0.18, 'remote cursor is near where A moved (position correct)');
+  }
+
   await a.ctx.close();
   await b.ctx.close();
 } catch (e) {

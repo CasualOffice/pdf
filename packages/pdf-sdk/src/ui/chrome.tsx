@@ -12,7 +12,7 @@
  * only in Edit/Suggest. Every control is wired to a verified EmbedPDF plugin
  * hook and renders inside the <EmbedPDF> provider (see CasualPdf.tsx).
  */
-import { Fragment, useEffect, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Viewport } from '@embedpdf/plugin-viewport/react';
 import { Scroller } from '@embedpdf/plugin-scroll/react';
@@ -1844,6 +1844,67 @@ function SuggestionOverlayLayer({
   );
 }
 
+/* ── Remote cursors (collab). Broadcasts this client's pointer position over this
+   page (fractional, throttled) via awareness, and renders peers' cursors on the
+   page. Coords come from the interaction manager in page-point space (same as
+   annotation rects → top-left, no y-flip); fractions map to the same spot at any
+   zoom. Container is overflow-hidden and pointer-events:none (never blocks input
+   or causes a scrollbar). ────────────────────────────────────────────────────── */
+function CursorLayer({
+  documentId,
+  pageIndex,
+  peers,
+  onMove,
+}: {
+  documentId: string;
+  pageIndex: number;
+  peers: Peer[];
+  onMove: (page: number, x: number, y: number) => void;
+}) {
+  const { provides: docCap } = useDocumentManagerCapability();
+  const { register } = usePointerHandlers({ modeId: 'pointerMode', pageIndex, documentId });
+  const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as
+    | { width: number; height: number }
+    | undefined;
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+  const lastSent = useRef(0);
+  useEffect(() => {
+    return register({
+      onPointerMove: (pos: { x: number; y: number }) => {
+        const s = sizeRef.current;
+        if (!s) return;
+        const now = Date.now();
+        if (now - lastSent.current < 55) return; // throttle awareness updates
+        lastSent.current = now;
+        onMove(pageIndex, pos.x / s.width, pos.y / s.height);
+      },
+    });
+  }, [register, pageIndex, onMove]);
+
+  const here = peers.filter((p) => p.cursor && p.cursor.page === pageIndex);
+  if (!here.length) return null;
+  return (
+    <div className="cpdf__cursors" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }} aria-hidden="true">
+      {here.map((p) => (
+        <div
+          key={p.clientId}
+          className="cpdf__cursor"
+          data-testid="remote-cursor"
+          style={{ position: 'absolute', left: `${p.cursor!.x * 100}%`, top: `${p.cursor!.y * 100}%`, color: p.color || '#4658ff' }}
+        >
+          <svg width="15" height="18" viewBox="0 0 15 18" fill="currentColor" aria-hidden="true">
+            <path d="M1 1l4 15 2.5-5.5L13 8z" stroke="#fff" strokeWidth="1" />
+          </svg>
+          <span className="cpdf__cursor-label" style={{ background: p.color || '#4658ff' }}>
+            {p.name}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Read-only sticky-note popup shown on the page when a comment is selected
    (used in View mode for reading). Editing happens in the properties panel —
    EmbedPDF's selection-menu container can't host a focusable textarea. ────── */
@@ -2402,7 +2463,7 @@ export function Viewer({
   // Live collaboration (no-op when `collab` is omitted): bind this document's
   // annotation plugin bidirectionally to a Yjs room + surface remote peers and
   // pending suggestions.
-  const { peers, suggestions, acceptSuggestion, rejectSuggestion, setActivePage, model: collabModel } = useCollab(
+  const { peers, suggestions, acceptSuggestion, rejectSuggestion, setActivePage, setCursor, model: collabModel } = useCollab(
     (annoApi ?? undefined) as unknown as AnnotationCapabilityLike | undefined,
     documentId,
     collab,
@@ -2417,6 +2478,8 @@ export function Viewer({
   useEffect(() => {
     if (currentPage) setActivePage(currentPage);
   }, [currentPage, setActivePage]);
+  // Stable so CursorLayer doesn't re-register its pointer handler each render.
+  const broadcastCursor = useCallback((page: number, x: number, y: number) => setCursor({ page, x, y }), [setCursor]);
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
@@ -3363,6 +3426,7 @@ export function Viewer({
                       }}
                     />
                     {suggestions.length > 0 && <SuggestionOverlayLayer documentId={documentId} pageIndex={pageIndex} suggestions={suggestions} />}
+                    {collab && <CursorLayer documentId={documentId} pageIndex={pageIndex} peers={peers} onMove={broadcastCursor} />}
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && textEditing && editBytes && (
                       <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} editBusy={editBusy} />

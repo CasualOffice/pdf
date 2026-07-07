@@ -10,6 +10,14 @@
  * The read is a pure function so it unit-tests without a live provider.
  */
 
+/** A peer's live cursor position: a page index (0-based) + fractional coords
+ *  (0..1, top-left) within that page, so it maps to the same spot on any zoom. */
+export interface PeerCursor {
+  page: number;
+  x: number;
+  y: number;
+}
+
 /** A remote collaborator currently connected to the room. */
 export interface Peer {
   /** Yjs awareness client id (stable per connection). */
@@ -18,6 +26,8 @@ export interface Peer {
   color?: string;
   /** The peer's current 1-based page, if they've broadcast it (see `setActivePage`). */
   page?: number;
+  /** The peer's live cursor position on the canvas, if broadcast (see `setCursor`). */
+  cursor?: PeerCursor;
 }
 
 /** The shape of an awareness state entry we care about: the identity (set by
@@ -26,6 +36,7 @@ export interface Peer {
 export interface AwarenessUserState {
   user?: { name?: string; color?: string };
   page?: number;
+  cursor?: PeerCursor;
 }
 
 /** Extract the remote peers from an awareness state map, excluding our own client
@@ -41,6 +52,8 @@ export function readPeers(
     if (user?.name) {
       const peer: Peer = { clientId, name: user.name, color: user.color };
       if (typeof state.page === 'number') peer.page = state.page;
+      const c = state.cursor;
+      if (c && typeof c.page === 'number' && typeof c.x === 'number' && typeof c.y === 'number') peer.cursor = c;
       peers.push(peer);
     }
   }

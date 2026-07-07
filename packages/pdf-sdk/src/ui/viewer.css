@@ -1619,3 +1619,20 @@
   background: color-mix(in srgb, var(--color-suggest, #7c3aed) 12%, transparent);
   box-sizing: border-box;
 }
+
+/* ── Remote collaborator cursors ─────────────────────────────────────────── */
+.cpdf__cursor {
+  transform: translate(-1px, -1px);
+  transition: left 80ms linear, top 80ms linear;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+}
+.cpdf__cursor-label {
+  position: absolute;
+  left: 13px;
+  top: 12px;
+  padding: 1px 6px;
+  border-radius: 3px 8px 8px 8px;
+  color: #fff;
+  font: 600 10px/1.5 var(--font-sans, system-ui, sans-serif);
+  white-space: nowrap;
+}

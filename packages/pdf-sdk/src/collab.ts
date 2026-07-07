@@ -3,7 +3,7 @@
 
 import type * as Y from 'yjs';
 import type { CollabConfig, Identity } from './modes';
-import { readPeers, type Peer } from './presence';
+import { readPeers, type Peer, type PeerCursor } from './presence';
 
 /** A live collab connection that can be torn down. */
 export interface CollabHandle {
@@ -17,10 +17,13 @@ export interface CollabHandle {
   /** Broadcast this client's current 1-based page to peers (via awareness), so
    *  presence can show WHERE each collaborator is, not just who's here. */
   setActivePage(page: number): void;
+  /** Broadcast this client's live cursor position (page + fractional coords), or
+   *  null to clear it (pointer left the canvas). Powers remote cursors. */
+  setCursor(cursor: PeerCursor | null): void;
 }
 
-/** Awareness state shape we read (identity + active page). */
-type AwarenessState = { user?: { name?: string; color?: string }; page?: number };
+/** Awareness state shape we read (identity + active page + live cursor). */
+type AwarenessState = { user?: { name?: string; color?: string }; page?: number; cursor?: PeerCursor };
 
 /**
  * Attach a Y.Doc to a services/collab room for co-editing. Omitting this (the
@@ -80,5 +83,6 @@ export async function attachCollab(
       return () => provider.off('synced', h);
     },
     setActivePage: (page) => provider.awareness?.setLocalStateField('page', page),
+    setCursor: (cursor) => provider.awareness?.setLocalStateField('cursor', cursor),
   };
 }
