@@ -1508,6 +1508,7 @@ function renderBody(body: string): React.ReactNode {
 function CommentThreadCard({
   thread,
   canEdit,
+  flash,
   onJump,
   onReply,
   onResolve,
@@ -1515,6 +1516,7 @@ function CommentThreadCard({
 }: {
   thread: CommentThread;
   canEdit: boolean;
+  flash?: boolean;
   onJump: (page: number) => void;
   onReply: (threadId: string, body: string) => void;
   onResolve: (threadId: string, resolved: boolean) => void;
@@ -1529,7 +1531,11 @@ function CommentThreadCard({
     }
   };
   return (
-    <div className={`cpdf__thread${resolved ? ' cpdf__thread--resolved' : ''}`} data-testid="comment-thread">
+    <div
+      className={`cpdf__thread${resolved ? ' cpdf__thread--resolved' : ''}${flash ? ' cpdf__thread--flash' : ''}`}
+      data-testid="comment-thread"
+      data-thread-id={root.threadId}
+    >
       <div className="cpdf__thread-head">
         <button type="button" className="cpdf__thread-anchor" onClick={() => onJump(root.page)} title="Go to page">
           <Icon name="comments" size={13} /> p.{root.page + 1}
@@ -1585,6 +1591,8 @@ function CommentsSidebar({
   canEdit,
   anchor,
   onAnchorUsed,
+  focusThreadId,
+  onFocusHandled,
   onClose,
 }: {
   documentId: string;
@@ -1593,6 +1601,8 @@ function CommentsSidebar({
   canEdit: boolean;
   anchor: { page: number; rect: [number, number, number, number] } | null;
   onAnchorUsed: () => void;
+  focusThreadId: string | null;
+  onFocusHandled: () => void;
   onClose: () => void;
 }) {
   const { provides: scrollApi } = useScroll(documentId);
@@ -1600,6 +1610,17 @@ function CommentsSidebar({
   void anno; // re-read the annotation index on any change
   const [draft, setDraft] = useState('');
   const [showResolved, setShowResolved] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+  // Scroll to + briefly highlight a thread when its on-page marker is clicked.
+  useEffect(() => {
+    if (!focusThreadId) return;
+    const el = document.querySelector(`[data-thread-id="${focusThreadId}"]`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setFlash(focusThreadId);
+    onFocusHandled();
+    const t = setTimeout(() => setFlash(null), 1600);
+    return () => clearTimeout(t);
+  }, [focusThreadId, onFocusHandled]);
   const jump = (page: number) => scrollApi?.scrollToPage({ pageNumber: page + 1 });
   // Secondary "Annotations" index (the panel is labelled "Comments & annotations").
   const annos = (scope?.getAnnotations() ?? [])
@@ -1685,6 +1706,7 @@ function CommentsSidebar({
                 key={t.root.id}
                 thread={t}
                 canEdit={canEdit}
+                flash={flash === t.root.threadId}
                 onJump={jump}
                 onReply={comments.addReply}
                 onResolve={comments.resolve}
@@ -1722,6 +1744,53 @@ function CommentsSidebar({
         )}
       </div>
     </aside>
+  );
+}
+
+/* ── On-page comment markers: a clickable pin at each anchored thread's rect.
+   Maps the stored PDF-point rect → a fraction of the page (y-flipped, since PDF
+   origin is bottom-left) and positions the pin at the rect's top-left. Click opens
+   the thread in the panel. Rendered in every mode so readers see where comments
+   are. ─────────────────────────────────────────────────────────────────────── */
+function CommentMarkersLayer({
+  documentId,
+  pageIndex,
+  threads,
+  onOpen,
+}: {
+  documentId: string;
+  pageIndex: number;
+  threads: CommentThread[];
+  onOpen: (threadId: string) => void;
+}) {
+  const { provides: docCap } = useDocumentManagerCapability();
+  const size = docCap?.getDocument(documentId)?.pages?.[pageIndex]?.size as
+    | { width: number; height: number }
+    | undefined;
+  const onPage = threads.filter((t) => t.page === pageIndex && t.rect && !t.resolved);
+  if (!size || !onPage.length) return null;
+  return (
+    <div className="cpdf__comment-markers" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+      {onPage.map((t) => {
+        const [x0, , , y1] = t.rect as [number, number, number, number];
+        const left = Math.max(0, Math.min(100, (x0 / size.width) * 100));
+        const top = Math.max(0, Math.min(100, (1 - y1 / size.height) * 100));
+        return (
+          <button
+            key={t.root.id}
+            type="button"
+            className="cpdf__comment-marker"
+            data-testid="comment-marker"
+            style={{ position: 'absolute', left: `${left}%`, top: `${top}%`, pointerEvents: 'auto' }}
+            title={`Comment by ${t.root.author}: ${t.root.body.slice(0, 60)}`}
+            aria-label={`Comment by ${t.root.author} on page ${pageIndex + 1}`}
+            onClick={() => onOpen(t.root.threadId)}
+          >
+            <Icon name="comments" size={12} />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -2198,6 +2267,8 @@ export function Viewer({
   // Pending comment anchor captured from a text selection (page + rect in page
   // points) → the next comment posted in the panel anchors to it, not the page.
   const [commentAnchor, setCommentAnchor] = useState<{ page: number; rect: [number, number, number, number] } | null>(null);
+  // Thread to scroll to + highlight in the panel (set when an on-page marker is clicked).
+  const [commentFocus, setCommentFocus] = useState<string | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [signing, setSigning] = useState(false);
@@ -3195,7 +3266,7 @@ export function Viewer({
           {!presenting && <LeftRail documentId={documentId} mode={mode} leftPanel={leftPanel} onToggleLeft={toggleLeft} onOrganize={() => { closeInlineEditors(); setOrganizing(true); }} onSign={() => { closeInlineEditors(); setSigning(true); }} onInsertImage={() => imageInputRef.current?.click()} redacting={redacting} onToggleRedact={toggleRedact} textEditing={textEditing} onToggleTextEdit={toggleTextEdit} onUndo={onUndo} onRedo={onRedo} />}
           {!presenting && leftPanel === 'thumbs' && <ThumbnailSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
           {!presenting && leftPanel === 'outline' && <OutlineSidebar documentId={documentId} onClose={() => setLeftPanel(null)} />}
-          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} comments={comments} currentPage={currentPage ?? 1} canEdit={mode !== 'view'} anchor={commentAnchor} onAnchorUsed={() => setCommentAnchor(null)} onClose={() => { setCommentAnchor(null); setLeftPanel(null); }} />}
+          {!presenting && leftPanel === 'comments' && <CommentsSidebar documentId={documentId} comments={comments} currentPage={currentPage ?? 1} canEdit={mode !== 'view'} anchor={commentAnchor} onAnchorUsed={() => setCommentAnchor(null)} focusThreadId={commentFocus} onFocusHandled={() => setCommentFocus(null)} onClose={() => { setCommentAnchor(null); setLeftPanel(null); }} />}
           {/* Ctrl/⌘ + wheel and pinch-to-zoom over the document. */}
           <ZoomGestureWrapper documentId={documentId} className="cpdf__zoomwrap">
             <Viewport documentId={documentId} className="cpdf__viewport">
@@ -3230,6 +3301,15 @@ export function Viewer({
                             <StickyComment note={obj} />
                           </div>
                         );
+                      }}
+                    />
+                    <CommentMarkersLayer
+                      documentId={documentId}
+                      pageIndex={pageIndex}
+                      threads={comments.threads}
+                      onOpen={(tid) => {
+                        setCommentFocus(tid);
+                        setLeftPanel('comments');
                       }}
                     />
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}

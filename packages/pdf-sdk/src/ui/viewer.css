@@ -1573,3 +1573,39 @@
   line-height: 1;
   padding: 0 2px;
 }
+
+/* ── On-page comment markers ─────────────────────────────────────────────── */
+.cpdf__comment-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  transform: translate(-4px, -22px); /* anchor the pin's bottom-left to the rect */
+  border: 2px solid var(--color-surface, #fff);
+  border-radius: 50% 50% 50% 2px;
+  background: var(--color-accent, #f5b301);
+  color: #1b1c1f;
+  cursor: pointer;
+  box-shadow: var(--shadow-2, 0 2px 6px rgba(0, 0, 0, 0.28));
+  padding: 0;
+}
+.cpdf__comment-marker:hover {
+  filter: brightness(1.06);
+}
+.cpdf__comment-marker:focus-visible {
+  outline: 2px solid var(--color-focus-ring, #4658ff);
+  outline-offset: 2px;
+}
+.cpdf__thread--flash {
+  animation: cpdf-thread-flash 1.6s ease-out;
+}
+@keyframes cpdf-thread-flash {
+  0%, 30% {
+    box-shadow: 0 0 0 2px var(--color-accent, #2563eb);
+    background: var(--color-accent-bg, rgba(37, 99, 235, 0.12));
+  }
+  100% {
+    box-shadow: none;
+  }
+}
