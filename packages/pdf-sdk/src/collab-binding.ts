@@ -104,6 +104,17 @@ function toEntryFields(raw: RawAnnotation, pageIndex: number, author: string): P
   };
 }
 
+/** Suggested annotations render translucent on-canvas so pending proposals read
+ *  as distinct from applied edits. This transform is DISPLAY-ONLY — applied in the
+ *  reconcile to the copy sent to the plugin — so the overlay's raw annotation is
+ *  untouched (accepting restores full opacity; no echo back into the model). */
+export const SUGGESTION_OPACITY = 0.5;
+export function displayFor(raw: RawAnnotation, state: EntryState | undefined): RawAnnotation {
+  if (state !== 'suggested') return raw;
+  const base = typeof raw.opacity === 'number' ? raw.opacity : 1;
+  return { ...raw, opacity: base * SUGGESTION_OPACITY };
+}
+
 /**
  * Bind the plugin (`bridge`) to the Yjs overlay (`model`). Returns a teardown fn
  * that detaches both directions. Call once per (document, connection).
@@ -158,7 +169,8 @@ export function bindAnnotations(bridge: AnnotationBridge, model: CasualPdfDoc, o
       for (const entry of model.annotations.toArray()) {
         const data = entry.toJSON() as AnnotationData;
         const raw = (data.props as unknown as RawAnnotation) ?? { id: data.id };
-        modelById.set(data.id, { pageIndex: data.page, annotation: raw });
+        // Display-only: suggestions render translucent (the model raw is untouched).
+        modelById.set(data.id, { pageIndex: data.page, annotation: displayFor(raw, data.state) });
       }
       const bridgeById = new Map(bridge.listAnnotations().map((a) => [a.annotation.id, a]));
 

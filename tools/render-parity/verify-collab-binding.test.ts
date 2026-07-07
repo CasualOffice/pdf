@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCasualPdfDoc } from '../../packages/pdf-sdk/src/model.ts';
-import { bindAnnotations, annotationBridge, seedAnnotations, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
+import { bindAnnotations, annotationBridge, seedAnnotations, SUGGESTION_OPACITY, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
 import { readPeers, initials, type AwarenessUserState } from '../../packages/pdf-sdk/src/presence.ts';
 
 /** In-memory stand-in for the EmbedPDF annotation plugin. `create/update/delete`
@@ -302,4 +302,21 @@ test('readPeers surfaces each peer active page when broadcast', () => {
   const peers = readPeers(states, 9);
   assert.equal(peers.find((p) => p.name === 'Alice')?.page, 5, 'page read from awareness');
   assert.equal(peers.find((p) => p.name === 'Bob')?.page, undefined, 'no page → undefined');
+});
+
+test('a pending suggestion renders translucent on the peer; accepting restores opacity', () => {
+  const { docB, bridgeA, bridgeB, teardown } = setupSuggest();
+  bridgeA.userCreate(0, anno('s1'));
+  assert.equal(
+    (bridgeB.store.get('s1')?.annotation as { opacity?: number })?.opacity,
+    SUGGESTION_OPACITY,
+    'suggestion is translucent (display-only) on the peer',
+  );
+  acceptSuggestion(docB, 's1', 'bob');
+  assert.equal(
+    (bridgeB.store.get('s1')?.annotation as { opacity?: number })?.opacity,
+    undefined,
+    'accepted → full opacity restored',
+  );
+  teardown();
 });
