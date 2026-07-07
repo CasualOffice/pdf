@@ -15,6 +15,19 @@ import '@schnsrw/design-system/tokens.css';
 import './styles.css';
 import { App } from './App';
 
+// Stale-chunk recovery: after a deploy, the CDN can briefly serve an old page that
+// references hashed chunks the new deploy replaced, so a lazy import 404s ("Failed
+// to fetch dynamically imported module"). Vite fires `vite:preloadError` for this —
+// reload ONCE to fetch fresh assets. The sessionStorage guard prevents a reload
+// loop if the chunk is genuinely missing; in-progress edits autosave to recovery.
+window.addEventListener('vite:preloadError', (e) => {
+  e.preventDefault();
+  if (!sessionStorage.getItem('cpdf-preload-reloaded')) {
+    sessionStorage.setItem('cpdf-preload-reloaded', '1');
+    window.location.reload();
+  }
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
