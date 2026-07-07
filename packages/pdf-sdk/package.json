@@ -32,6 +32,10 @@
       "types": "./src/restrict.ts",
       "import": "./src/restrict.ts"
     },
+    "./signing-certificate": {
+      "types": "./src/signing-certificate.ts",
+      "import": "./src/signing-certificate.ts"
+    },
     "./extract": {
       "types": "./src/extract.ts",
       "import": "./src/extract.ts"
