@@ -18,7 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createCasualPdfDoc, readSuggestions, acceptSuggestion, rejectSuggestion, type CasualPdfDoc, type AnnotationData } from './model';
-import { annotationBridge, bindAnnotations, Y, type AnnotationCapabilityLike } from './collab-binding';
+import { annotationBridge, bindAnnotations, seedAnnotations, Y, type AnnotationCapabilityLike } from './collab-binding';
 import { attachCollab, type CollabHandle } from './collab';
 import type { Peer } from './presence';
 import type { CollabConfig, Identity, Mode } from './modes';
@@ -75,7 +75,8 @@ export function useCollab(
     const ydoc = new Y.Doc();
     const model = createCasualPdfDoc(room, ydoc);
     modelRef.current = model;
-    const unbind = bindAnnotations(annotationBridge(cap, documentId), model, {
+    const bridge = annotationBridge(cap, documentId);
+    const unbind = bindAnnotations(bridge, model, {
       author: name ?? 'anonymous',
       getState: () => (modeRef.current === 'suggest' ? 'suggested' : 'applied'),
     });
@@ -86,6 +87,7 @@ export function useCollab(
 
     let handle: CollabHandle | null = null;
     let offPresence: (() => void) | null = null;
+    let offSynced: (() => void) | null = null;
     let cancelled = false;
     attachCollab(ydoc, cfg, id)
       .then((h) => {
@@ -95,6 +97,15 @@ export function useCollab(
         }
         handle = h;
         offPresence = h.onPresence(setPeers);
+        // Source-of-truth seed: once the room has synced, if it's empty and not
+        // yet seeded, publish the base document's annotations (already loaded in
+        // the plugin) so they're shared. `meta.seeded` guards against re-seeding.
+        offSynced = h.onSynced(() => {
+          if (model.meta.get('seeded') || model.annotations.length > 0) return;
+          const base = bridge.listAnnotations();
+          if (base.length) seedAnnotations(model, base, name ?? 'anonymous');
+          model.doc.transact(() => model.meta.set('seeded', true));
+        });
       })
       .catch(() => {
         /* offline / bad URL → the binding still keeps the local Y.Doc in sync */
@@ -103,6 +114,7 @@ export function useCollab(
     return () => {
       cancelled = true;
       offPresence?.();
+      offSynced?.();
       model.annotations.unobserveDeep(refreshSuggestions);
       unbind();
       handle?.disconnect();

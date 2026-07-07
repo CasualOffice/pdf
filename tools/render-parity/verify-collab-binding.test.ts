@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCasualPdfDoc } from '../../packages/pdf-sdk/src/model.ts';
-import { bindAnnotations, annotationBridge, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
+import { bindAnnotations, annotationBridge, seedAnnotations, Y, type AnnotationBridge, type BridgeEvent, type RawAnnotation, type AnnotationCapabilityLike, type PluginAnnotationEvent } from '../../packages/pdf-sdk/src/collab-binding.ts';
 import { readPeers, initials, type AwarenessUserState } from '../../packages/pdf-sdk/src/presence.ts';
 
 /** In-memory stand-in for the EmbedPDF annotation plugin. `create/update/delete`
@@ -276,5 +276,19 @@ test('rejecting a suggestion removes it everywhere (model + both plugins)', () =
   assert.equal(docB.annotations.length, 0, 'gone from the reviewer model');
   assert.ok(!bridgeA.store.has('s1'), 'removed from the author plugin');
   assert.ok(!bridgeB.store.has('s1'), 'removed from the reviewer plugin');
+  teardown();
+});
+
+test('seedAnnotations publishes base annotations into an empty room + syncs, idempotently', () => {
+  const { docA, docB, bridgeA, bridgeB, teardown } = setup();
+  // A base annotation already loaded in A's plugin (from the PDF), not in the model.
+  bridgeA.store.set('base1', { pageIndex: 0, annotation: anno('base1') });
+  seedAnnotations(docA, bridgeA.listAnnotations(), 'alice');
+  assert.equal(docA.annotations.length, 1, 'seeded into the model');
+  assert.equal(docB.annotations.length, 1, 'synced to the peer');
+  assert.ok(bridgeB.store.has('base1'), 'applied to the peer plugin');
+  // Idempotent by id — a second seed adds nothing.
+  seedAnnotations(docA, bridgeA.listAnnotations(), 'alice');
+  assert.equal(docA.annotations.length, 1, 'seeding is idempotent (id already present)');
   teardown();
 });
