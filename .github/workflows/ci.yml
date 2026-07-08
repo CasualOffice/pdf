@@ -191,6 +191,7 @@ jobs:
           for t in \
             verify-drive \
             verify-collab-2client \
+            verify-collab-share \
             verify-collab-forms \
             verify-collab-signing \
             verify-redact-split \
