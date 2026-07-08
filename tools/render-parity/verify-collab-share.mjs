@@ -84,6 +84,14 @@ try {
   assert(aAvatars >= 1, 'A (the initiator) sees B join the shared session');
   assert(bAvatars >= 1, 'B (via the invite link) sees A in the session');
 
+  // A leaves the session in place → the button reverts to "Share" + ?room drops.
+  assert((await shareBtn.textContent())?.includes('Sharing'), 'A: button reads "Sharing" while in a session');
+  await shareBtn.click();
+  await a.locator('[data-testid=share-leave]').click();
+  await pollFor(() => shareBtn.textContent(), (t) => (t || '').trim() === 'Share');
+  assert((await shareBtn.textContent())?.trim() === 'Share', 'A: after Leave, the button reverts to "Share"');
+  assert(!new URL(a.url()).searchParams.get('room'), 'A: Leave drops ?room from the URL (back to solo, no reload)');
+
   await ctxA.close();
   await ctxB.close();
 } catch (e) {

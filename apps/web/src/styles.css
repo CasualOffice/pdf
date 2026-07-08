@@ -707,6 +707,12 @@ button.appbar__sigstatus:focus-visible {
   background: var(--color-accent, #4658ff);
   color: var(--color-text-on-accent, #fff);
 }
+.signdlg__btn--danger {
+  border-color: transparent;
+  background: var(--color-danger, #b4232a);
+  color: #fff;
+  margin-right: auto; /* push it to the left, away from the primary/close */
+}
 .signdlg__btn:disabled {
   opacity: 0.55;
   cursor: default;
