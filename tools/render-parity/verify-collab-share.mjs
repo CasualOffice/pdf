@@ -92,6 +92,17 @@ try {
   assert((await shareBtn.textContent())?.trim() === 'Share', 'A: after Leave, the button reverts to "Share"');
   assert(!new URL(a.url()).searchParams.get('room'), 'A: Leave drops ?room from the URL (back to solo, no reload)');
 
+  // Re-entry: A starts a NEW session in place → a fresh room (the collab-state
+  // refactor must cleanly disconnect + reconnect, not leak the old connection).
+  const firstRoom = new URL(link).searchParams.get('room');
+  await shareBtn.click();
+  await a.locator('[data-testid=share-start]').click();
+  await a.locator('[data-testid=share-link]').waitFor({ state: 'visible', timeout: 5000 });
+  const room2 = new URL(await a.locator('[data-testid=share-link]').inputValue()).searchParams.get('room');
+  assert(!!room2 && room2 !== firstRoom, 'A: starting again mints a fresh room (clean re-entry, no stale state)');
+  await a.keyboard.press('Escape');
+  assert((await shareBtn.textContent())?.includes('Sharing'), 'A: back in a session after re-entry');
+
   await ctxA.close();
   await ctxB.close();
 } catch (e) {
