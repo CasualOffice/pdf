@@ -41,6 +41,12 @@ const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const browser = await chromium.launch({ ...(existsSync(mac) ? { executablePath: mac } : {}), headless: true });
 let failed = false;
 const assert = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}: ${m}`); if (!c) failed = true; };
+// Poll a text getter until it equals `want` (robust to CI cross-client sync timing).
+async function pollText(loc, want, tries = 30, gap = 300) {
+  let t = '';
+  for (let i = 0; i < tries; i++) { t = ((await loc.textContent().catch(() => '')) || '').trim(); if (t === want) return t; await new Promise((r) => setTimeout(r, gap)); }
+  return t;
+}
 const collabParam = encodeURIComponent(`ws://127.0.0.1:${HP_PORT}`);
 const url = `http://127.0.0.1:${APP_PORT}/?src=%2Fsample.pdf&collab=${collabParam}&room=${ROOM}&role=editor`;
 
@@ -69,9 +75,8 @@ try {
   await a.page.waitForTimeout(600);
   assert((await a.page.locator('[data-testid=sign-status]').textContent())?.trim() === 'Sent', 'A: request created, status Sent');
 
-  // B: the request synced over collab; the signer + Sign button appear.
-  await b.page.waitForTimeout(2500);
-  await b.page.locator('[data-testid=sign-signer]').first().waitFor({ state: 'visible', timeout: 8000 });
+  // B: the request synced over collab; the signer + Sign button appear (waitFor polls).
+  await b.page.locator('[data-testid=sign-signer]').first().waitFor({ state: 'visible', timeout: 10000 });
   const signerText = (await b.page.locator('[data-testid=sign-signer]').first().textContent()) || '';
   assert(/Bob Signer/.test(signerText), 'B: sees the synced recipient (Bob Signer)');
   const signBtn = b.page.locator('[data-testid=sign-now]').first();
@@ -80,10 +85,8 @@ try {
   // B ticks the ESIGN consent, then signs → the envelope completes on both clients.
   await b.page.locator('[data-testid=sign-consent]').first().check();
   await signBtn.click();
-  await b.page.waitForTimeout(500);
-  assert((await b.page.locator('[data-testid=sign-status]').textContent())?.trim() === 'Completed', 'B: envelope Completed after signing');
-  await a.page.waitForTimeout(2500);
-  assert((await a.page.locator('[data-testid=sign-status]').textContent())?.trim() === 'Completed', 'A: sees Completed over collab');
+  assert((await pollText(b.page.locator('[data-testid=sign-status]'), 'Completed')) === 'Completed', 'B: envelope Completed after signing');
+  assert((await pollText(a.page.locator('[data-testid=sign-status]'), 'Completed')) === 'Completed', 'A: sees Completed over collab');
   assert(await a.page.locator('[data-testid=sign-download-cert]').isVisible(), 'A: certificate download available on completion');
   // The consent (ESIGN §7001) was captured in the audit trail on both clients.
   const auditA = (await a.page.locator('.cpdf__sign-audit').textContent()) || '';

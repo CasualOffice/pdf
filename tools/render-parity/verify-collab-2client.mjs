@@ -44,6 +44,12 @@ const browser = await chromium.launch({ ...(existsSync(mac) ? { executablePath: 
 
 let failed = false;
 const assert = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}: ${m}`); if (!c) failed = true; };
+// Poll `fn` until `ok(value)` (robust to CI cross-client sync timing) — up to ~9s.
+async function pollFor(fn, ok, tries = 30, gap = 300) {
+  let v;
+  for (let i = 0; i < tries; i++) { v = await fn(); if (ok(v)) return v; await new Promise((r) => setTimeout(r, gap)); }
+  return v;
+}
 const collabParam = encodeURIComponent(`ws://127.0.0.1:${HP_PORT}`);
 const urlFor = () => `http://127.0.0.1:${APP_PORT}/?src=%2Fsample.pdf&collab=${collabParam}&room=${ROOM}&role=editor`;
 
@@ -94,9 +100,9 @@ try {
   console.log('A annotations after drawing:', afterA);
   assert(afterA >= 1, 'client A created the annotation locally');
 
-  // The annotation should propagate to client B over the collab server.
-  await b.page.waitForTimeout(2500);
-  const afterB = await commentCount(b.page);
+  // The annotation should propagate to client B over the collab server (poll).
+  await commentCount(b.page); // ensure B's panel is open
+  const afterB = await pollFor(() => b.page.locator('.cpdf__comment-row').count(), (v) => v > beforeB);
   console.log('B annotations after sync:', afterB);
   assert(afterB > beforeB, 'the annotation drawn in A synced to B over the collab server');
 
@@ -112,8 +118,7 @@ try {
   await a.page.mouse.move(sbox.x + sbox.width * 0.55, sbox.y + sbox.height * 0.4, { steps: 10 });
   await a.page.mouse.up();
   await a.page.waitForTimeout(500);
-  await b.page.waitForTimeout(2500);
-  const sCount = await b.page.locator('[data-testid=suggestion-box]').count();
+  const sCount = await pollFor(() => b.page.locator('[data-testid=suggestion-box]').count(), (v) => v >= 1);
   console.log('B suggestion overlays:', sCount);
   assert(sCount >= 1, 'a Suggest-mode annotation renders a distinct overlay on the peer');
   const bpage = await b.page.locator('.cpdf__page').first().boundingBox();
@@ -135,8 +140,7 @@ try {
     await a.page.mouse.move(cbox.x + cbox.width * fx, cbox.y + cbox.height * fy, { steps: 3 });
     await a.page.waitForTimeout(90);
   }
-  await b.page.waitForTimeout(1500);
-  const curCount = await b.page.locator('[data-testid=remote-cursor]').count();
+  const curCount = await pollFor(() => b.page.locator('[data-testid=remote-cursor]').count(), (v) => v >= 1);
   console.log('B remote cursors:', curCount);
   assert(curCount >= 1, 'A pointer movement shows a remote cursor on B');
   const bpg = await b.page.locator('.cpdf__page').first().boundingBox();
