@@ -140,6 +140,16 @@ export function App() {
     u.searchParams.set('room', room);
     window.history.replaceState(null, '', u.toString());
   };
+  // Leave the session in place: disconnect (setCollab undefined tears down useCollab)
+  // and drop the room/share params from the URL. Back to solo; what's on screen stays.
+  const stopSharing = () => {
+    setCollab(undefined);
+    const u = new URL(window.location.href);
+    u.searchParams.delete('room');
+    u.searchParams.delete('share');
+    window.history.replaceState(null, '', u.toString());
+    setSharing(false);
+  };
   const identity = useMemo(
     () => (collab ? { name: `Guest ${Math.floor(Math.random() * 900 + 100)}`, color: `hsl(${Math.floor(Math.random() * 360)} 70% 50%)` } : undefined),
     [collab],
@@ -990,6 +1000,7 @@ export function App() {
           inSession={!!collab}
           isBlobDoc={!!src && src.startsWith('blob:')}
           onStart={startSharing}
+          onLeave={stopSharing}
           onClose={() => setSharing(false)}
         />
       )}

@@ -14,11 +14,13 @@ export function ShareDialog({
   inSession,
   isBlobDoc,
   onStart,
+  onLeave,
   onClose,
 }: {
   inSession: boolean;
   isBlobDoc: boolean;
   onStart: () => void;
+  onLeave: () => void;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -105,6 +107,9 @@ export function ShareDialog({
               </button>
             </div>
             <div className="signdlg__actions">
+              <button type="button" className="signdlg__btn signdlg__btn--danger" data-testid="share-leave" onClick={onLeave}>
+                Leave session
+              </button>
               <button type="button" className="signdlg__btn" onClick={onClose}>
                 Done
               </button>
