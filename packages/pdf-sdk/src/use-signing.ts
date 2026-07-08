@@ -15,6 +15,7 @@ import {
   addSigner,
   sendEnvelope,
   markSigned,
+  markConsented,
   markDeclined,
   voidEnvelope,
   readEnvelope,
@@ -56,6 +57,7 @@ export function useSigning(
   const localRef = useRef<CasualPdfDoc | null>(null);
   const localIdRef = useRef<string>('');
   if (!sharedModel && (localRef.current === null || localIdRef.current !== documentId)) {
+    localRef.current?.doc.destroy(); // free the previous local doc (leak fix)
     localRef.current = createCasualPdfDoc(documentId);
     localIdRef.current = documentId;
   }
@@ -90,10 +92,21 @@ export function useSigning(
     [model, author, getBytes],
   );
 
-  // Honest auth method: this client is authenticated only by collab-room membership,
-  // NOT identity-verified as the named signer (see H3 note in signing.ts). The model
-  // enforces whose-turn; server-side identity binding is a documented follow-up.
-  const sign = useCallback((signerId: string) => markSigned(model, signerId, Date.now(), 'collab-session'), [model]);
+  // Signing records the ESIGN §7001 consent (the signer accepted the electronic-
+  // records disclosure — captured by the consent checkbox) BEFORE the signature, so
+  // both land in the audit trail. Honest auth method: authenticated only by collab-
+  // room membership, NOT identity-verified (see H3 note in signing.ts).
+  const sign = useCallback(
+    (signerId: string) => {
+      const now = Date.now();
+      // One transaction → peers never observe "consented but not signed" (one render).
+      model.doc.transact(() => {
+        markConsented(model, signerId, now);
+        markSigned(model, signerId, now, 'collab-session');
+      });
+    },
+    [model],
+  );
   const decline = useCallback((signerId: string, reason?: string) => markDeclined(model, signerId, Date.now(), reason), [model]);
   const voidRequest = useCallback((reason?: string) => voidEnvelope(model, author, Date.now(), reason), [model, author]);
 

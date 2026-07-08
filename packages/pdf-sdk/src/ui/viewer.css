@@ -1779,3 +1779,15 @@
   line-height: 1.4;
   color: var(--color-danger, #b45309);
 }
+.cpdf__sign-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font: 400 11px/1.4 var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text-secondary, #556);
+  margin-top: 2px;
+}
+.cpdf__sign-consent input {
+  margin-top: 1px;
+  flex: none;
+}

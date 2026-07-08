@@ -17,6 +17,7 @@ import {
   sendEnvelope,
   markViewed,
   markSigned,
+  markConsented,
   markDeclined,
   voidEnvelope,
   readEnvelope,
@@ -202,4 +203,15 @@ test('L1: addSigner is a no-op once the envelope is sent (no status regression)'
   sendEnvelope(m, 2);
   addSigner(m, { id: 's3', name: 'Late', email: 'late@x.com', order: 3 });
   assert.equal(readEnvelope(m)!.signers.length, 2, 'no signer added after send');
+});
+
+test('markConsented records an ESIGN consent event for the signer', () => {
+  const m = make();
+  envelope(m);
+  markConsented(m, 's1', 5);
+  const e = readEnvelope(m)!;
+  assert.ok(
+    e.events.some((ev) => ev.type === 'consented' && ev.actor === 'bob@x.com'),
+    'consent event recorded in the audit trail',
+  );
 });

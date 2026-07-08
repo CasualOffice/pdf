@@ -77,13 +77,17 @@ try {
   const signBtn = b.page.locator('[data-testid=sign-now]').first();
   assert(await signBtn.isVisible(), 'B: a Sign button is available for the pending signer');
 
-  // B signs → the envelope completes on both clients.
+  // B ticks the ESIGN consent, then signs → the envelope completes on both clients.
+  await b.page.locator('[data-testid=sign-consent]').first().check();
   await signBtn.click();
   await b.page.waitForTimeout(500);
   assert((await b.page.locator('[data-testid=sign-status]').textContent())?.trim() === 'Completed', 'B: envelope Completed after signing');
   await a.page.waitForTimeout(2500);
   assert((await a.page.locator('[data-testid=sign-status]').textContent())?.trim() === 'Completed', 'A: sees Completed over collab');
   assert(await a.page.locator('[data-testid=sign-download-cert]').isVisible(), 'A: certificate download available on completion');
+  // The consent (ESIGN §7001) was captured in the audit trail on both clients.
+  const auditA = (await a.page.locator('.cpdf__sign-audit').textContent()) || '';
+  assert(/consented/i.test(auditA), 'A: the ESIGN consent event is in the audit trail');
 
   await a.ctx.close();
   await b.ctx.close();

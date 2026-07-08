@@ -46,6 +46,7 @@ export function useComments(
   const localRef = useRef<CasualPdfDoc | null>(null);
   const localIdRef = useRef<string>('');
   if (!sharedModel && (localRef.current === null || localIdRef.current !== documentId)) {
+    localRef.current?.doc.destroy(); // free the previous local doc (leak fix)
     localRef.current = createCasualPdfDoc(documentId);
     localIdRef.current = documentId;
   }

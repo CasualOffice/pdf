@@ -57,7 +57,7 @@ import type { Mode, CasualPdfApi, OutlineNode, CollabConfig, Identity } from '..
 import { useCollab } from '../use-collab';
 import { useComments, type CommentsState } from '../use-comments';
 import { useSigning, type SigningState, type NewRecipient } from '../use-signing';
-import { canSign, type SigningEnvelope, type EnvelopeStatus } from '../signing';
+import { canSign, type SigningEnvelope, type EnvelopeStatus, type Signer } from '../signing';
 import type { CommentThread } from '../comments';
 import type { AnnotationCapabilityLike } from '../collab-binding';
 import type { FormCapabilityLike } from '../form-binding';
@@ -1863,6 +1863,34 @@ function RequestSignaturesForm({ signing }: { signing: SigningState }) {
   );
 }
 
+/** One recipient row. When it's this signer's turn, an ESIGN §7001 consent
+   checkbox must be ticked before the Sign button enables — the consent event is
+   then recorded ahead of the signature. */
+function SignerRow({ signer, canSignNow, onSign }: { signer: Signer; canSignNow: boolean; onSign: () => void }) {
+  const [consented, setConsented] = useState(false);
+  return (
+    <div className="cpdf__sign-signer" data-testid="sign-signer">
+      <div className="cpdf__sign-signer-id">
+        <strong>{signer.name}</strong> <span>{signer.email}</span>
+      </div>
+      <div className="cpdf__sign-signer-meta">
+        {signer.role} · <span data-testid="sign-signer-status">{signer.status}</span>
+      </div>
+      {canSignNow && (
+        <>
+          <label className="cpdf__sign-consent">
+            <input type="checkbox" data-testid="sign-consent" checked={consented} onChange={(e) => setConsented(e.target.checked)} />
+            <span>I agree to sign this document electronically (ESIGN/eIDAS).</span>
+          </label>
+          <button type="button" className="cpdf__reply-send" data-testid="sign-now" disabled={!consented} onClick={onSign}>
+            Sign as {signer.name.split(' ')[0] || 'signer'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SigningStatus({ signing, envelope, canEdit }: { signing: SigningState; envelope: SigningEnvelope; canEdit: boolean }) {
   const terminal = envelope.status === 'completed' || envelope.status === 'voided' || envelope.status === 'declined';
   return (
@@ -1874,19 +1902,7 @@ function SigningStatus({ signing, envelope, canEdit }: { signing: SigningState; 
         </span>
       </div>
       {envelope.signers.map((s) => (
-        <div key={s.id} className="cpdf__sign-signer" data-testid="sign-signer">
-          <div className="cpdf__sign-signer-id">
-            <strong>{s.name}</strong> <span>{s.email}</span>
-          </div>
-          <div className="cpdf__sign-signer-meta">
-            {s.role} · <span data-testid="sign-signer-status">{s.status}</span>
-          </div>
-          {canEdit && canSign(envelope, s.id) && (
-            <button type="button" className="cpdf__reply-send" data-testid="sign-now" onClick={() => signing.sign(s.id)}>
-              Sign as {s.name.split(' ')[0] || 'signer'}
-            </button>
-          )}
-        </div>
+        <SignerRow key={s.id} signer={s} canSignNow={canEdit && canSign(envelope, s.id)} onSign={() => signing.sign(s.id)} />
       ))}
       <div className="cpdf__sign-actions">
         {envelope.status === 'completed' && (
@@ -2002,11 +2018,13 @@ function CursorLayer({
   pageIndex,
   peers,
   onMove,
+  onLeave,
 }: {
   documentId: string;
   pageIndex: number;
   peers: Peer[];
   onMove: (page: number, x: number, y: number) => void;
+  onLeave: () => void;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const { register } = usePointerHandlers({ modeId: 'pointerMode', pageIndex, documentId });
@@ -2026,8 +2044,11 @@ function CursorLayer({
         lastSent.current = now;
         onMove(pageIndex, pos.x / s.width, pos.y / s.height);
       },
+      // Clear our broadcast cursor when the pointer leaves the page, so peers don't
+      // see a frozen ghost cursor (e.g. after scrolling to another page).
+      onPointerLeave: () => onLeave(),
     });
-  }, [register, pageIndex, onMove]);
+  }, [register, pageIndex, onMove, onLeave]);
 
   const here = peers.filter((p) => p.cursor && p.cursor.page === pageIndex);
   if (!here.length) return null;
@@ -2629,6 +2650,7 @@ export function Viewer({
   }, [currentPage, setActivePage]);
   // Stable so CursorLayer doesn't re-register its pointer handler each render.
   const broadcastCursor = useCallback((page: number, x: number, y: number) => setCursor({ page, x, y }), [setCursor]);
+  const clearCursor = useCallback(() => setCursor(null), [setCursor]);
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
@@ -3583,7 +3605,7 @@ export function Viewer({
                       }}
                     />
                     {suggestions.length > 0 && <SuggestionOverlayLayer documentId={documentId} pageIndex={pageIndex} suggestions={suggestions} />}
-                    {collab && <CursorLayer documentId={documentId} pageIndex={pageIndex} peers={peers} onMove={broadcastCursor} />}
+                    {collab && <CursorLayer documentId={documentId} pageIndex={pageIndex} peers={peers} onMove={broadcastCursor} onLeave={clearCursor} />}
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && textEditing && editBytes && (
                       <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} editBusy={editBusy} />
