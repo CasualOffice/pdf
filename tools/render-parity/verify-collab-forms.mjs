@@ -69,9 +69,14 @@ try {
   await inA.blur();
   await a.page.waitForTimeout(600);
 
-  // The value should propagate to client B's field over the collab server.
-  await b.page.waitForTimeout(3000);
-  const valB = await firstFieldInput(b.page).inputValue().catch(() => '');
+  // The value should propagate to client B's field over the collab server. POLL for
+  // it (robust to CI timing) rather than a single fixed wait.
+  let valB = '';
+  for (let i = 0; i < 30; i++) {
+    valB = await firstFieldInput(b.page).inputValue().catch(() => '');
+    if (valB === 'Ada Lovelace') break;
+    await b.page.waitForTimeout(300);
+  }
   console.log('B field value after sync:', JSON.stringify(valB));
   assert(valB === 'Ada Lovelace', 'the field filled on A synced to B over the collab server');
 

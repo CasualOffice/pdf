@@ -1569,6 +1569,7 @@ function CommentThreadCard({
           <input
             className="cpdf__reply-input"
             data-testid="comment-reply-input"
+            aria-label="Reply to this comment thread"
             placeholder="Reply… (@ to mention)"
             value={reply}
             onChange={(e) => setReply(e.target.value)}
@@ -1673,6 +1674,7 @@ function CommentsSidebar({
           <textarea
             className="cpdf__comment-new-input"
             data-testid="comment-new-input"
+            aria-label="New comment"
             placeholder={anchor ? 'Comment on the selected text… (@ to mention)' : `Comment on page ${currentPage}… (@ to mention)`}
             value={draft}
             rows={2}
@@ -1832,11 +1834,11 @@ function RequestSignaturesForm({ signing }: { signing: SigningState }) {
   };
   return (
     <div className="cpdf__sign-form">
-      <input className="cpdf__sign-input" placeholder="Document title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <input className="cpdf__sign-input" aria-label="Document title" placeholder="Document title" value={title} onChange={(e) => setTitle(e.target.value)} />
       {recips.map((r, i) => (
         <div key={i} className="cpdf__sign-recip">
-          <input className="cpdf__sign-input" placeholder="Name" value={r.name} onChange={(e) => update(i, { name: e.target.value })} />
-          <input className="cpdf__sign-input" type="email" placeholder="Email" value={r.email} onChange={(e) => update(i, { email: e.target.value })} />
+          <input className="cpdf__sign-input" aria-label={`Recipient ${i + 1} name`} placeholder="Name" value={r.name} onChange={(e) => update(i, { name: e.target.value })} />
+          <input className="cpdf__sign-input" type="email" aria-label={`Recipient ${i + 1} email`} placeholder="Email" value={r.email} onChange={(e) => update(i, { email: e.target.value })} />
           <select className="cpdf__sign-input" value={r.role} onChange={(e) => update(i, { role: e.target.value as NewRecipient['role'] })} aria-label="Role">
             <option value="signer">Signer</option>
             <option value="cc">CC</option>
