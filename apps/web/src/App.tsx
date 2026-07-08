@@ -13,6 +13,7 @@ import { SignatureInfoDialog } from './SignatureInfoDialog';
 import { PageFurnitureDialog } from './PageFurnitureDialog';
 import { ChunkErrorBoundary } from './ChunkErrorBoundary';
 import { RestrictDialog, type RestrictPermissions } from './RestrictDialog';
+import { ShareDialog } from './ShareDialog';
 import { saveSnapshot, loadSnapshot, clearSnapshot, relativeTime, type RecoverySnapshot } from './recovery';
 import { isDesktop } from './desk-bridge-bootstrap';
 
@@ -109,7 +110,10 @@ export function App() {
   // Live co-editing opt-in: enable when a collab server is configured AND the URL
   // carries a `?room=`. The share token (→ role, server-enforced) rides `?share=`.
   // The Yjs endpoint is `/yjs` on the collab server.
-  const collab = useMemo(() => {
+  // Collab is STATE (not a fixed memo) so a session can be started in-place from the
+  // Share button without a page reload (which would risk unsaved edits). Initialised
+  // from the URL: enabled when a collab server is configured AND there's a `?room=`.
+  const [collab, setCollab] = useState<{ url: string; room: string; token?: string } | undefined>(() => {
     const p = new URLSearchParams(window.location.search);
     // `?collab=` overrides the build-time env (used by the co-editing E2E + demos).
     const server = p.get('collab') || COLLAB_WS_URL;
@@ -117,7 +121,25 @@ export function App() {
     if (!server || !room) return undefined;
     const base = server.replace(/\/+$/, '');
     return { url: base.endsWith('/yjs') ? base : `${base}/yjs`, room, token: p.get('share') ?? undefined };
-  }, []);
+  });
+  const [sharing, setSharing] = useState(false);
+  // A collab server is available (so co-editing can be offered) when the deploy sets
+  // VITE_COLLAB_WS_URL, or the URL carries an explicit `?collab=` override.
+  const collabAvailable = !!(COLLAB_WS_URL || new URLSearchParams(window.location.search).get('collab'));
+  // Start a co-editing session in place: mint a room, connect, and reflect it in the
+  // URL (history.replaceState — no reload) so the link is shareable + refresh-safe.
+  const startSharing = () => {
+    if (collab) return; // already in a session
+    const p = new URLSearchParams(window.location.search);
+    const server = p.get('collab') || COLLAB_WS_URL;
+    if (!server) return;
+    const room = 'r-' + (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
+    const base = server.replace(/\/+$/, '');
+    setCollab({ url: base.endsWith('/yjs') ? base : `${base}/yjs`, room, token: undefined });
+    const u = new URL(window.location.href);
+    u.searchParams.set('room', room);
+    window.history.replaceState(null, '', u.toString());
+  };
   const identity = useMemo(
     () => (collab ? { name: `Guest ${Math.floor(Math.random() * 900 + 100)}`, color: `hsl(${Math.floor(Math.random() * 360)} 70% 50%)` } : undefined),
     [collab],
@@ -764,6 +786,19 @@ export function App() {
               <span>{desktop ? 'Save' : dirty ? 'Download changes' : 'Download'}</span>
             </button>
           )}
+          {src && collabAvailable && (
+            <button
+              type="button"
+              className={`appbar__quick${collab ? ' appbar__quick--save' : ''}`}
+              aria-label={collab ? 'Co-editing active — get the invite link' : 'Share for co-editing'}
+              title={collab ? 'Co-editing active — get the invite link' : 'Share for co-editing'}
+              data-testid="share-button"
+              onClick={() => setSharing(true)}
+            >
+              <Icon name="comments" size={15} />
+              <span>{collab ? 'Sharing' : 'Share'}</span>
+            </button>
+          )}
           {src && <span className="appbar__sep" aria-hidden="true" />}
           {src && <div className="modeseg" role="tablist" aria-label="Editing mode">
             {MODES.map(({ id, label, icon }) => {
@@ -949,6 +984,14 @@ export function App() {
       )}
       {restricting && (
         <RestrictDialog onRestrict={restrictDocument} onClose={() => setRestricting(false)} busy={restrictBusy} />
+      )}
+      {sharing && (
+        <ShareDialog
+          inSession={!!collab}
+          isBlobDoc={!!src && src.startsWith('blob:')}
+          onStart={startSharing}
+          onClose={() => setSharing(false)}
+        />
       )}
       {pageFurniture && (
         <PageFurnitureDialog
