@@ -2018,11 +2018,13 @@ function CursorLayer({
   pageIndex,
   peers,
   onMove,
+  onLeave,
 }: {
   documentId: string;
   pageIndex: number;
   peers: Peer[];
   onMove: (page: number, x: number, y: number) => void;
+  onLeave: () => void;
 }) {
   const { provides: docCap } = useDocumentManagerCapability();
   const { register } = usePointerHandlers({ modeId: 'pointerMode', pageIndex, documentId });
@@ -2042,8 +2044,11 @@ function CursorLayer({
         lastSent.current = now;
         onMove(pageIndex, pos.x / s.width, pos.y / s.height);
       },
+      // Clear our broadcast cursor when the pointer leaves the page, so peers don't
+      // see a frozen ghost cursor (e.g. after scrolling to another page).
+      onPointerLeave: () => onLeave(),
     });
-  }, [register, pageIndex, onMove]);
+  }, [register, pageIndex, onMove, onLeave]);
 
   const here = peers.filter((p) => p.cursor && p.cursor.page === pageIndex);
   if (!here.length) return null;
@@ -2645,6 +2650,7 @@ export function Viewer({
   }, [currentPage, setActivePage]);
   // Stable so CursorLayer doesn't re-register its pointer handler each render.
   const broadcastCursor = useCallback((page: number, x: number, y: number) => setCursor({ page, x, y }), [setCursor]);
+  const clearCursor = useCallback(() => setCursor(null), [setCursor]);
   const { provides: selectionCap } = useSelectionCapability();
   const { provides: history } = useHistoryCapability();
   const { provides: exportCap } = useExportCapability();
@@ -3599,7 +3605,7 @@ export function Viewer({
                       }}
                     />
                     {suggestions.length > 0 && <SuggestionOverlayLayer documentId={documentId} pageIndex={pageIndex} suggestions={suggestions} />}
-                    {collab && <CursorLayer documentId={documentId} pageIndex={pageIndex} peers={peers} onMove={broadcastCursor} />}
+                    {collab && <CursorLayer documentId={documentId} pageIndex={pageIndex} peers={peers} onMove={broadcastCursor} onLeave={clearCursor} />}
                     {mode !== 'view' && !pendingImage && !redacting && !textEditing && <MarqueeSelect documentId={documentId} pageIndex={pageIndex} />}
                     {editing && textEditing && editBytes && (
                       <TextEditLayer documentId={documentId} pageIndex={pageIndex} bytes={editBytes} onCommit={commitTextEdit} onReady={() => setTextRunsReady(true)} editBusy={editBusy} />

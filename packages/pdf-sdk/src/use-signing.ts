@@ -57,6 +57,7 @@ export function useSigning(
   const localRef = useRef<CasualPdfDoc | null>(null);
   const localIdRef = useRef<string>('');
   if (!sharedModel && (localRef.current === null || localIdRef.current !== documentId)) {
+    localRef.current?.doc.destroy(); // free the previous local doc (leak fix)
     localRef.current = createCasualPdfDoc(documentId);
     localIdRef.current = documentId;
   }
@@ -98,8 +99,11 @@ export function useSigning(
   const sign = useCallback(
     (signerId: string) => {
       const now = Date.now();
-      markConsented(model, signerId, now);
-      markSigned(model, signerId, now, 'collab-session');
+      // One transaction → peers never observe "consented but not signed" (one render).
+      model.doc.transact(() => {
+        markConsented(model, signerId, now);
+        markSigned(model, signerId, now, 'collab-session');
+      });
     },
     [model],
   );

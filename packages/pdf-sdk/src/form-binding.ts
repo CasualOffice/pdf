@@ -45,16 +45,23 @@ export function bindFormValues(bridge: FormBridge, model: CasualPdfDoc): () => v
   });
 
   // ── Yjs model → local plugin ───────────────────────────────────────────────
-  const observer = (_events: unknown, txn: Y.Transaction) => {
+  const observer = (event: Y.YMapEvent<unknown>, txn: Y.Transaction) => {
     if (txn.origin === FORM_LOCAL_ORIGIN) return; // our own write (echo guard)
+    // Start from the plugin's CURRENT values (preserving any in-progress local edit
+    // to an unrelated field), then apply ONLY the REMOTELY-changed keys. Pushing the
+    // whole model map instead would clobber a concurrent local edit to another field
+    // with that field's stale model value (silent data loss).
     const current = bridge.getValues();
-    const values: Record<string, string> = {};
+    const values: Record<string, string> = { ...current };
     let differs = false;
-    model.formValues.forEach((v, k) => {
-      const s = String(v);
-      values[k] = s;
-      if (current[k] !== s) differs = true;
-    });
+    for (const k of event.keysChanged) {
+      const raw = model.formValues.get(k);
+      const s = raw == null ? '' : String(raw);
+      if (values[k] !== s) {
+        values[k] = s;
+        differs = true;
+      }
+    }
     if (differs) bridge.setValues(values);
   };
   model.formValues.observe(observer);

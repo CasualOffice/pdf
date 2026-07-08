@@ -93,3 +93,14 @@ test('a later edit overwrites an earlier one (last write wins per field)', () =>
   assert.equal(a.formValues.get('status'), 'final');
   teardown();
 });
+
+test('a remote edit to one field does NOT clobber an in-progress local edit to another', () => {
+  const { fa, fb, teardown } = setup();
+  // B has an in-progress edit to 'notes' that hasn't been flushed to the model yet.
+  fb.values.notes = 'draft in progress';
+  // A edits a DIFFERENT field → syncs to B.
+  fa.userFill('name', 'Ada');
+  assert.equal(fb.values.name, 'Ada', 'the remotely-changed field is applied');
+  assert.equal(fb.values.notes, 'draft in progress', 'the in-progress local field is PRESERVED (not clobbered)');
+  teardown();
+});
