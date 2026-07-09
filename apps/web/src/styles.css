@@ -1041,3 +1041,33 @@ button.appbar__sigstatus:focus-visible {
 
 /* Dialogs → bordered neobrutalist modals (2px ink + the hard-offset shadow token). */
 .dialog { border: 2px solid var(--color-border); }
+
+/* Transient busy toast for file-picker long ops (Insert/merge) — bordered, violet spinner. */
+.app-busy {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 120;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-3);
+  font: 700 13px/1 var(--font-sans, system-ui, sans-serif);
+}
+.app-busy__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-accent-soft, #ede6ff);
+  border-top-color: var(--color-accent, #8b5cf6);
+  border-radius: 50%;
+  animation: app-busy-spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes app-busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .app-busy__spinner { animation-duration: 1.8s; } }

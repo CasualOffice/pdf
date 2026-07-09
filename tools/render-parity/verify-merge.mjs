@@ -74,9 +74,10 @@ console.log('pages after insert:', pagesAfter);
 if (pagesAfter >= 4) pass(`merged doc has ${pagesAfter} pages (expected ≥4)`);
 else fail(`expected ≥4 pages after insert, got ${pagesAfter}`);
 
-// Confirm download button is enabled (dirty state set).
-const saveBtnVisible = await page.locator('button:has-text("Save")').isVisible();
-if (saveBtnVisible) pass('document marked dirty after insert'); else fail('save button not visible');
+// Confirm the doc is marked dirty after insert (web shows "Download changes" + a
+// dirty dot; "Save" is desktop-only — the old check looked for the wrong text).
+const dirtyShown = await page.locator('.appbar__dirty, button:has-text("Download changes")').first().isVisible();
+if (dirtyShown) pass('document marked dirty after insert'); else fail('dirty state not shown after insert');
 
 await browser.close();
 server.close();

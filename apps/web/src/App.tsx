@@ -97,6 +97,9 @@ export function App() {
   const [pageFurniture, setPageFurniture] = useState(false);
   const [restricting, setRestricting] = useState(false);
   const [restrictBusy, setRestrictBusy] = useState(false);
+  // Transient status for file-picker-triggered long ops that have no button to
+  // carry a busy state (e.g. Insert/merge PDF) → a small live-region toast.
+  const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [signatureStatus, setSignatureStatus] = useState<SignatureStatus>('unknown');
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
@@ -579,12 +582,15 @@ export function App() {
         return;
       }
     }
+    setBusyMsg('Inserting PDF…');
     try {
       const { mergePdfs } = await import('@casualoffice/pdf/merge');
       const merged = await mergePdfs(primaryBytes, secondaryBytes);
       onDocumentReplaced(merged);
     } catch {
       alert('Could not merge the PDF files. The inserted file may be corrupt or encrypted.');
+    } finally {
+      setBusyMsg(null);
     }
   };
 
@@ -845,6 +851,12 @@ export function App() {
         </div>
       </header>
 
+      {busyMsg && (
+        <div className="app-busy" role="status" aria-live="polite">
+          <span className="app-busy__spinner" aria-hidden="true" />
+          {busyMsg}
+        </div>
+      )}
       {recovery && (
         <div className="recoverybar" role="status">
           <Icon name="refresh" size={16} />
