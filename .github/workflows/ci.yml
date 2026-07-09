@@ -200,6 +200,7 @@ jobs:
             verify-textedit-optionc \
             verify-textedit-persist \
             verify-search-after-textedit \
+            verify-merge \
             verify-textedit-unicode \
             verify-textedit-googlefont \
             verify-signature-details \
