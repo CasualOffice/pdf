@@ -932,13 +932,7 @@ export function App() {
               className="viewer"
             />
             {!aiOpen && (
-              <button
-                type="button"
-                data-testid="ai-toggle"
-                onClick={() => setAiOpen(true)}
-                aria-pressed={aiOpen}
-                style={{ position: 'absolute', right: 'var(--space-4, 16px)', bottom: 'var(--space-4, 16px)', zIndex: 20, display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2, 8px)', padding: '10px 16px', borderRadius: 'var(--radius-pill, 999px)', border: 'none', background: 'var(--color-accent, #2563eb)', color: 'var(--color-text-on-accent, #fff)', cursor: 'pointer', boxShadow: 'var(--shadow-2, 0 2px 8px rgba(0,0,0,.2))', font: 'inherit', fontWeight: 500 }}
-              >
+              <button type="button" className="ai-fab" data-testid="ai-toggle" onClick={() => setAiOpen(true)} aria-pressed={aiOpen}>
                 <Icon name="comments" size={18} />
                 Ask AI
               </button>

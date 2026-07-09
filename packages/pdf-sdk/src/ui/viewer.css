@@ -1791,3 +1791,72 @@
   margin-top: 1px;
   flex: none;
 }
+
+/* ═══ NEOBRUTALIST viewer overrides (Phase 4) ══════════════════════════════ */
+/* Warm editor canvas so white pages separate (was cold #e0e4ea / #13151a). */
+.cpdf { background: #e6e1d6; }
+[data-theme='dark'] .cpdf { background: #100e15; }
+
+/* Page = 2px ink border + hard offset shadow (was a soft blur ring stack). */
+.cpdf__page {
+  border-radius: var(--radius-sm, 8px);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-3);
+}
+
+/* Left tool rail: roomier targets, real gap, 2px structural divider. */
+.cpdf__rail {
+  gap: 4px;
+  border-right: 2px solid var(--color-border);
+  background: var(--color-surface);
+}
+.cpdf__rail-sep {
+  width: 24px;
+  height: 2px;
+  background: var(--color-border);
+  opacity: 1;
+}
+.cpdf__railbtn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm, 8px);
+}
+
+/* Floating surfaces → solid bordered blocks with a hard offset shadow (no rings). */
+.cpdf__search,
+.cpdf__seltools,
+.cpdf__bottom {
+  border-radius: var(--radius-md, 10px);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-3);
+}
+/* Docked panels → 2px structural border. */
+.cpdf__props { border-left: 2px solid var(--color-border); }
+.cpdf__panel { border-right: 2px solid var(--color-border); }
+
+/* ═══ NEOBRUTALIST tactile + responsive (Phase 5) ══════════════════════════ */
+/* Tactile press on the flat icon/rail buttons — the signature "press" cue. */
+.cpdf__railbtn,
+.cpdf-iconbtn {
+  transition: transform var(--dur, 140ms) var(--ease), background var(--dur, 140ms) var(--ease), color var(--dur, 140ms) var(--ease);
+}
+.cpdf__railbtn:active:not(:disabled),
+.cpdf-iconbtn:active:not(:disabled) {
+  transform: scale(0.88);
+}
+
+/* Tablet: narrow the docked panels so the canvas isn't crushed, and reveal the
+   bottom-bar scrollbar so controls can't scroll off-screen invisibly. */
+@media (max-width: 900px) {
+  .cpdf__props { width: 208px; }
+  .cpdf__panel { width: 168px; }
+}
+@media (max-width: 760px) {
+  .cpdf__bottom { scrollbar-width: thin; scrollbar-color: var(--color-border) transparent; }
+  .cpdf__bottom::-webkit-scrollbar { height: 5px; }
+  .cpdf__bottom::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cpdf__railbtn:active:not(:disabled),
+  .cpdf-iconbtn:active:not(:disabled) { transform: none; }
+}

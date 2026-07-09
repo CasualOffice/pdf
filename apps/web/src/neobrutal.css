@@ -1,0 +1,150 @@
+/* Copyright (c) 2026 Casual Office
+   SPDX-License-Identifier: Apache-2.0
+
+   Casual PDF — NEOBRUTALIST-CRISP theme override.
+   Loaded AFTER @schnsrw/design-system tokens.css (so it wins the cascade) and
+   BEFORE styles.css (which consumes the tokens). Mirrors the Doc-Hub UI System v3
+   applied to Casual Drive: warm "Paper" light / plum-black "Ink" dark, ONE violet
+   signal (#8B5CF6), near-black ink text + borders, hard OFFSET block shadows
+   (no blur / no glass), flat solid fills, 10px radius, snappy tactile motion.
+
+   Strategy (Phase 1): repoint every design-system token NAME the app already
+   consumes to neobrutalist CORE values — most surfaces convert for free — and
+   DEFINE the handful of tokens the app references that the design system never
+   defined (which were rendering literal blue/violet fallbacks and would otherwise
+   ignore this repoint): --color-primary, --color-suggest, --radius-1/2, etc. */
+
+:root {
+  /* ══ CORE — Light "Paper" (default) ═══════════════════════════════════ */
+  --shadow-ink: #14110c;
+
+  /* Surfaces */
+  --color-bg: #f4f1ea; /* warm paper canvas */
+  --color-surface: #ffffff; /* cards / panels / inputs */
+  --color-surface-raised: #ffffff;
+  --color-surface-alt: #ece7db; /* wells, sunken, table header */
+  --color-surface-strip: #ece7db;
+  --color-toolbar-pill: #ffffff;
+
+  /* Ink text */
+  --color-text: #14110c; /* near-black */
+  --color-text-secondary: #55503f;
+  --color-text-muted: #6b6656; /* darkened for AA */
+  --color-text-disabled: #9a9486;
+  --color-text-on-accent: #ffffff;
+  --color-accent-fg: #ffffff;
+
+  /* One violet signal */
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7c3aed;
+  --color-accent-active: #6d28d9;
+  --color-accent-soft: #ede6ff; /* violet tint fill */
+  --color-accent-bright: #8b5cf6;
+
+  /* Borders — structural ink (2px applied in the CSS sweep) */
+  --color-border: #14110c;
+  --color-border-strong: #14110c;
+  --color-divider: #d8d2c4; /* softer internal divider */
+
+  /* Focus + selection = violet */
+  --color-focus-ring: #8b5cf6;
+  --color-selected: #ede6ff;
+  --color-selected-strong: #8b5cf6;
+
+  /* Interaction tints */
+  --color-hover: rgba(20, 17, 12, 0.05);
+  --color-pressed: rgba(20, 17, 12, 0.09);
+  --color-scrim: rgba(20, 17, 12, 0.5);
+
+  /* Glass → flat solid (kills translucency; backdrop-filter swept in CSS) */
+  --color-glass: #ffffff;
+  --color-glass-strong: #ffffff;
+  --color-glass-border: #14110c;
+
+  /* Status */
+  --color-danger: #dc2626;
+  --color-danger-soft: #fbe0e0;
+  --color-success: #16a34a;
+  --color-success-soft: #dbf3e0;
+  --color-warning: #d97706;
+  --color-warning-soft: #fbecd0;
+  --color-info: #2563eb;
+  --color-info-soft: #dce7fd;
+
+  /* ── Tokens the app references but the design system never defined
+     (were leaking literal #2d8cff / #7c3aed fallbacks) ── */
+  --color-primary: #8b5cf6; /* markup/text-edit accents → violet */
+  --color-suggest: #8b5cf6; /* suggestion overlay → violet */
+  --color-success-bg: #dbf3e0;
+  --color-warning-bg: #fbecd0;
+  --color-accent-bright-fg: #ffffff;
+
+  /* Radius — uniform 10px (8 for tight) */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 10px;
+  --radius-xl: 12px; /* modals slightly larger */
+  --radius-1: 10px; /* undefined-token fallbacks the app used */
+  --radius-2: 8px;
+
+  /* Hard OFFSET shadows — zero blur */
+  --shadow-1: 2px 2px 0 0 var(--shadow-ink);
+  --shadow-2: 3px 3px 0 0 var(--shadow-ink);
+  --shadow-3: 4px 4px 0 0 var(--shadow-ink);
+  --shadow-4: 6px 6px 0 0 var(--shadow-ink);
+
+  /* Snappy motion */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur: 140ms;
+}
+
+[data-theme='dark'] {
+  /* ══ CORE — Dark "Ink" (first-class peer) ═════════════════════════════ */
+  --shadow-ink: #05040a;
+
+  --color-bg: #14121a; /* plum-black canvas */
+  --color-surface: #1e1b26;
+  --color-surface-raised: #1e1b26;
+  --color-surface-alt: #100e15;
+  --color-surface-strip: #100e15;
+  --color-toolbar-pill: #1e1b26;
+
+  --color-text: #f1eef7;
+  --color-text-secondary: #a49fb2;
+  --color-text-muted: #8b8598;
+  --color-text-disabled: #6b6676;
+  --color-text-on-accent: #12101a;
+  --color-accent-fg: #12101a;
+
+  --color-accent: #9b6cff; /* lifted for dark */
+  --color-accent-hover: #b18bff;
+  --color-accent-active: #c4a5ff;
+  --color-accent-soft: #2a2340;
+  --color-accent-bright: #9b6cff;
+
+  --color-border: #34303f;
+  --color-border-strong: #4a4557;
+  --color-divider: #2a2733;
+
+  --color-focus-ring: #9b6cff;
+  --color-selected: #2a2340;
+  --color-selected-strong: #9b6cff;
+
+  --color-hover: rgba(255, 255, 255, 0.06);
+  --color-pressed: rgba(255, 255, 255, 0.1);
+  --color-scrim: rgba(5, 4, 10, 0.6);
+
+  --color-glass: #1e1b26;
+  --color-glass-strong: #1e1b26;
+  --color-glass-border: #34303f;
+
+  --color-danger-soft: #3a1c1c;
+  --color-success-soft: #16301f;
+  --color-warning-soft: #3a2a12;
+  --color-info-soft: #1c2740;
+
+  --color-primary: #9b6cff;
+  --color-suggest: #9b6cff;
+  --color-success-bg: #16301f;
+  --color-warning-bg: #3a2a12;
+}
