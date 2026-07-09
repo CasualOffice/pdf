@@ -15,6 +15,9 @@ consumed via react-icons (MIT).
 Bundled fonts for metric-compatible text editing (docs/TEXT-EDITING.md, Option C)
 are licensed under the SIL Open Font License 1.1 (OFL-1.1), permitted for font
 assets per the 2026-07-04 extension of the project's dependency-license policy:
+  - Inter (the UI typeface, self-hosted via @fontsource-variable/inter),
+    Copyright The Inter Project Authors (https://github.com/rsms/inter) — bundled
+    into the web app for the neobrutalist UI type; OFL-1.1.
   - Arimo (metric-compatible with Arial), Copyright The Arimo Project Authors —
     packages/pdf-sdk/src/fonts/Arimo.ttf, Arimo-Italic.ttf, and the static bold
     instances Arimo-Bold.ttf, Arimo-BoldItalic.ttf (derived from the variable
