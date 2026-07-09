@@ -1791,3 +1791,45 @@
   margin-top: 1px;
   flex: none;
 }
+
+/* ═══ NEOBRUTALIST viewer overrides (Phase 4) ══════════════════════════════ */
+/* Warm editor canvas so white pages separate (was cold #e0e4ea / #13151a). */
+.cpdf { background: #e6e1d6; }
+[data-theme='dark'] .cpdf { background: #100e15; }
+
+/* Page = 2px ink border + hard offset shadow (was a soft blur ring stack). */
+.cpdf__page {
+  border-radius: var(--radius-sm, 8px);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-3);
+}
+
+/* Left tool rail: roomier targets, real gap, 2px structural divider. */
+.cpdf__rail {
+  gap: 4px;
+  border-right: 2px solid var(--color-border);
+  background: var(--color-surface);
+}
+.cpdf__rail-sep {
+  width: 24px;
+  height: 2px;
+  background: var(--color-border);
+  opacity: 1;
+}
+.cpdf__railbtn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm, 8px);
+}
+
+/* Floating surfaces → solid bordered blocks with a hard offset shadow (no rings). */
+.cpdf__search,
+.cpdf__seltools,
+.cpdf__bottom {
+  border-radius: var(--radius-md, 10px);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-3);
+}
+/* Docked panels → 2px structural border. */
+.cpdf__props { border-left: 2px solid var(--color-border); }
+.cpdf__panel { border-right: 2px solid var(--color-border); }
