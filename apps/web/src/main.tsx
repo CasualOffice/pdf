@@ -8,6 +8,10 @@ import { createRoot } from 'react-dom/client';
 import { Buffer } from 'buffer';
 if (!(globalThis as { Buffer?: unknown }).Buffer) (globalThis as { Buffer?: unknown }).Buffer = Buffer;
 import './desk-bridge-bootstrap';
+// Self-host Inter (OFL-1.1) — the neobrutalist system's heavy sans. Variable font
+// covers 450 body → 700 heavy display. Offline-safe (bundled, no CDN), matching the
+// Casual Office suite (Drive/Docs). Without this, --font-sans fell back to system UI.
+import '@fontsource-variable/inter';
 // Design-system tokens (CSS custom properties + Material Symbols font) must load
 // once, before app styles, so component vars resolve. There is no ThemeProvider;
 // dark mode is opt-in via data-theme="dark" on an ancestor.
