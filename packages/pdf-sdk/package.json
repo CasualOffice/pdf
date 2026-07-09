@@ -55,7 +55,14 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0 <20.0.0",
-    "react-dom": ">=18.0.0 <20.0.0"
+    "react-dom": ">=18.0.0 <20.0.0",
+    "yjs": "^13.6.0",
+    "@hocuspocus/provider": "^2.15.0"
+  },
+  "peerDependenciesMeta": {
+    "@hocuspocus/provider": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@embedpdf/core": "^2.14.4",
@@ -82,20 +89,20 @@
     "@embedpdf/plugin-tiling": "^2.14.4",
     "@embedpdf/plugin-viewport": "^2.14.4",
     "@embedpdf/plugin-zoom": "^2.14.4",
-    "@hocuspocus/provider": "^2.15.2",
     "@pdf-lib/fontkit": "^1.1.1",
     "@signpdf/placeholder-plain": "^3.3.0",
     "@signpdf/signer-p12": "^3.3.0",
     "@signpdf/signpdf": "^3.3.0",
     "node-forge": "^1.4.0",
     "pdf-lib": "^1.17.1",
-    "react-icons": "^5.6.0",
-    "yjs": "^13.6.21"
+    "react-icons": "^5.6.0"
   },
   "devDependencies": {
+    "@hocuspocus/provider": "^2.15.2",
     "@types/node-forge": "^1.3.11",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "yjs": "^13.6.21"
   }
 }
