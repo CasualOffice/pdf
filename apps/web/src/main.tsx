@@ -12,6 +12,7 @@ import './desk-bridge-bootstrap';
 // once, before app styles, so component vars resolve. There is no ThemeProvider;
 // dark mode is opt-in via data-theme="dark" on an ancestor.
 import '@schnsrw/design-system/tokens.css';
+import './neobrutal.css'; // neobrutalist token override (after design-system, before app styles)
 import './styles.css';
 import { App } from './App';
 
