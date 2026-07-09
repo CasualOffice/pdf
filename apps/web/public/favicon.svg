@@ -1,19 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Casual PDF">
   <title>Casual PDF</title>
-  <defs>
-    <linearGradient id="cpdf-g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5b6cff"/>
-      <stop offset="1" stop-color="#8b3cf0"/>
-    </linearGradient>
-  </defs>
-  <rect width="32" height="32" rx="7.5" fill="url(#cpdf-g)"/>
+  <!-- Neobrutalist: flat violet signal (favicon reads clean at small sizes). -->
+  <rect width="32" height="32" rx="7.5" fill="#8B5CF6"/>
   <!-- page with a folded top-right corner -->
   <path d="M9.6 6.5h7.3l5.5 5.5v12.1a1.4 1.4 0 0 1-1.4 1.4H9.6a1.4 1.4 0 0 1-1.4-1.4V7.9A1.4 1.4 0 0 1 9.6 6.5z" fill="#ffffff"/>
-  <path d="M16.9 6.5 22.4 12h-4.1a1.4 1.4 0 0 1-1.4-1.4z" fill="#cdd4ff"/>
+  <path d="M16.9 6.5 22.4 12h-4.1a1.4 1.4 0 0 1-1.4-1.4z" fill="#EDE6FF"/>
   <!-- body text lines -->
-  <rect x="11" y="15.1" width="8.6" height="1.7" rx="0.85" fill="#9aa6ff"/>
-  <rect x="11" y="18.5" width="8.6" height="1.7" rx="0.85" fill="#9aa6ff"/>
-  <rect x="11" y="21.9" width="5.4" height="1.7" rx="0.85" fill="#c2c9ff"/>
+  <rect x="11" y="15.1" width="8.6" height="1.7" rx="0.85" fill="#C4B5FD"/>
+  <rect x="11" y="18.5" width="8.6" height="1.7" rx="0.85" fill="#C4B5FD"/>
+  <rect x="11" y="21.9" width="5.4" height="1.7" rx="0.85" fill="#DDD1FB"/>
   <!-- live co-editing cursor accent -->
-  <circle cx="20.4" cy="22" r="2.7" fill="#ff5d8f"/>
+  <circle cx="20.4" cy="22" r="2.7" fill="#7C3AED"/>
 </svg>

@@ -1038,3 +1038,6 @@ button.appbar__sigstatus:focus-visible {
   .appbar__quick, .welcome__btn { transition: background var(--dur, 140ms) var(--ease); }
   .appbar__quick:active, .welcome__btn:hover, .welcome__btn:active { transform: none; }
 }
+
+/* Dialogs → bordered neobrutalist modals (2px ink + the hard-offset shadow token). */
+.dialog { border: 2px solid var(--color-border); }
